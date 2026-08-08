@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
@@ -8,6 +9,7 @@ import 'package:chameleonultragui/gui/page/write_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
+import 'package:chameleonultragui/helpers/write.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
@@ -426,6 +428,60 @@ void main() {
       expect(logOutput.buffer.single.origin.stackTrace, isNotNull);
     },
   );
+
+  testWidgets('Magic write holds foreground RF access for its whole sequence',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _ReaderModeCommunicator(logger);
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..communicator = communicator;
+    final helper = _ProtectedMagicWriteHelper(communicator);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const WriteCardPage(),
+        ),
+      ),
+    );
+    final state = tester.state<WriteCardPageState>(find.byType(WriteCardPage));
+    state
+      ..card = CardSave(uid: '01020304', name: 'Test', tag: TagType.mifare1K)
+      ..helper = helper;
+
+    final backgroundGate = Completer<void>();
+    final background = appState.rfOperations.tryRunBackground(() async {
+      await backgroundGate.future;
+    });
+    await tester.pump();
+    final write = state.writeCard();
+    await tester.pump();
+    expect(helper.writeCalls, 0);
+
+    backgroundGate.complete();
+    await background;
+    await tester.pump();
+    await helper.writeStarted.future.timeout(const Duration(seconds: 2));
+    expect(helper.writeCalls, 1);
+    expect(
+      (await appState.rfOperations.tryRunBackground(() async {})).acquired,
+      isFalse,
+    );
+
+    helper.allowWrite.complete();
+    await write;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FailingPreflightCommunicator extends ChameleonCommunicator {
@@ -441,4 +497,49 @@ class _FailingPreflightCommunicator extends ChameleonCommunicator {
       status: 0xe1,
     );
   }
+}
+
+class _ReaderModeCommunicator extends ChameleonCommunicator {
+  _ReaderModeCommunicator(super.logger);
+
+  @override
+  Future<bool> isReaderDeviceMode() async => true;
+}
+
+class _ProtectedMagicWriteHelper extends AbstractWriteHelper {
+  _ProtectedMagicWriteHelper(super.communicator);
+
+  final Completer<void> writeStarted = Completer<void>();
+  final Completer<void> allowWrite = Completer<void>();
+  int writeCalls = 0;
+
+  @override
+  Future<bool> isMagic(dynamic data) async => true;
+
+  @override
+  bool isReady() => true;
+
+  @override
+  Future<bool> isCompatible(CardSave card) async => true;
+
+  @override
+  List<AbstractWriteHelper> getAvailableMethods() => [this];
+
+  @override
+  List<AbstractWriteHelper> getAvailableMethodsByPriority() => [this];
+
+  @override
+  Future<bool> writeData(
+    CardSave card,
+    Function(int writeProgress) update,
+  ) async {
+    writeCalls++;
+    writeStarted.complete();
+    await allowWrite.future;
+    return true;
+  }
+
+  @override
+  Widget getWriteWidget(BuildContext context, dynamic setState) =>
+      const SizedBox.shrink();
 }

@@ -9,9 +9,12 @@ import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen1.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen2.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen3.dart';
+import 'package:chameleonultragui/helpers/mifare_ultralight/types.dart';
 import 'package:chameleonultragui/helpers/write.dart';
+import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
@@ -189,14 +192,28 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
         mfcInfo = null;
       });
 
-      var info = await readHFInfo(
-          context,
-          () => {
-                if (mfcInfo != null && mfcInfo!.recovery != null)
-                  setState(() {
-                    recovery = mfcInfo!.recovery!;
-                  })
-              });
+      final appState = context.read<ChameleonGUIState>();
+      var info = await appState.rfOperations.runForeground(
+        () async {
+          if (!context.mounted) {
+            return (HFCardInfo(), MifareClassicInfo(), MifareUltralightInfo());
+          }
+          return readHFInfo(
+            context,
+            () => {
+              if (context.mounted &&
+                  mfcInfo != null &&
+                  mfcInfo!.recovery != null)
+                setState(() {
+                  recovery = mfcInfo!.recovery!;
+                })
+            },
+          );
+        },
+      );
+      if (!context.mounted) {
+        return;
+      }
 
       setState(() {
         hfInfo = info.$1;

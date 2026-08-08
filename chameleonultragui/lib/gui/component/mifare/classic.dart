@@ -404,7 +404,13 @@ class CardReaderState extends State<MifareClassicHelper> {
                         info.state = MifareClassicState.recoveryOngoing;
                       });
 
-                      final completed = await recovery.recoverKeys();
+                      final completed =
+                          await appState.rfOperations.runForeground(() async {
+                        if (!_canContinue(info, recovery)) {
+                          return false;
+                        }
+                        return recovery.recoverKeys();
+                      });
                       if (!completed || !_canContinue(info, recovery)) {
                         return;
                       }
@@ -435,7 +441,13 @@ class CardReaderState extends State<MifareClassicHelper> {
                         });
 
                         try {
-                          final completed = await recovery.dumpData();
+                          final completed = await appState.rfOperations
+                              .runForeground(() async {
+                            if (!_canContinue(info, recovery)) {
+                              return false;
+                            }
+                            return recovery.dumpData();
+                          });
                           if (!completed || !_canContinue(info, recovery)) {
                             return;
                           }
@@ -584,8 +596,17 @@ class CardReaderState extends State<MifareClassicHelper> {
                         if (!_canContinue(info, recovery)) {
                           return;
                         }
-                        final completed = await recovery.checkKeys(
-                            skipDefaultDictionary: skipDefaultDictionary);
+                        final completed =
+                            await appState.rfOperations.runForeground(
+                          () async {
+                            if (!_canContinue(info, recovery)) {
+                              return false;
+                            }
+                            return recovery.checkKeys(
+                              skipDefaultDictionary: skipDefaultDictionary,
+                            );
+                          },
+                        );
                         if (!completed || !_canContinue(info, recovery)) {
                           return;
                         }
@@ -638,7 +659,13 @@ class CardReaderState extends State<MifareClassicHelper> {
                       });
 
                       try {
-                        final completed = await recovery.dumpData();
+                        final completed =
+                            await appState.rfOperations.runForeground(() async {
+                          if (!_canContinue(info, recovery)) {
+                            return false;
+                          }
+                          return recovery.dumpData();
+                        });
                         if (!completed || !_canContinue(info, recovery)) {
                           return;
                         }

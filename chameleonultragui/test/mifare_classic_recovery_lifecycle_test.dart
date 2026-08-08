@@ -138,9 +138,18 @@ void main() {
       ),
     );
 
+    final backgroundGate = Completer<void>();
+    final background = appState.rfOperations.tryRunBackground(() async {
+      await backgroundGate.future;
+    });
+    await tester.pump();
     await tester.tap(find.text(localizations.check_keys_dict));
     await tester.pump();
-    await recovery.started.future;
+    expect(recovery.started.isCompleted, isFalse);
+    backgroundGate.complete();
+    await background;
+    await tester.pump();
+    await recovery.started.future.timeout(const Duration(seconds: 2));
     await tester.pumpWidget(const SizedBox());
 
     recovery.result.complete(true);

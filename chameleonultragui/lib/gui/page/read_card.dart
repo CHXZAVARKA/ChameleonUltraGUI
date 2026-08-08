@@ -27,6 +27,7 @@ class ReadCardPage extends StatefulWidget {
 }
 
 class ReadCardPageState extends State<ReadCardPage> {
+  late ChameleonGUIState _appState;
   late ReadCardSession _session;
 
   String get dumpName => _session.dumpName;
@@ -53,8 +54,8 @@ class ReadCardPageState extends State<ReadCardPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _session =
-        Provider.of<ChameleonGUIState>(context, listen: false).readCardSession;
+    _appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    _session = _appState.readCardSession;
     mfcInfo.recovery?.update = updateMifareClassicRecovery;
   }
 
@@ -77,20 +78,16 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   ChameleonCommunicator? _connectedCommunicator() {
-    final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
+    final communicator = _appState.communicator;
     if (communicator == null ||
-        !appState.hasConnectedCommunicator(communicator)) {
+        !_appState.hasConnectedCommunicator(communicator)) {
       return null;
     }
     return communicator;
   }
 
   bool _canContinueWith(ChameleonCommunicator communicator) {
-    return mounted &&
-        context
-            .read<ChameleonGUIState>()
-            .hasConnectedCommunicator(communicator);
+    return mounted && _appState.hasConnectedCommunicator(communicator);
   }
 
   bool _commitHFInfo((HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
@@ -111,7 +108,9 @@ class ReadCardPageState extends State<ReadCardPage> {
     return true;
   }
 
-  Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) async {
+  Future<bool> _readAndCommitHFInfoUnderLease({
+    bool scanFinished = false,
+  }) async {
     final communicator = _connectedCommunicator();
     if (communicator == null) {
       return false;
@@ -125,7 +124,13 @@ class ReadCardPageState extends State<ReadCardPage> {
     );
   }
 
-  Future<bool> readLFInfo() async {
+  Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) {
+    return _appState.rfOperations.runForeground(
+      () => _readAndCommitHFInfoUnderLease(scanFinished: scanFinished),
+    );
+  }
+
+  Future<bool> _readLFInfoUnderLease() async {
     final communicator = _connectedCommunicator();
     if (communicator == null) {
       return false;
@@ -191,6 +196,60 @@ class ReadCardPageState extends State<ReadCardPage> {
     return true;
   }
 
+  Future<bool> readLFInfo() {
+    return _appState.rfOperations.runForeground(_readLFInfoUnderLease);
+  }
+
+  Future<void> _runContinuousHFScanTick() async {
+    try {
+      final result = await _appState.rfOperations.tryRunBackground(
+        _readAndCommitHFInfoUnderLease,
+      );
+      if (!result.acquired) {
+        return;
+      }
+      if (result.value != true) {
+        stopContinuousHFScan();
+        return;
+      }
+      if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
+        stopContinuousHFScan();
+      }
+    } catch (error, stackTrace) {
+      (_appState.log ?? _appState.communicator?.log)?.e(
+        'Continuous HF scan failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      stopContinuousHFScan();
+    }
+  }
+
+  Future<void> _runContinuousLFScanTick() async {
+    try {
+      final result = await _appState.rfOperations.tryRunBackground(
+        _readLFInfoUnderLease,
+      );
+      if (!result.acquired) {
+        return;
+      }
+      if (result.value != true) {
+        stopContinuousLFScan();
+        return;
+      }
+      if (lfInfo.cardExist && lfInfo.card != null) {
+        stopContinuousLFScan();
+      }
+    } catch (error, stackTrace) {
+      (_appState.log ?? _appState.communicator?.log)?.e(
+        'Continuous LF scan failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      stopContinuousLFScan();
+    }
+  }
+
   Future<void> startContinuousHFScan() async {
     if (isContinuousHFScan) return;
 
@@ -203,30 +262,16 @@ class ReadCardPageState extends State<ReadCardPage> {
 
     DateTime startTime = DateTime.now();
 
-    hfScanTimer = Timer.periodic(scanInterval, (timer) async {
+    hfScanTimer = Timer.periodic(scanInterval, (timer) {
       if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
         stopContinuousHFScan();
         return;
       }
 
-      if (!await _readAndCommitHFInfo()) {
-        stopContinuousHFScan();
-        return;
-      }
-
-      if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
-        stopContinuousHFScan();
-      }
+      unawaited(_runContinuousHFScanTick());
     });
 
-    if (!await _readAndCommitHFInfo()) {
-      stopContinuousHFScan();
-      return;
-    }
-
-    if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
-      stopContinuousHFScan();
-    }
+    await _runContinuousHFScanTick();
   }
 
   void stopContinuousHFScan() {
@@ -254,29 +299,16 @@ class ReadCardPageState extends State<ReadCardPage> {
 
     DateTime startTime = DateTime.now();
 
-    lfScanTimer = Timer.periodic(scanInterval, (timer) async {
+    lfScanTimer = Timer.periodic(scanInterval, (timer) {
       if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
         stopContinuousLFScan();
         return;
       }
 
-      if (!await readLFInfo()) {
-        stopContinuousLFScan();
-        return;
-      }
-
-      if (lfInfo.cardExist && lfInfo.card != null) {
-        stopContinuousLFScan();
-      }
+      unawaited(_runContinuousLFScanTick());
     });
 
-    if (!await readLFInfo()) {
-      stopContinuousLFScan();
-      return;
-    }
-    if (lfInfo.cardExist && lfInfo.card != null) {
-      stopContinuousLFScan();
-    }
+    await _runContinuousLFScanTick();
   }
 
   void stopContinuousLFScan() {
@@ -444,13 +476,27 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                 final pendingInfo =
                                                     MifareClassicInfo(
                                                         state: mfcInfo.state);
-                                                var info =
-                                                    await performMifareClassicScan(
-                                                        communicator,
-                                                        pendingInfo,
-                                                        context,
-                                                        updateMifareClassicRecovery,
-                                                        override: newValue);
+                                                var info = await _appState
+                                                    .rfOperations
+                                                    .runForeground(() async {
+                                                  if (!_canContinueWith(
+                                                      communicator)) {
+                                                    return null;
+                                                  }
+                                                  return performMifareClassicScan(
+                                                    communicator,
+                                                    pendingInfo,
+                                                    context,
+                                                    updateMifareClassicRecovery,
+                                                    override: newValue,
+                                                    canContinue: () =>
+                                                        _canContinueWith(
+                                                            communicator),
+                                                  );
+                                                });
+                                                if (info == null) {
+                                                  return;
+                                                }
                                                 if (!_canContinueWith(
                                                     communicator)) {
                                                   return;
@@ -471,11 +517,25 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                           mfuInfo.version
                                                       ..signature =
                                                           mfuInfo.signature;
-                                                var info =
-                                                    await performMifareUltralightScan(
-                                                        communicator,
-                                                        pendingInfo,
-                                                        override: newValue);
+                                                var info = await _appState
+                                                    .rfOperations
+                                                    .runForeground(() async {
+                                                  if (!_canContinueWith(
+                                                      communicator)) {
+                                                    return null;
+                                                  }
+                                                  return performMifareUltralightScan(
+                                                    communicator,
+                                                    pendingInfo,
+                                                    override: newValue,
+                                                    canContinue: () =>
+                                                        _canContinueWith(
+                                                            communicator),
+                                                  );
+                                                });
+                                                if (info == null) {
+                                                  return;
+                                                }
                                                 if (!_canContinueWith(
                                                     communicator)) {
                                                   return;

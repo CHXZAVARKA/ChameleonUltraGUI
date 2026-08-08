@@ -9,6 +9,7 @@ import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
+import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -68,6 +69,7 @@ class ChameleonGUIState extends ChangeNotifier {
   ChameleonGUIState(this.sharedPreferencesProvider);
 
   final ReadCardSession readCardSession = ReadCardSession();
+  final RfOperationCoordinator rfOperations = RfOperationCoordinator();
 
   SharedPreferencesProvider? _sharedPreferencesProvider;
   Logger? log; // Logger

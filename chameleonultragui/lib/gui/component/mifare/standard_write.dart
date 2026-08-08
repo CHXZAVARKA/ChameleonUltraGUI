@@ -259,16 +259,23 @@ class _StandardMifareClassicWritePanelState
       final maintenance = MifareClassicMaintenance(
         ChameleonMifareClassicMaintenancePort(communicator),
       );
-      final plan = await maintenance.preflight(
-        image: _image!,
-        profile: profile,
-        shouldCancel: () => _cancelled,
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() => _progress = progress);
-          }
-        },
-      );
+      final plan = await appState.rfOperations.runForeground(() async {
+        if (_cancelled) {
+          return null;
+        }
+        return maintenance.preflight(
+            image: _image!,
+            profile: profile!,
+            shouldCancel: () => _cancelled,
+            onProgress: (progress) {
+              if (mounted) {
+                setState(() => _progress = progress);
+              }
+            });
+      });
+      if (plan == null) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _maintenance = maintenance;
@@ -299,15 +306,21 @@ class _StandardMifareClassicWritePanelState
     });
     _setBusy(true);
     try {
-      final report = await maintenance.execute(
-        plan,
-        shouldCancel: () => _cancelled,
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() => _progress = progress);
-          }
-        },
-      );
+      final report = await appState.rfOperations.runForeground(() async {
+        if (_cancelled) {
+          return null;
+        }
+        return maintenance.execute(plan,
+            shouldCancel: () => _cancelled,
+            onProgress: (progress) {
+              if (mounted) {
+                setState(() => _progress = progress);
+              }
+            });
+      });
+      if (report == null) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _report = report;

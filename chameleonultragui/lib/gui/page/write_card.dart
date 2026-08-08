@@ -58,7 +58,11 @@ class WriteCardPageState extends State<WriteCardPage> {
       });
     }
 
-    await helper?.getCardType();
+    await appState.rfOperations.runForeground(() async {
+      if (mounted) {
+        await helper?.getCardType();
+      }
+    });
 
     if (!mounted) return;
     close(context, selectedCard.name);
@@ -66,15 +70,33 @@ class WriteCardPageState extends State<WriteCardPage> {
 
   Future<void> detectMagicType() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    var scaffoldMessenger = ScaffoldMessenger.of(context);
-    var localizations = AppLocalizations.of(context)!;
 
+    await appState.rfOperations.runForeground(() async {
+      if (!mounted) {
+        return;
+      }
+      await _detectMagicTypeUnderLease(
+        appState,
+        ScaffoldMessenger.of(context),
+        AppLocalizations.of(context)!,
+      );
+    });
+  }
+
+  Future<void> _detectMagicTypeUnderLease(
+    ChameleonGUIState appState,
+    ScaffoldMessengerState scaffoldMessenger,
+    AppLocalizations localizations,
+  ) async {
     if (!await appState.communicator!.isReaderDeviceMode()) {
       await appState.communicator!.setReaderDeviceMode(true);
     }
 
     for (final magicHelper in baseHelper!.getAvailableMethods()) {
       if (await magicHelper.isMagic(card)) {
+        if (!mounted) {
+          return;
+        }
         setState(() {
           helper = magicHelper;
         });
@@ -83,6 +105,9 @@ class WriteCardPageState extends State<WriteCardPage> {
           await helper?.getCardType();
         } catch (_) {
           await helper?.getCardType();
+        }
+        if (!mounted) {
+          return;
         }
 
         appState.log!.i("Detected Magic card type: ${magicHelper.name}");
@@ -113,12 +138,18 @@ class WriteCardPageState extends State<WriteCardPage> {
   }
 
   void updateState() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       helper = helper;
     });
   }
 
   void updateProgress(int writeProgress) {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       progress = writeProgress;
     });
@@ -126,6 +157,16 @@ class WriteCardPageState extends State<WriteCardPage> {
 
   Future<void> writeCard() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    await appState.rfOperations.runForeground(
+      () async {
+        if (mounted) {
+          await _writeCardUnderLease(appState);
+        }
+      },
+    );
+  }
+
+  Future<void> _writeCardUnderLease(ChameleonGUIState appState) async {
     var scaffoldMessenger = ScaffoldMessenger.of(context);
     var localizations = AppLocalizations.of(context)!;
     SnackBar snackBar;
@@ -134,8 +175,15 @@ class WriteCardPageState extends State<WriteCardPage> {
     if (!await appState.communicator!.isReaderDeviceMode()) {
       await appState.communicator!.setReaderDeviceMode(true);
     }
+    if (!mounted) {
+      return;
+    }
 
-    if (await helper!.writeData(card!, updateProgress)) {
+    final writeSucceeded = await helper!.writeData(card!, updateProgress);
+    if (!mounted) {
+      return;
+    }
+    if (writeSucceeded) {
       snackBar = SnackBar(
         content: Text(localizations.magic_success_write),
         action: SnackBarAction(
@@ -198,7 +246,23 @@ class WriteCardPageState extends State<WriteCardPage> {
       SnackBar snackBar;
       updateProgress(0);
 
-      if (!await helper!.isCompatible(card!)) {
+      final compatible = await appState.rfOperations.runForeground(() async {
+        if (!mounted) {
+          return false;
+        }
+        final compatible = await helper!.isCompatible(card!);
+        if (!mounted) {
+          return false;
+        }
+        if (compatible) {
+          await _writeCardUnderLease(appState);
+        }
+        return compatible;
+      });
+      if (!mounted) {
+        return;
+      }
+      if (!compatible) {
         snackBar = SnackBar(
           content: Text(localizations.magic_incompatible_card),
           action: SnackBarAction(
@@ -211,8 +275,6 @@ class WriteCardPageState extends State<WriteCardPage> {
 
         scaffoldMessenger.hideCurrentSnackBar();
         scaffoldMessenger.showSnackBar(snackBar);
-      } else {
-        await writeCard();
       }
 
       updateProgress(-1);
