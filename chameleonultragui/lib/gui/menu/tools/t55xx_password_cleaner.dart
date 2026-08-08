@@ -47,6 +47,9 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     Dictionary? selectedDictionary =
         dictionaries.where((d) => d.id == selectedDictionaryId).firstOrNull;
     if (selectedDictionary == null) return;
+    final communicator = appState.communicator;
+    if (communicator == null) return;
+    final newKey = hexToBytes(newKeyController.text);
 
     setState(() {
       isProcessing = true;
@@ -56,38 +59,65 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     });
 
     var localizations = AppLocalizations.of(context)!;
+    var sessionCancelled = false;
 
     try {
-      String targetUID = "DE AD BE EF FF";
-
-      for (int i = 0; i < selectedDictionary.keys.length; i++) {
-        if (!isProcessing) break;
-
-        setState(() {
-          currentKeyIndex = i + 1;
-          currentKey = bytesToHexSpace(selectedDictionary.keys[i]);
-        });
-
-        try {
-          await appState.communicator!.writeEM410XtoT55XX(hexToBytes(targetUID),
-              hexToBytes(newKeyController.text), [selectedDictionary.keys[i]]);
-
-          var newCard = await appState.communicator!.readEM410X();
-
-          if (newCard != null && newCard.toString() == targetUID) {
-            setState(() {
-              foundPassword = bytesToHexSpace(selectedDictionary.keys[i]);
-              isProcessing = false;
-            });
-
-            if (mounted) {
-              showSuccessDialog(localizations, foundPassword!);
-            }
-            return;
-          }
-        } catch (e) {
-          continue;
+      await appState.rfOperations.runForeground(() async {
+        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+          sessionCancelled = true;
+          return;
         }
+
+        String targetUID = "DE AD BE EF FF";
+
+        for (int i = 0; i < selectedDictionary.keys.length; i++) {
+          if (!isProcessing) break;
+
+          setState(() {
+            currentKeyIndex = i + 1;
+            currentKey = bytesToHexSpace(selectedDictionary.keys[i]);
+          });
+
+          try {
+            await communicator.writeEM410XtoT55XX(
+                hexToBytes(targetUID), newKey, [selectedDictionary.keys[i]]);
+            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+              sessionCancelled = true;
+              return;
+            }
+
+            var newCard = await communicator.readEM410X();
+            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+              sessionCancelled = true;
+              return;
+            }
+
+            if (newCard != null && newCard.toString() == targetUID) {
+              setState(() {
+                foundPassword = bytesToHexSpace(selectedDictionary.keys[i]);
+                isProcessing = false;
+              });
+
+              showSuccessDialog(localizations, foundPassword!);
+              return;
+            }
+          } catch (_) {
+            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+              sessionCancelled = true;
+              return;
+            }
+            continue;
+          }
+        }
+      });
+
+      if (sessionCancelled || !mounted) {
+        if (mounted) {
+          setState(() {
+            isProcessing = false;
+          });
+        }
+        return;
       }
 
       if (isProcessing) {
@@ -100,13 +130,12 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         isProcessing = false;
       });
 
-      if (mounted) {
-        showErrorDialog(e.toString());
-      }
+      showErrorDialog(e.toString());
     }
   }
 

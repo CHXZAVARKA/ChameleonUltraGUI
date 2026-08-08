@@ -88,6 +88,10 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
 
     setState(() {
       _isCapturing = true;
@@ -96,13 +100,27 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
     });
 
     try {
-      if (!await appState.communicator!.isReaderDeviceMode()) {
-        await appState.communicator!.setReaderDeviceMode(true);
-      }
+      final samples = await appState.rfOperations.runForeground(() async {
+        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+          return null;
+        }
 
-      final samples =
-          await appState.communicator!.lfSniff(timeoutMs: timeoutMs);
-      if (!mounted) {
+        if (!await communicator.isReaderDeviceMode()) {
+          if (!appState.hasConnectedCommunicator(communicator)) {
+            return null;
+          }
+          await communicator.setReaderDeviceMode(true);
+        }
+        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+          return null;
+        }
+
+        final samples = await communicator.lfSniff(timeoutMs: timeoutMs);
+        return mounted && appState.hasConnectedCommunicator(communicator)
+            ? samples
+            : null;
+      });
+      if (samples == null || !mounted) {
         return;
       }
 

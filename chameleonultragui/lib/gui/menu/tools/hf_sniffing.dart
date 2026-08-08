@@ -97,6 +97,10 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
 
     setState(() {
       _isCapturing = true;
@@ -107,13 +111,27 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
     });
 
     try {
-      if (await appState.communicator!.isReaderDeviceMode()) {
-        await appState.communicator!.setReaderDeviceMode(false);
-      }
+      final rawBytes = await appState.rfOperations.runForeground(() async {
+        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+          return null;
+        }
 
-      final rawBytes =
-          await appState.communicator!.hf14aSniff(timeoutMs: timeoutMs);
-      if (!mounted) {
+        if (await communicator.isReaderDeviceMode()) {
+          if (!appState.hasConnectedCommunicator(communicator)) {
+            return null;
+          }
+          await communicator.setReaderDeviceMode(false);
+        }
+        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+          return null;
+        }
+
+        final rawBytes = await communicator.hf14aSniff(timeoutMs: timeoutMs);
+        return mounted && appState.hasConnectedCommunicator(communicator)
+            ? rawBytes
+            : null;
+      });
+      if (rawBytes == null || !mounted) {
         return;
       }
 
