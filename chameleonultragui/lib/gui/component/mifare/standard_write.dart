@@ -69,6 +69,27 @@ class _StandardMifareClassicWritePanelState
     widget.onBusyChanged?.call(value);
   }
 
+  String _safeMaintenanceError(Object error) {
+    final localizations = AppLocalizations.of(context)!;
+    if (error is MifareClassicMaintenanceException) {
+      return MifareClassicFeatureStrings.of(context)
+          .maintenanceFailure(error.failure, localizations);
+    }
+    return localizations.error;
+  }
+
+  void _logMaintenanceError(
+    ChameleonGUIState appState,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    (appState.log ?? appState.communicator?.log)?.e(
+      'MIFARE Classic maintenance failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
   @override
   void dispose() {
     _cancelled = true;
@@ -252,9 +273,10 @@ class _StandardMifareClassicWritePanelState
           _plan = plan;
         });
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
-        setState(() => _error = error.toString());
+        setState(() => _error = _safeMaintenanceError(error));
       }
     } finally {
       _setBusy(false);
@@ -267,6 +289,7 @@ class _StandardMifareClassicWritePanelState
     if (plan == null || maintenance == null || !_authorized) {
       return;
     }
+    final appState = context.read<ChameleonGUIState>();
 
     setState(() {
       _error = null;
@@ -292,10 +315,11 @@ class _StandardMifareClassicWritePanelState
           _authorized = false;
         });
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          _error = _safeMaintenanceError(error);
           _plan = null;
           _maintenance = null;
           _progress = null;

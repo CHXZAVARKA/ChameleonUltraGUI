@@ -1,3 +1,5 @@
+import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:flutter/widgets.dart';
 
 /// English source strings for this feature branch.
@@ -67,4 +69,39 @@ class MifareClassicFeatureStrings {
   String writeComplete(int count) =>
       'Complete: $count blocks written and verified.';
   String get operationFailed => 'Operation stopped';
+
+  /// Localization gate: maintenance-specific reasons must be added through
+  /// Crowdin before this feature can be considered fully localized.
+  String maintenanceFailure(
+    MifareClassicMaintenanceFailure failure,
+    AppLocalizations localizations,
+  ) {
+    return switch (failure) {
+      MifareClassicMaintenanceFailure.invalidImage =>
+        'The selected dump is not supported.',
+      MifareClassicMaintenanceFailure.incompatibleProfile =>
+        'The selected key profile is not compatible with this dump.',
+      MifareClassicMaintenanceFailure.communicationLost =>
+        'Communication with Chameleon was lost. Reconnect and try again.',
+      MifareClassicMaintenanceFailure.stalePlan =>
+        'The card check expired. Run preflight again.',
+      MifareClassicMaintenanceFailure.noCard => localizations.no_card_found,
+      MifareClassicMaintenanceFailure.wrongCardType ||
+      MifareClassicMaintenanceFailure.identityMismatch =>
+        'The presented card does not match the selected dump.',
+      MifareClassicMaintenanceFailure.authenticationFailed =>
+        'The selected key profile could not authenticate this card.',
+      MifareClassicMaintenanceFailure.readFailed =>
+        localizations.recovery_error_dump_data,
+      MifareClassicMaintenanceFailure.invalidAccessBits ||
+      MifareClassicMaintenanceFailure.writeNotAllowed ||
+      MifareClassicMaintenanceFailure.verificationNotAllowed =>
+        'This card does not allow the requested change with the selected key profile.',
+      MifareClassicMaintenanceFailure.writeFailed ||
+      MifareClassicMaintenanceFailure.verificationFailed =>
+        localizations.magic_failed_write,
+      MifareClassicMaintenanceFailure.cancelled =>
+        'The operation was cancelled.',
+    };
+  }
 }

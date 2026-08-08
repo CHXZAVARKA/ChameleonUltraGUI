@@ -1,14 +1,18 @@
 import 'dart:typed_data';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/component/mifare/standard_write.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/card/edit.dart';
 import 'package:chameleonultragui/gui/page/write_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -258,4 +262,120 @@ void main() {
         findsOneWidget);
     expect(find.text('Incomplete dump'), findsNothing);
   });
+
+  testWidgets(
+    'maintenance failure hides diagnostics from the user and logs them',
+    (tester) async {
+      const diagnostics = 'USB endpoint 0x81 stalled after frame 4f2a';
+      SharedPreferences.setMockInitialValues({});
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      preferences.setMifareClassicKeyProfiles([
+        MifareClassicKeyProfile(
+          id: '1k-profile',
+          name: 'Safe keys',
+          cardType: 'm1k',
+          sectorCount: 16,
+          assignments: [
+            MifareClassicKeyAssignment(
+              sector: 0,
+              keyA: Uint8List.fromList([1, 2, 3, 4, 5, 6]),
+            ),
+          ],
+        ),
+      ]);
+      preferences.setCards([
+        CardSave(
+          id: 'complete-card',
+          uid: '01020304',
+          name: 'Complete dump',
+          tag: TagType.mifare1K,
+          extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+          data: List.generate(
+            256,
+            (block) => block < 64 ? Uint8List(16) : Uint8List(0),
+          ),
+        ),
+      ]);
+      final logOutput = MemoryOutput();
+      final logger = Logger(
+        filter: ProductionFilter(),
+        printer: SimplePrinter(colors: false),
+        output: logOutput,
+      );
+      addTearDown(logger.close);
+      final appState = ChameleonGUIState(preferences)
+        ..log = logger
+        ..communicator = _FailingPreflightCommunicator(logger, diagnostics);
+
+      tester.view.physicalSize = const Size(1200, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: MaterialApp(
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const Scaffold(body: StandardMifareClassicWritePanel()),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Select saved card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Complete dump'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select key profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Safe keys (1)').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Run preflight'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(diagnostics), findsNothing);
+      expect(find.textContaining('0xe1'), findsNothing);
+      expect(
+        find.text(
+          'Operation stopped: Communication with Chameleon was lost. '
+          'Reconnect and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        logOutput.buffer.map((event) => event.origin.error),
+        contains(
+          isA<MifareClassicMaintenanceException>()
+              .having(
+                (error) => error.failure,
+                'failure',
+                MifareClassicMaintenanceFailure.communicationLost,
+              )
+              .having(
+                (error) => error.toString(),
+                'diagnostics',
+                contains(diagnostics),
+              ),
+        ),
+      );
+    },
+  );
+}
+
+class _FailingPreflightCommunicator extends ChameleonCommunicator {
+  final String diagnostics;
+
+  _FailingPreflightCommunicator(super.logger, this.diagnostics);
+
+  @override
+  Future<bool> isReaderDeviceMode() async {
+    throw MifareClassicMaintenanceException(
+      MifareClassicMaintenanceFailure.communicationLost,
+      diagnostics,
+      status: 0xe1,
+    );
+  }
 }
