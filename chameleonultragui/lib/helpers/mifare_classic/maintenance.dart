@@ -74,11 +74,11 @@ class MifareClassicIoResult {
 }
 
 abstract class MifareClassicMaintenancePort {
-  Future<void> ensureReaderMode();
+  Future<void> ensureReaderMode({bool Function()? shouldCancel});
 
   Future<CardData?> scan();
 
-  Future<MifareClassicType> detectType();
+  Future<MifareClassicType> detectType({bool Function()? shouldCancel});
 
   Future<bool> isBlockAvailable(int block);
 
@@ -99,8 +99,10 @@ class ChameleonMifareClassicMaintenancePort
   ChameleonMifareClassicMaintenancePort(this.communicator);
 
   @override
-  Future<void> ensureReaderMode() async {
+  Future<void> ensureReaderMode({bool Function()? shouldCancel}) async {
+    if (shouldCancel?.call() ?? false) return;
     if (!await communicator.isReaderDeviceMode()) {
+      if (shouldCancel?.call() ?? false) return;
       await communicator.setReaderDeviceMode(true);
     }
   }
@@ -109,11 +111,20 @@ class ChameleonMifareClassicMaintenancePort
   Future<CardData?> scan() => communicator.scan14443aTag();
 
   @override
-  Future<MifareClassicType> detectType() async {
+  Future<MifareClassicType> detectType({bool Function()? shouldCancel}) async {
+    if (shouldCancel?.call() ?? false) {
+      return MifareClassicType.none;
+    }
     if (!await communicator.detectMf1Support()) {
       return MifareClassicType.none;
     }
-    return mfClassicGetType(communicator);
+    if (shouldCancel?.call() ?? false) {
+      return MifareClassicType.none;
+    }
+    return mfClassicGetType(
+      communicator,
+      canContinue: () => !(shouldCancel?.call() ?? false),
+    );
   }
 
   @override
@@ -295,15 +306,19 @@ class MifareClassicMaintenance {
       );
     }
 
+    _throwIfCancelled(shouldCancel);
     await _communicate(
-      port.ensureReaderMode,
+      () => port.ensureReaderMode(shouldCancel: shouldCancel),
       'Communication with Chameleon was lost while enabling reader mode',
     );
+    _throwIfCancelled(shouldCancel);
     final initialCard = await _requireCard();
+    _throwIfCancelled(shouldCancel);
     final detectedType = await _communicate(
-      port.detectType,
+      () => port.detectType(shouldCancel: shouldCancel),
       'Communication with Chameleon was lost while detecting the card type',
     );
+    _throwIfCancelled(shouldCancel);
     if (detectedType != geometry.type) {
       throw MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.wrongCardType,
@@ -311,6 +326,7 @@ class MifareClassicMaintenance {
       );
     }
     await _requireExactGeometry(geometry);
+    _throwIfCancelled(shouldCancel);
     if (!_startsWith(blocks[0], initialCard.uid)) {
       throw const MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.identityMismatch,
@@ -342,6 +358,7 @@ class MifareClassicMaintenance {
         initialCard.atqa,
         sector: sector,
       );
+      _throwIfCancelled(shouldCancel);
       final trailerBlock = mfClassicGetSectorTrailerBlockBySector(sector);
       final credentials = <int, _MifareClassicCredential>{};
 
@@ -356,6 +373,7 @@ class MifareClassicMaintenance {
           sector: sector,
           block: trailerBlock,
         );
+        _throwIfCancelled(shouldCancel);
         if (!result.isSuccess) {
           throw MifareClassicMaintenanceException(
             MifareClassicMaintenanceFailure.authenticationFailed,
@@ -385,7 +403,9 @@ class MifareClassicMaintenance {
         trailerBlock,
         credentials.values,
         sector: sector,
+        shouldCancel: shouldCancel,
       );
+      _throwIfCancelled(shouldCancel);
       final accessValues = MifareClassicDumpAnalyzer.accessConditionValues(
           bytesToHex(trailer.data.sublist(6, 9)));
       if (accessValues == null) {
@@ -421,6 +441,7 @@ class MifareClassicMaintenance {
           sector: sector,
           block: block,
         );
+        _throwIfCancelled(shouldCancel);
         if (!current.isSuccess || current.data.length != 16) {
           throw MifareClassicMaintenanceException(
             MifareClassicMaintenanceFailure.readFailed,
@@ -488,6 +509,7 @@ class MifareClassicMaintenance {
       initialCard.atqa,
       sector: geometry.sectorCount - 1,
     );
+    _throwIfCancelled(shouldCancel);
 
     if (plannedDataBlocks != geometry.dataBlockCount) {
       throw StateError(
@@ -535,21 +557,24 @@ class MifareClassicMaintenance {
 
     _throwIfCancelled(shouldCancel);
     await _communicate(
-      port.ensureReaderMode,
+      () => port.ensureReaderMode(shouldCancel: shouldCancel),
       'Communication with Chameleon was lost while enabling reader mode',
       verifiedBlocks: verified,
     );
+    _throwIfCancelled(shouldCancel);
     await _requireExpectedCard(
       plan._expectedUid,
       plan._expectedSak,
       plan._expectedAtqa,
       sector: 0,
     );
+    _throwIfCancelled(shouldCancel);
     final detectedType = await _communicate(
-      port.detectType,
+      () => port.detectType(shouldCancel: shouldCancel),
       'Communication with Chameleon was lost while detecting the card type',
       verifiedBlocks: verified,
     );
+    _throwIfCancelled(shouldCancel);
     if (detectedType != plan._geometry.type) {
       throw MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.wrongCardType,
@@ -557,6 +582,7 @@ class MifareClassicMaintenance {
       );
     }
     await _requireExactGeometry(plan._geometry, verifiedBlocks: verified);
+    _throwIfCancelled(shouldCancel);
     final capacityCheck = await _communicate(
       () => port.authenticate(
         plan._capacityBlock,
@@ -568,6 +594,7 @@ class MifareClassicMaintenance {
       block: plan._capacityBlock,
       verifiedBlocks: verified,
     );
+    _throwIfCancelled(shouldCancel);
     if (!capacityCheck.isSuccess) {
       throw MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.wrongCardType,
@@ -588,6 +615,7 @@ class MifareClassicMaintenance {
       block: 0,
       verifiedBlocks: verified,
     );
+    _throwIfCancelled(shouldCancel);
     if (!manufacturerBlock.isSuccess ||
         !_sameBytes(manufacturerBlock.data, plan._expectedManufacturerBlock)) {
       throw MifareClassicMaintenanceException(
@@ -610,6 +638,7 @@ class MifareClassicMaintenance {
           plan._expectedAtqa,
           sector: precondition.sector,
         );
+        _throwIfCancelledBeforePrecondition(shouldCancel, precondition);
         revalidationSector = precondition.sector;
       }
       final currentBlock = await _communicate(
@@ -655,6 +684,7 @@ class MifareClassicMaintenance {
       plan._expectedAtqa,
       sector: plan._geometry.sectorCount - 1,
     );
+    _throwIfCancelled(shouldCancel);
 
     for (final operation in plan._operations) {
       _throwIfCancelledBeforeBlock(shouldCancel, operation, verified);
@@ -935,15 +965,18 @@ class MifareClassicMaintenance {
     int block,
     Iterable<_MifareClassicCredential> credentials, {
     required int sector,
+    bool Function()? shouldCancel,
   }) async {
     MifareClassicIoResult? lastResult;
     for (final credential in credentials) {
+      _throwIfCancelled(shouldCancel);
       final result = await _communicate(
         () => port.readBlock(block, credential.keyType, credential.key),
         'Communication with Chameleon was lost while reading the sector trailer',
         sector: sector,
         block: block,
       );
+      _throwIfCancelled(shouldCancel);
       lastResult = result;
       if (result.isSuccess && result.data.length == 16) {
         return result;

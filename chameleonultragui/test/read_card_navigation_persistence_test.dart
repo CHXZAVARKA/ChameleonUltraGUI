@@ -124,6 +124,68 @@ void main() {
     expect(find.textContaining('01 02 03 04'), findsOneWidget);
   });
 
+  testWidgets('queued manual HF read does not cross a reconnect', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(tester);
+    await fixture.openReadCard();
+    final replacement = _ContinuousHFCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    final foregroundBlocker = Completer<void>();
+    final background = fixture.appState.rfOperations.tryRunBackground(() async {
+      await foregroundBlocker.future;
+    });
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+    await tester.pump();
+    expect(replacement.scanCalls, 0);
+
+    fixture.appState
+      ..communicator = replacement
+      ..changesMade();
+    foregroundBlocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(replacement.scanCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('queued manual HF read rejects a replacement connector', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousHFCommunicator(logger, port: connector),
+    );
+    final communicator = fixture.communicator as _ContinuousHFCommunicator;
+    await fixture.openReadCard();
+    final blocker = Completer<void>();
+    final background = fixture.appState.rfOperations.tryRunBackground(() async {
+      await blocker.future;
+    });
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+    await tester.pump();
+    fixture.appState
+      ..connector = (EmulatorSerial(log: fixture.logger)
+        ..connected = true
+        ..device = ChameleonDevice.ultra
+        ..connectionType = ConnectionType.usb)
+      ..changesMade();
+    blocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(communicator.scanCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('pending LF read updates the session while Read Card is hidden', (
     tester,
   ) async {

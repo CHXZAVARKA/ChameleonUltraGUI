@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
@@ -30,6 +31,7 @@ class _StandardMifareClassicWritePanelState
   String? _profileId;
   MifareClassicMaintenancePlan? _plan;
   MifareClassicMaintenance? _maintenance;
+  ConnectedDeviceSession? _maintenanceSession;
   MifareClassicMaintenanceReport? _report;
   MifareClassicMaintenanceProgress? _progress;
   bool _busy = false;
@@ -55,6 +57,7 @@ class _StandardMifareClassicWritePanelState
   void _invalidatePlan() {
     _plan = null;
     _maintenance = null;
+    _maintenanceSession = null;
     _report = null;
     _progress = null;
     _authorized = false;
@@ -240,7 +243,7 @@ class _StandardMifareClassicWritePanelState
 
   Future<void> _runPreflight() async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
+    final session = ConnectedDeviceSession.capture(appState);
     final profiles = _profiles(appState);
     MifareClassicKeyProfile? profile;
     for (final candidate in profiles) {
@@ -249,7 +252,7 @@ class _StandardMifareClassicWritePanelState
         break;
       }
     }
-    if (_image == null || profile == null || communicator == null) {
+    if (_image == null || profile == null || session == null) {
       return;
     }
 
@@ -257,16 +260,16 @@ class _StandardMifareClassicWritePanelState
     _setBusy(true);
     try {
       final maintenance = MifareClassicMaintenance(
-        ChameleonMifareClassicMaintenancePort(communicator),
+        ChameleonMifareClassicMaintenancePort(session.communicator),
       );
       final plan = await appState.rfOperations.runForeground(() async {
-        if (_cancelled) {
+        if (_cancelled || !session.isCurrent) {
           return null;
         }
         return maintenance.preflight(
             image: _image!,
             profile: profile!,
-            shouldCancel: () => _cancelled,
+            shouldCancel: () => _cancelled || !session.isCurrent,
             onProgress: (progress) {
               if (mounted) {
                 setState(() => _progress = progress);
@@ -279,6 +282,7 @@ class _StandardMifareClassicWritePanelState
       if (mounted) {
         setState(() {
           _maintenance = maintenance;
+          _maintenanceSession = session;
           _plan = plan;
         });
       }
@@ -295,7 +299,11 @@ class _StandardMifareClassicWritePanelState
   Future<void> _writeAndVerify() async {
     final plan = _plan;
     final maintenance = _maintenance;
-    if (plan == null || maintenance == null || !_authorized) {
+    final session = _maintenanceSession;
+    if (plan == null ||
+        maintenance == null ||
+        session == null ||
+        !_authorized) {
       return;
     }
     final appState = context.read<ChameleonGUIState>();
@@ -307,11 +315,11 @@ class _StandardMifareClassicWritePanelState
     _setBusy(true);
     try {
       final report = await appState.rfOperations.runForeground(() async {
-        if (_cancelled) {
+        if (_cancelled || !session.isCurrent) {
           return null;
         }
         return maintenance.execute(plan,
-            shouldCancel: () => _cancelled,
+            shouldCancel: () => _cancelled || !session.isCurrent,
             onProgress: (progress) {
               if (mounted) {
                 setState(() => _progress = progress);
@@ -326,6 +334,7 @@ class _StandardMifareClassicWritePanelState
           _report = report;
           _plan = null;
           _maintenance = null;
+          _maintenanceSession = null;
           _progress = null;
           _authorized = false;
         });
@@ -337,6 +346,7 @@ class _StandardMifareClassicWritePanelState
           _error = _safeMaintenanceError(error);
           _plan = null;
           _maintenance = null;
+          _maintenanceSession = null;
           _progress = null;
           _authorized = false;
         });

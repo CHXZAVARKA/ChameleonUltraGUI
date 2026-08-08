@@ -18,15 +18,17 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   @override
   Future<bool> isMagic(dynamic data) async {
     try {
+      if (!operationCanContinue) return false;
       if (!await communicator.detectMf1Support()) {
         return false; // not even Mifare Classic
       }
+      if (!operationCanContinue) return false;
 
       Uint8List response = await communicator.send14ARaw(
           Uint8List.fromList([0x30, 0x00]),
           checkResponseCrc: false);
 
-      return response.length == 18; // 16 + 2 byte CRC
+      return operationCanContinue && response.length == 18; // 16 + 2 byte CRC
     } catch (_) {
       return false;
     }
@@ -52,17 +54,24 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
     for (int retry = 0; retry < 10; retry++) {
+      if (!operationCanContinue) return false;
       try {
-        await Future.delayed(const Duration(milliseconds: 50)); // Stability delay
+        await Future.delayed(
+            const Duration(milliseconds: 50)); // Stability delay
+        if (!operationCanContinue) return false;
         if (block == 0) {
-          if (await writeGen3Block(card, data)) return true;
+          if (await writeGen3Block(card, data) && operationCanContinue) {
+            return true;
+          }
         } else {
           if (await writeBlock(block, data,
               tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
             return true;
           }
         }
+        if (!operationCanContinue) return false;
         await Future.delayed(const Duration(milliseconds: 150));
+        if (!operationCanContinue) return false;
       } catch (_) {}
     }
 
@@ -70,19 +79,23 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   }
 
   Future<bool> writeGen3Block(CardSave dump, Uint8List data) async {
+    if (!operationCanContinue) return false;
     // Try to write whole block
     await communicator.send14ARaw(
         Uint8List.fromList([0x90, 0xFB, 0xCC, 0xCC, 0x10, ...data]),
         checkResponseCrc: false);
 
     // Try to write UID only
-    await communicator.send14ARaw(
-        Uint8List.fromList(
-            [0x90, 0xFB, 0xCC, 0xCC, 0x07, ...hexToBytes(dump.uid)]),
-        checkResponseCrc: false);
+    if (operationCanContinue) {
+      await communicator.send14ARaw(
+          Uint8List.fromList(
+              [0x90, 0xFB, 0xCC, 0xCC, 0x07, ...hexToBytes(dump.uid)]),
+          checkResponseCrc: false);
+    }
 
     // Card doesn't respond with anything, just compare UID
-    await Future.delayed(const Duration(milliseconds: 500)); // Wait for card to reboot
+    await Future.delayed(
+        const Duration(milliseconds: 500)); // Wait for card to reboot
     CardData? card = await communicator.scan14443aTag();
     return card != null &&
             bytesToHex(card.uid) ==

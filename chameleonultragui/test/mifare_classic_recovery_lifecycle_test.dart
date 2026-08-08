@@ -109,7 +109,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
-    final appState = ChameleonGUIState(preferences);
+    final appState = ChameleonGUIState(preferences)
+      ..connector = (_TestSerial(log: Logger())..connected = true)
+      ..communicator = _RecordingCommunicator()
+      ..log = Logger();
     final localizations =
         await AppLocalizations.delegate.load(const Locale('en'));
     final recovery = _DelayedRecovery(
@@ -158,6 +161,63 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('queued key check does not cross a reconnect', (tester) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const wakelockChannel = MethodChannel('dev.fluttercommunity.plus/wakelock');
+    messenger.setMockMethodCallHandler(wakelockChannel, (call) async => null);
+    addTearDown(
+        () => messenger.setMockMethodCallHandler(wakelockChannel, null));
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final appState = _connectedState(_RecordingCommunicator());
+    final localizations =
+        await AppLocalizations.delegate.load(const Locale('en'));
+    final recovery = _DelayedRecovery(
+      appState: appState,
+      localizations: localizations,
+    );
+    final info = MifareClassicInfo(
+      type: MifareClassicType.m1k,
+      state: MifareClassicState.checkKeys,
+    )..recovery = recovery;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: MifareClassicHelper(
+              hfInfo: HFCardInfo(uid: '01 02 03 04'),
+              mfcInfo: info,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final blocker = Completer<void>();
+    final background = appState.rfOperations.tryRunBackground(() async {
+      await blocker.future;
+    });
+    await tester.pump();
+    await tester.tap(find.text(localizations.check_keys_dict));
+    await tester.pump();
+    expect(recovery.started.isCompleted, isFalse);
+
+    _reconnect(appState, _RecordingCommunicator());
+    blocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(recovery.started.isCompleted, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('completed key check does not mutate a replacement card session',
       (tester) async {
     final messenger =
@@ -169,7 +229,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
-    final appState = ChameleonGUIState(preferences);
+    final appState = ChameleonGUIState(preferences)
+      ..connector = (_TestSerial(log: Logger())..connected = true)
+      ..communicator = _RecordingCommunicator()
+      ..log = Logger();
     final localizations =
         await AppLocalizations.delegate.load(const Locale('en'));
     final oldRecovery = _DelayedRecovery(

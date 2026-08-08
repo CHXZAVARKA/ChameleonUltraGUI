@@ -18,9 +18,10 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
 
   @override
   Future<bool> isMagic(dynamic data) async {
+    if (!operationCanContinue) return false;
     CardSave cardSave = data;
     CardData? card = await communicator.scan14443aTag();
-    if (card == null) {
+    if (card == null || !operationCanContinue) {
       return false;
     }
 
@@ -50,14 +51,18 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
     for (int retry = 0; retry < 10; retry++) {
+      if (!operationCanContinue) return false;
       try {
         await Future.delayed(
             const Duration(milliseconds: 50)); // Stability delay
+        if (!operationCanContinue) return false;
         if (await writeBlock(block, data,
             tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
           return true;
         }
+        if (!operationCanContinue) return false;
         await Future.delayed(const Duration(milliseconds: 150));
+        if (!operationCanContinue) return false;
       } catch (_) {}
     }
 
@@ -67,6 +72,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   @override
   Future<bool> writeBlock(int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
+    if (!operationCanContinue) return false;
     if (await communicator.mf1WriteBlock(
         block,
         0x60,
@@ -74,14 +80,16 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
             ? gMifareClassicKeys[0]
             : recovery.validKeys[mfClassicGetSectorByBlock(block)],
         data)) {
-      return true;
+      return operationCanContinue;
     }
+    if (!operationCanContinue) return false;
 
     if (useGenericKey) {
       if (await communicator.mf1WriteBlock(block, 0x60,
           recovery.validKeys[mfClassicGetSectorByBlock(block)], data)) {
-        return true;
+        return operationCanContinue;
       }
+      if (!operationCanContinue) return false;
     }
 
     if (tryBothKeys) {
@@ -92,14 +100,16 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
               ? gMifareClassicKeys[0]
               : recovery.validKeys[40 + mfClassicGetSectorByBlock(block)],
           data)) {
-        return true;
+        return operationCanContinue;
       }
+      if (!operationCanContinue) return false;
 
       if (useGenericKey) {
         if (await communicator.mf1WriteBlock(block, 0x61,
             recovery.validKeys[40 + mfClassicGetSectorByBlock(block)], data)) {
-          return true;
+          return operationCanContinue;
         }
+        if (!operationCanContinue) return false;
       }
     }
 
@@ -109,6 +119,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
+    if (!operationCanContinue) return false;
     List<Uint8List> data = card.data;
     List<bool> cleanSectors = List.generate(40, (index) => false);
     failedBlocks = [];
@@ -118,6 +129,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
     } catch (e) {
       return false;
     }
+    if (!operationCanContinue) return false;
 
     if (data.isEmpty || data[0].isEmpty) {
       if (data.isEmpty) {
@@ -127,11 +139,13 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
     }
 
     for (var sector = 0; sector < mfClassicGetSectorCount(type); sector++) {
+      if (!operationCanContinue) return false;
       var block = mfClassicGetSectorTrailerBlockBySector(sector);
       if (data.length > block && data[block].isNotEmpty) {
         cleanSectors[sector] = await writeBlockModifier(
             card, block, data[block],
             tryBothKeys: true);
+        if (!operationCanContinue) return false;
         if (cleanSectors[sector]) {
           // Update keys to match the newly written trailer,
           // so subsequent data block writes use the correct keys.
@@ -153,6 +167,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
         }
 
         if (data.length > blockToWrite && data[blockToWrite].isNotEmpty) {
+          if (!operationCanContinue) return false;
           if (!(await writeBlockModifier(card, blockToWrite, data[blockToWrite],
                       useGenericKey: cleanSectors[sector], tryBothKeys: true) &&
                   cleanSectors[sector]) &&
@@ -160,12 +175,15 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
             failedBlocks.add(blockToWrite);
           }
 
+          if (!operationCanContinue) return false;
+
           update((blockToWrite / mfClassicGetBlockCount(type) * 100).round());
         }
       }
     }
 
     for (var sector = 0; sector < mfClassicGetSectorCount(type); sector++) {
+      if (!operationCanContinue) return false;
       var block = mfClassicGetSectorTrailerBlockBySector(sector);
       if (cleanSectors[sector] &&
           data.length > block &&
@@ -175,6 +193,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
           // how we went here? We set to default sector trailer and now we can't write to it. Probably card is lost
           return false;
         }
+        if (!operationCanContinue) return false;
       }
     }
 

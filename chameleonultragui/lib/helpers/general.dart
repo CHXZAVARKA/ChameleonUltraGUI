@@ -614,7 +614,10 @@ bool isEM410X(TagType type) {
 }
 
 Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
-    BuildContext context, dynamic updateMifareClassicRecovery) async {
+  BuildContext context,
+  dynamic updateMifareClassicRecovery, {
+  bool Function()? canContinue,
+}) async {
   var appState = Provider.of<ChameleonGUIState>(context, listen: false);
   var localizations = AppLocalizations.of(context)!;
 
@@ -626,26 +629,28 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
   if (communicator == null) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
-  bool canContinue() =>
-      context.mounted && appState.hasConnectedCommunicator(communicator);
+  bool mayContinue() =>
+      (canContinue?.call() ?? true) &&
+      context.mounted &&
+      appState.hasConnectedCommunicator(communicator);
 
-  if (!canContinue()) {
+  if (!mayContinue()) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
 
   final isReaderMode = await communicator.isReaderDeviceMode();
-  if (!canContinue()) {
+  if (!mayContinue()) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
   if (!isReaderMode) {
     await communicator.setReaderDeviceMode(true);
-    if (!canContinue()) {
+    if (!mayContinue()) {
       return (hfInfo, mfcInfo, mfuInfo);
     }
   }
 
   CardData? card = await communicator.scan14443aTag();
-  if (!canContinue()) {
+  if (!mayContinue()) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
 
@@ -658,16 +663,16 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
     TagType type = TagType.unknown;
 
     final supportsMifareClassic = await communicator.detectMf1Support();
-    if (!canContinue()) {
+    if (!mayContinue()) {
       return (hfInfo, mfcInfo, mfuInfo);
     }
     if (!supportsMifareClassic) {
       (type, mfuInfo) = await performMifareUltralightScan(
         communicator,
         mfuInfo,
-        canContinue: canContinue,
+        canContinue: mayContinue,
       );
-      if (!canContinue()) {
+      if (!mayContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);
       }
     } else {
@@ -679,9 +684,9 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
         mfcInfo,
         context,
         updateMifareClassicRecovery,
-        canContinue: canContinue,
+        canContinue: mayContinue,
       );
-      if (!canContinue()) {
+      if (!mayContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);
       }
     }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -33,20 +34,13 @@ class _RecoveryOperationCancelled implements Exception {
 }
 
 class _RecoveryOperation {
-  final ChameleonGUIState appState;
-  final AbstractSerial connector;
-  final ChameleonCommunicator communicator;
+  final ConnectedDeviceSession session;
 
-  const _RecoveryOperation({
-    required this.appState,
-    required this.connector,
-    required this.communicator,
-  });
+  const _RecoveryOperation(this.session);
 
-  bool get isCurrent =>
-      identical(appState.connector, connector) &&
-      !connector.isDFU &&
-      appState.hasConnectedCommunicator(communicator);
+  ChameleonCommunicator get communicator => session.communicator;
+
+  bool get isCurrent => session.isCurrent;
 
   void ensureCurrent() {
     if (!isCurrent) {
@@ -108,19 +102,8 @@ class MifareClassicRecovery {
         cardData = cardData ?? List.generate(256, (_) => Uint8List(0));
 
   _RecoveryOperation? _captureOperation() {
-    final connector = appState.connector;
-    final communicator = appState.communicator;
-    if (connector == null ||
-        communicator == null ||
-        !connector.connected ||
-        connector.isDFU) {
-      return null;
-    }
-    return _RecoveryOperation(
-      appState: appState,
-      connector: connector,
-      communicator: communicator,
-    );
+    final session = ConnectedDeviceSession.capture(appState);
+    return session == null ? null : _RecoveryOperation(session);
   }
 
   Future<bool> _completeOperation(
@@ -154,7 +137,9 @@ class MifareClassicRecovery {
     Uint8List? key;
     keyCheckProgress = null;
     int chunkSize =
-        operation.connector.connectionType == ConnectionType.ble ? 32 : 64;
+        operation.session.connector.connectionType == ConnectionType.ble
+            ? 32
+            : 64;
 
     if (getSectorState(sector, keyType) != ChameleonKeyCheckmark.found &&
         getSectorState(sector, keyType) != ChameleonKeyCheckmark.disabled) {

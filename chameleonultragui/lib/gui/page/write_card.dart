@@ -3,6 +3,7 @@ import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/component/mifare/standard_write.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/write.dart';
 import 'package:chameleonultragui/main.dart';
@@ -30,6 +31,15 @@ class WriteCardPageState extends State<WriteCardPage> {
   AbstractWriteHelper? baseHelper;
   AbstractWriteHelper? helper;
 
+  bool _canUseHelper(
+    ConnectedDeviceSession session,
+    AbstractWriteHelper? candidate,
+  ) =>
+      mounted &&
+      session.isCurrent &&
+      candidate != null &&
+      identical(candidate.communicator, session.communicator);
+
   Future<String?> cardSelectDialog(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
     var tags = appState.sharedPreferencesProvider.getCards();
@@ -45,6 +55,10 @@ class WriteCardPageState extends State<WriteCardPage> {
   Future<void> onTap(CardSave selectedCard, dynamic close,
       AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
+      return;
+    }
 
     setState(() {
       card = selectedCard;
@@ -57,26 +71,50 @@ class WriteCardPageState extends State<WriteCardPage> {
         helper = baseHelper!.getAvailableMethods()[0];
       });
     }
+    final selectedHelper = helper;
 
     await appState.rfOperations.runForeground(() async {
-      if (mounted) {
-        await helper?.getCardType();
+      if (!_canUseHelper(session, selectedHelper) ||
+          !identical(helper, selectedHelper)) {
+        return;
       }
+      selectedHelper!.setOperationContinuation(
+        () =>
+            _canUseHelper(session, selectedHelper) &&
+            identical(helper, selectedHelper),
+      );
+      await selectedHelper.getCardType();
     });
 
+    if (!_canUseHelper(session, selectedHelper) ||
+        !identical(helper, selectedHelper)) {
+      return;
+    }
     if (!mounted) return;
     close(context, selectedCard.name);
   }
 
   Future<void> detectMagicType() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final session = ConnectedDeviceSession.capture(appState);
+    final operationBaseHelper = baseHelper;
+    final operationCard = card;
+    if (session == null ||
+        operationCard == null ||
+        !_canUseHelper(session, operationBaseHelper)) {
+      return;
+    }
 
     await appState.rfOperations.runForeground(() async {
-      if (!mounted) {
+      if (!_canUseHelper(session, operationBaseHelper) ||
+          !identical(baseHelper, operationBaseHelper) ||
+          !identical(card, operationCard)) {
         return;
       }
       await _detectMagicTypeUnderLease(
-        appState,
+        session,
+        operationBaseHelper!,
+        operationCard,
         ScaffoldMessenger.of(context),
         AppLocalizations.of(context)!,
       );
@@ -84,17 +122,39 @@ class WriteCardPageState extends State<WriteCardPage> {
   }
 
   Future<void> _detectMagicTypeUnderLease(
-    ChameleonGUIState appState,
+    ConnectedDeviceSession session,
+    AbstractWriteHelper operationBaseHelper,
+    CardSave operationCard,
     ScaffoldMessengerState scaffoldMessenger,
     AppLocalizations localizations,
   ) async {
-    if (!await appState.communicator!.isReaderDeviceMode()) {
-      await appState.communicator!.setReaderDeviceMode(true);
+    final appState = session.appState;
+    final communicator = session.communicator;
+    if (!await communicator.isReaderDeviceMode()) {
+      if (!_canUseHelper(session, operationBaseHelper) ||
+          !identical(baseHelper, operationBaseHelper) ||
+          !identical(card, operationCard)) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
+    }
+    if (!_canUseHelper(session, operationBaseHelper) ||
+        !identical(baseHelper, operationBaseHelper) ||
+        !identical(card, operationCard)) {
+      return;
     }
 
-    for (final magicHelper in baseHelper!.getAvailableMethods()) {
-      if (await magicHelper.isMagic(card)) {
-        if (!mounted) {
+    for (final magicHelper in operationBaseHelper.getAvailableMethods()) {
+      magicHelper.setOperationContinuation(
+        () =>
+            _canUseHelper(session, magicHelper) &&
+            identical(baseHelper, operationBaseHelper) &&
+            identical(card, operationCard),
+      );
+      if (await magicHelper.isMagic(operationCard)) {
+        if (!_canUseHelper(session, magicHelper) ||
+            !identical(baseHelper, operationBaseHelper) ||
+            !identical(card, operationCard)) {
           return;
         }
         setState(() {
@@ -102,11 +162,20 @@ class WriteCardPageState extends State<WriteCardPage> {
         });
 
         try {
-          await helper?.getCardType();
+          await magicHelper.getCardType();
         } catch (_) {
-          await helper?.getCardType();
+          if (!_canUseHelper(session, magicHelper) ||
+              !identical(helper, magicHelper) ||
+              !identical(baseHelper, operationBaseHelper) ||
+              !identical(card, operationCard)) {
+            return;
+          }
+          await magicHelper.getCardType();
         }
-        if (!mounted) {
+        if (!_canUseHelper(session, magicHelper) ||
+            !identical(helper, magicHelper) ||
+            !identical(baseHelper, operationBaseHelper) ||
+            !identical(card, operationCard)) {
           return;
         }
 
@@ -122,6 +191,12 @@ class WriteCardPageState extends State<WriteCardPage> {
         );
 
         scaffoldMessenger.showSnackBar(snackBar);
+        return;
+      }
+      if (!session.isCurrent ||
+          !mounted ||
+          !identical(baseHelper, operationBaseHelper) ||
+          !identical(card, operationCard)) {
         return;
       }
     }
@@ -157,30 +232,72 @@ class WriteCardPageState extends State<WriteCardPage> {
 
   Future<void> writeCard() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final session = ConnectedDeviceSession.capture(appState);
+    final operationHelper = helper;
+    final operationCard = card;
+    if (session == null ||
+        operationCard == null ||
+        !_canUseHelper(session, operationHelper)) {
+      return;
+    }
     await appState.rfOperations.runForeground(
       () async {
-        if (mounted) {
-          await _writeCardUnderLease(appState);
+        if (_canUseHelper(session, operationHelper) &&
+            identical(helper, operationHelper) &&
+            identical(card, operationCard)) {
+          await _writeCardUnderLease(
+            session,
+            operationHelper!,
+            operationCard,
+          );
         }
       },
     );
+    if (mounted &&
+        progress != -1 &&
+        (!_canUseHelper(session, operationHelper) ||
+            !identical(helper, operationHelper) ||
+            !identical(card, operationCard))) {
+      updateProgress(-1);
+    }
   }
 
-  Future<void> _writeCardUnderLease(ChameleonGUIState appState) async {
+  Future<void> _writeCardUnderLease(
+    ConnectedDeviceSession session,
+    AbstractWriteHelper operationHelper,
+    CardSave operationCard,
+  ) async {
     var scaffoldMessenger = ScaffoldMessenger.of(context);
     var localizations = AppLocalizations.of(context)!;
     SnackBar snackBar;
     updateProgress(0);
 
-    if (!await appState.communicator!.isReaderDeviceMode()) {
-      await appState.communicator!.setReaderDeviceMode(true);
+    final communicator = session.communicator;
+    if (!await communicator.isReaderDeviceMode()) {
+      if (!_canUseHelper(session, operationHelper) ||
+          !identical(helper, operationHelper) ||
+          !identical(card, operationCard)) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
     }
-    if (!mounted) {
+    if (!_canUseHelper(session, operationHelper) ||
+        !identical(helper, operationHelper) ||
+        !identical(card, operationCard)) {
       return;
     }
 
-    final writeSucceeded = await helper!.writeData(card!, updateProgress);
-    if (!mounted) {
+    operationHelper.setOperationContinuation(
+      () =>
+          _canUseHelper(session, operationHelper) &&
+          identical(helper, operationHelper) &&
+          identical(card, operationCard),
+    );
+    final writeSucceeded =
+        await operationHelper.writeData(operationCard, updateProgress);
+    if (!_canUseHelper(session, operationHelper) ||
+        !identical(helper, operationHelper) ||
+        !identical(card, operationCard)) {
       return;
     }
     if (writeSucceeded) {
@@ -246,20 +363,48 @@ class WriteCardPageState extends State<WriteCardPage> {
       SnackBar snackBar;
       updateProgress(0);
 
+      final session = ConnectedDeviceSession.capture(appState);
+      final operationHelper = helper;
+      final operationCard = card;
+      if (session == null ||
+          operationCard == null ||
+          !_canUseHelper(session, operationHelper)) {
+        updateProgress(-1);
+        return;
+      }
+
       final compatible = await appState.rfOperations.runForeground(() async {
-        if (!mounted) {
-          return false;
+        if (!_canUseHelper(session, operationHelper) ||
+            !identical(helper, operationHelper) ||
+            !identical(card, operationCard)) {
+          return null;
         }
-        final compatible = await helper!.isCompatible(card!);
-        if (!mounted) {
-          return false;
+        operationHelper!.setOperationContinuation(
+          () =>
+              _canUseHelper(session, operationHelper) &&
+              identical(helper, operationHelper) &&
+              identical(card, operationCard),
+        );
+        final compatible = await operationHelper.isCompatible(operationCard);
+        if (!_canUseHelper(session, operationHelper) ||
+            !identical(helper, operationHelper) ||
+            !identical(card, operationCard)) {
+          return null;
         }
         if (compatible) {
-          await _writeCardUnderLease(appState);
+          await _writeCardUnderLease(
+            session,
+            operationHelper,
+            operationCard,
+          );
         }
         return compatible;
       });
-      if (!mounted) {
+      if (compatible == null ||
+          !_canUseHelper(session, operationHelper) ||
+          !identical(helper, operationHelper) ||
+          !identical(card, operationCard)) {
+        updateProgress(-1);
         return;
       }
       if (!compatible) {

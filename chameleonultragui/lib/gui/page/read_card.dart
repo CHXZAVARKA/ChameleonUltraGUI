@@ -1,9 +1,9 @@
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/mifare/classic.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/mifare/ultralight.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
@@ -77,23 +77,10 @@ class ReadCardPageState extends State<ReadCardPage> {
     });
   }
 
-  ChameleonCommunicator? _connectedCommunicator() {
-    final communicator = _appState.communicator;
-    if (communicator == null ||
-        !_appState.hasConnectedCommunicator(communicator)) {
-      return null;
-    }
-    return communicator;
-  }
-
-  bool _canContinueWith(ChameleonCommunicator communicator) {
-    return mounted && _appState.hasConnectedCommunicator(communicator);
-  }
-
   bool _commitHFInfo((HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
-      ChameleonCommunicator communicator,
+      ConnectedDeviceSession session,
       {bool scanFinished = false}) {
-    if (!_canContinueWith(communicator)) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
 
@@ -109,77 +96,87 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   Future<bool> _readAndCommitHFInfoUnderLease({
+    required ConnectedDeviceSession session,
     bool scanFinished = false,
   }) async {
-    final communicator = _connectedCommunicator();
-    if (communicator == null) {
+    if (!session.isCurrent) {
       return false;
     }
-
-    final info = await readHFInfo(context, updateMifareClassicRecovery);
+    final info = await readHFInfo(
+      context,
+      updateMifareClassicRecovery,
+      canContinue: () => mounted && session.isCurrent,
+    );
     return _commitHFInfo(
       info,
-      communicator,
+      session,
       scanFinished: scanFinished,
     );
   }
 
   Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) {
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      return Future.value(false);
+    }
     return _appState.rfOperations.runForeground(
-      () => _readAndCommitHFInfoUnderLease(scanFinished: scanFinished),
+      () => _readAndCommitHFInfoUnderLease(
+        session: session,
+        scanFinished: scanFinished,
+      ),
     );
   }
 
-  Future<bool> _readLFInfoUnderLease() async {
-    final communicator = _connectedCommunicator();
-    if (communicator == null) {
+  Future<bool> _readLFInfoUnderLease(ConnectedDeviceSession session) async {
+    if (!session.isCurrent) {
       return false;
     }
+    final communicator = session.communicator;
 
     setState(() {
       lfInfo = LFCardInfo();
     });
 
     if (!await communicator.isReaderDeviceMode()) {
-      if (!_canContinueWith(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
       await communicator.setReaderDeviceMode(true);
     }
-    if (!_canContinueWith(communicator)) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
 
     LFCard? card = await communicator.readEM410X();
-    if (!_canContinueWith(communicator)) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
     if (card == null) {
       card = await communicator.readHIDProx();
-      if (!_canContinueWith(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readViking();
-      if (!_canContinueWith(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readPac();
-      if (!_canContinueWith(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readIoProx();
-      if (!_canContinueWith(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
     }
 
-    if (!_canContinueWith(communicator)) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
     if (card != null) {
@@ -197,13 +194,24 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   Future<bool> readLFInfo() {
-    return _appState.rfOperations.runForeground(_readLFInfoUnderLease);
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      return Future.value(false);
+    }
+    return _appState.rfOperations.runForeground(
+      () => _readLFInfoUnderLease(session),
+    );
   }
 
   Future<void> _runContinuousHFScanTick() async {
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      stopContinuousHFScan();
+      return;
+    }
     try {
       final result = await _appState.rfOperations.tryRunBackground(
-        _readAndCommitHFInfoUnderLease,
+        () => _readAndCommitHFInfoUnderLease(session: session),
       );
       if (!result.acquired) {
         return;
@@ -226,9 +234,14 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   Future<void> _runContinuousLFScanTick() async {
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      stopContinuousLFScan();
+      return;
+    }
     try {
       final result = await _appState.rfOperations.tryRunBackground(
-        _readLFInfoUnderLease,
+        () => _readLFInfoUnderLease(session),
       );
       if (!result.acquired) {
         return;
@@ -468,19 +481,22 @@ class ReadCardPageState extends State<ReadCardPage> {
                                               });
 
                                               if (isMifareClassic(newValue!)) {
-                                                final communicator =
-                                                    _connectedCommunicator();
-                                                if (communicator == null) {
+                                                final session =
+                                                    ConnectedDeviceSession
+                                                        .capture(_appState);
+                                                if (session == null) {
                                                   return;
                                                 }
+                                                final communicator =
+                                                    session.communicator;
                                                 final pendingInfo =
                                                     MifareClassicInfo(
                                                         state: mfcInfo.state);
                                                 var info = await _appState
                                                     .rfOperations
                                                     .runForeground(() async {
-                                                  if (!_canContinueWith(
-                                                      communicator)) {
+                                                  if (!session.isCurrent ||
+                                                      !mounted) {
                                                     return null;
                                                   }
                                                   return performMifareClassicScan(
@@ -490,15 +506,15 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                     updateMifareClassicRecovery,
                                                     override: newValue,
                                                     canContinue: () =>
-                                                        _canContinueWith(
-                                                            communicator),
+                                                        mounted &&
+                                                        session.isCurrent,
                                                   );
                                                 });
                                                 if (info == null) {
                                                   return;
                                                 }
-                                                if (!_canContinueWith(
-                                                    communicator)) {
+                                                if (!mounted ||
+                                                    !session.isCurrent) {
                                                   return;
                                                 }
                                                 setState(() {
@@ -506,11 +522,14 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                 });
                                               } else if (isMifareUltralight(
                                                   newValue)) {
-                                                final communicator =
-                                                    _connectedCommunicator();
-                                                if (communicator == null) {
+                                                final session =
+                                                    ConnectedDeviceSession
+                                                        .capture(_appState);
+                                                if (session == null) {
                                                   return;
                                                 }
+                                                final communicator =
+                                                    session.communicator;
                                                 final pendingInfo =
                                                     MifareUltralightInfo()
                                                       ..version =
@@ -520,8 +539,8 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                 var info = await _appState
                                                     .rfOperations
                                                     .runForeground(() async {
-                                                  if (!_canContinueWith(
-                                                      communicator)) {
+                                                  if (!mounted ||
+                                                      !session.isCurrent) {
                                                     return null;
                                                   }
                                                   return performMifareUltralightScan(
@@ -529,15 +548,15 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                     pendingInfo,
                                                     override: newValue,
                                                     canContinue: () =>
-                                                        _canContinueWith(
-                                                            communicator),
+                                                        mounted &&
+                                                        session.isCurrent,
                                                   );
                                                 });
                                                 if (info == null) {
                                                   return;
                                                 }
-                                                if (!_canContinueWith(
-                                                    communicator)) {
+                                                if (!mounted ||
+                                                    !session.isCurrent) {
                                                   return;
                                                 }
                                                 setState(() {

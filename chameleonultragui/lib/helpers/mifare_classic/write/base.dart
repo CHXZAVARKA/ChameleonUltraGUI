@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/gui/component/mifare/classic.dart';
 import 'package:chameleonultragui/helpers/card_info.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -38,18 +39,24 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      MifareClassicGen1WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen2WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen3WriteHelper(communicator, recovery: recovery)
+      inheritOperationContinuation(
+          MifareClassicGen1WriteHelper(communicator, recovery: recovery)),
+      inheritOperationContinuation(
+          MifareClassicGen2WriteHelper(communicator, recovery: recovery)),
+      inheritOperationContinuation(
+          MifareClassicGen3WriteHelper(communicator, recovery: recovery)),
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
     return [
-      MifareClassicGen1WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen3WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen2WriteHelper(communicator, recovery: recovery)
+      inheritOperationContinuation(
+          MifareClassicGen1WriteHelper(communicator, recovery: recovery)),
+      inheritOperationContinuation(
+          MifareClassicGen3WriteHelper(communicator, recovery: recovery)),
+      inheritOperationContinuation(
+          MifareClassicGen2WriteHelper(communicator, recovery: recovery)),
     ];
   }
 
@@ -60,15 +67,23 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
 
   @override
   Future<void> getCardType() async {
+    if (!operationCanContinue) return;
     if (!await communicator.isReaderDeviceMode()) {
+      if (!operationCanContinue) return;
       await communicator.setReaderDeviceMode(true);
     }
 
+    if (!operationCanContinue) return;
+
     var mifare = await communicator.detectMf1Support();
+    if (!operationCanContinue) return;
     type = MifareClassicType.none;
 
     if (mifare) {
-      type = await mfClassicGetType(communicator);
+      type = await mfClassicGetType(
+        communicator,
+        canContinue: () => operationCanContinue,
+      );
     }
   }
 
@@ -95,11 +110,13 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
+    if (!operationCanContinue) return false;
     List<Uint8List> data = card.data;
 
     if (await communicator.scan14443aTag() == null) {
       return false;
     }
+    if (!operationCanContinue) return false;
 
     if (data.isEmpty || data[0].isEmpty) {
       if (data.isEmpty) {
@@ -116,9 +133,12 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
           block++) {
         int blockToWrite = block + mfClassicGetFirstBlockCountBySector(sector);
         if (data.length > blockToWrite && data[blockToWrite].isNotEmpty) {
+          if (!operationCanContinue) return false;
           if (!(await writeBlock(blockToWrite, data[blockToWrite]))) {
             return false;
           }
+
+          if (!operationCanContinue) return false;
 
           update((blockToWrite / mfClassicGetBlockCount(type) * 100).round());
         }
@@ -151,9 +171,10 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
 
   @override
   Future<bool> isCompatible(CardSave card) async {
+    if (!operationCanContinue) return false;
     CardData? magicCard = await communicator.scan14443aTag();
 
-    if (magicCard == null) {
+    if (magicCard == null || !operationCanContinue) {
       return false;
     }
 
@@ -165,11 +186,12 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
         mfClassicGetBlockCount(chameleonTagTypeGetMfClassicType(card.tag));
     blockCount--;
 
+    if (!operationCanContinue) return false;
     Uint8List data = await communicator.send14ARaw(
         Uint8List.fromList([0x60, blockCount]),
         checkResponseCrc: false);
 
-    if (data.length != 4) {
+    if (!operationCanContinue || data.length != 4) {
       return false;
     }
 
@@ -187,15 +209,19 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
     var localizations = AppLocalizations.of(context)!;
 
     Future<void> prepareMifareClassic() async {
+      final appState = context.read<ChameleonGUIState>();
+      final session = ConnectedDeviceSession.capture(appState);
+      if (session == null || !identical(session.communicator, communicator)) {
+        return;
+      }
       setState(() {
         hfInfo = null;
         mfcInfo = null;
       });
 
-      final appState = context.read<ChameleonGUIState>();
       var info = await appState.rfOperations.runForeground(
         () async {
-          if (!context.mounted) {
+          if (!context.mounted || !session.isCurrent) {
             return (HFCardInfo(), MifareClassicInfo(), MifareUltralightInfo());
           }
           return readHFInfo(
@@ -208,10 +234,11 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
                   recovery = mfcInfo!.recovery!;
                 })
             },
+            canContinue: () => context.mounted && session.isCurrent,
           );
         },
       );
-      if (!context.mounted) {
+      if (!context.mounted || !session.isCurrent) {
         return;
       }
 

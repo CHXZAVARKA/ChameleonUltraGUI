@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -75,8 +76,11 @@ class _FakePort implements MifareClassicMaintenancePort {
   int throwOnReadBlock = -1;
   void Function(int block)? onReadAfterWrite;
   void Function(int block)? onSourceRead;
+  void Function(int block)? onWrite;
   int availableBlockCount = 256;
   MifareClassicType type = MifareClassicType.m4k;
+  Completer<void>? readerModeStarted;
+  Completer<void>? allowReaderMode;
 
   _FakePort(this.blocks);
 
@@ -88,7 +92,10 @@ class _FakePort implements MifareClassicMaintenancePort {
   }
 
   @override
-  Future<void> ensureReaderMode() async {}
+  Future<void> ensureReaderMode({bool Function()? shouldCancel}) async {
+    readerModeStarted?.complete();
+    await allowReaderMode?.future;
+  }
 
   @override
   Future<CardData?> scan() async {
@@ -111,7 +118,8 @@ class _FakePort implements MifareClassicMaintenancePort {
   }
 
   @override
-  Future<MifareClassicType> detectType() async => type;
+  Future<MifareClassicType> detectType({bool Function()? shouldCancel}) async =>
+      type;
 
   @override
   Future<bool> isBlockAvailable(int block) async => block < availableBlockCount;
@@ -156,6 +164,7 @@ class _FakePort implements MifareClassicMaintenancePort {
     if (!acknowledgeWithoutWriting) {
       blocks[block] = Uint8List.fromList(data);
     }
+    onWrite?.call(block);
     if (replacementUidAfterWrite != null) {
       replacementUid = replacementUidAfterWrite;
       replaceUidOnScan = scans + 1;
@@ -178,6 +187,34 @@ Future<MifareClassicMaintenanceException> _expectMaintenanceFailure(
 }
 
 void main() {
+  test(
+      'preflight cancellation after a delayed response stops the next RF command',
+      () async {
+    final port = _FakePort(_blankCard())
+      ..readerModeStarted = Completer<void>()
+      ..allowReaderMode = Completer<void>();
+    final maintenance = MifareClassicMaintenance(port);
+    var cancelled = false;
+
+    final operation = _expectMaintenanceFailure(() async {
+      await maintenance.preflight(
+        image: _image(_blankCard()),
+        profile: _profile(),
+        shouldCancel: () => cancelled,
+      );
+    });
+    await port.readerModeStarted!.future;
+    cancelled = true;
+    port.allowReaderMode!.complete();
+    final error = await operation;
+
+    expect(error.failure, MifareClassicMaintenanceFailure.cancelled);
+    expect(port.scans, 0);
+    expect(port.authentications, 0);
+    expect(port.reads, 0);
+    expect(port.writes, isEmpty);
+  });
+
   test('preflight rejects a non-4096-byte image before card access', () async {
     final port = _FakePort(_blankCard());
     final maintenance = MifareClassicMaintenance(port);
@@ -878,6 +915,33 @@ void main() {
     expect(error.failure, MifareClassicMaintenanceFailure.cancelled);
     expect(error.block, 2);
     expect(error.verifiedBlocks, 1);
+    expect(port.blocks[1], orderedEquals(target[1]));
+    expect(port.blocks[2], isNot(orderedEquals(target[2])));
+  });
+
+  test(
+      'cancellation after a sent write keeps its read-back and stops the next write',
+      () async {
+    final current = _blankCard();
+    final target = current.map(Uint8List.fromList).toList();
+    target[1] = Uint8List.fromList(List.filled(16, 0x56));
+    target[2] = Uint8List.fromList(List.filled(16, 0x57));
+    var cancelled = false;
+    final port = _FakePort(current)
+      ..onWrite = (block) {
+        cancelled = true;
+      };
+    final maintenance = MifareClassicMaintenance(port);
+    final plan =
+        await maintenance.preflight(image: _image(target), profile: _profile());
+
+    final error = await _expectMaintenanceFailure(() async {
+      await maintenance.execute(plan, shouldCancel: () => cancelled);
+    });
+
+    expect(error.failure, MifareClassicMaintenanceFailure.cancelled);
+    expect(error.verifiedBlocks, 1);
+    expect(port.writes, [1]);
     expect(port.blocks[1], orderedEquals(target[1]));
     expect(port.blocks[2], isNot(orderedEquals(target[2])));
   });

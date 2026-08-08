@@ -13,7 +13,9 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
   @override
   Future<bool> isMagic(dynamic data) async {
     try {
+      if (!operationCanContinue) return false;
       await communicator.send14ARaw(Uint8List(1)); // reset
+      if (!operationCanContinue) return false;
 
       Uint8List data = await communicator.send14ARaw(Uint8List.fromList([0x40]),
           bitLen: 7,
@@ -21,11 +23,12 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
           autoSelect: false,
           checkResponseCrc: false,
           keepRfField: true);
+      if (!operationCanContinue) return false;
 
       if (data.isNotEmpty && data[0] == 0x0a) {
         data = await communicator.send14ARaw(Uint8List.fromList([0x43]),
             appendCrc: false, autoSelect: false, checkResponseCrc: false);
-        return data.isNotEmpty && data[0] == 0x0a;
+        return operationCanContinue && data.isNotEmpty && data[0] == 0x0a;
       }
 
       return false;
@@ -42,8 +45,10 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
   @override
   Future<bool> writeBlock(int block, Uint8List data) async {
     for (int retry = 0; retry < 5; retry++) {
+      if (!operationCanContinue) return false;
       try {
         await communicator.send14ARaw(Uint8List(1)); // reset
+        if (!operationCanContinue) return false;
 
         await communicator.send14ARaw(Uint8List.fromList([0x40]),
             bitLen: 7,
@@ -51,23 +56,28 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
             autoSelect: false,
             checkResponseCrc: false,
             keepRfField: true);
+        if (!operationCanContinue) return false;
 
         await communicator.send14ARaw(Uint8List.fromList([0x43]),
             appendCrc: false,
             autoSelect: false,
             checkResponseCrc: false,
             keepRfField: true);
+        if (!operationCanContinue) return false;
 
         await communicator.send14ARaw(Uint8List.fromList([0xA0, block]),
             autoSelect: false, keepRfField: true, checkResponseCrc: false);
+        if (!operationCanContinue) return false;
 
         Uint8List output = await communicator.send14ARaw(data,
             autoSelect: false, keepRfField: true, checkResponseCrc: false);
 
+        if (!operationCanContinue) return false;
         if (output.isNotEmpty && output[0] == 0x0a) {
           return true;
         }
         await Future.delayed(const Duration(milliseconds: 100));
+        if (!operationCanContinue) return false;
       } catch (_) {}
     }
 
