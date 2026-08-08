@@ -67,9 +67,29 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   void updateMifareClassicInfo() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       mfcInfo = mfcInfo;
     });
+  }
+
+  bool _commitHFInfo((HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
+      {bool scanFinished = false}) {
+    if (!mounted) {
+      return false;
+    }
+
+    setState(() {
+      hfInfo = info.$1;
+      mfcInfo = info.$2;
+      mfuInfo = info.$3;
+      if (scanFinished) {
+        scanInProgress = false;
+      }
+    });
+    return true;
   }
 
   Future<void> readLFInfo() async {
@@ -80,14 +100,43 @@ class ReadCardPageState extends State<ReadCardPage> {
     });
 
     if (!await appState.communicator!.isReaderDeviceMode()) {
+      if (!mounted) {
+        return;
+      }
       await appState.communicator!.setReaderDeviceMode(true);
+    }
+    if (!mounted) {
+      return;
     }
 
     LFCard? card = await appState.communicator!.readEM410X();
-    card ??= await appState.communicator!.readHIDProx();
-    card ??= await appState.communicator!.readViking();
-    card ??= await appState.communicator!.readPac();
-    card ??= await appState.communicator!.readIoProx();
+    if (!mounted) {
+      return;
+    }
+    if (card == null) {
+      card = await appState.communicator!.readHIDProx();
+      if (!mounted) {
+        return;
+      }
+    }
+    if (card == null) {
+      card = await appState.communicator!.readViking();
+      if (!mounted) {
+        return;
+      }
+    }
+    if (card == null) {
+      card = await appState.communicator!.readPac();
+      if (!mounted) {
+        return;
+      }
+    }
+    if (card == null) {
+      card = await appState.communicator!.readIoProx();
+      if (!mounted) {
+        return;
+      }
+    }
 
     if (card != null) {
       setState(() {
@@ -121,11 +170,9 @@ class ReadCardPageState extends State<ReadCardPage> {
       }
 
       var info = await readHFInfo(context, updateMifareClassicRecovery);
-      setState(() {
-        hfInfo = info.$1;
-        mfcInfo = info.$2;
-        mfuInfo = info.$3;
-      });
+      if (!_commitHFInfo(info)) {
+        return;
+      }
 
       if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
         stopContinuousHFScan();
@@ -133,11 +180,9 @@ class ReadCardPageState extends State<ReadCardPage> {
     });
 
     var info = await readHFInfo(context, updateMifareClassicRecovery);
-    setState(() {
-      hfInfo = info.$1;
-      mfcInfo = info.$2;
-      mfuInfo = info.$3;
-    });
+    if (!_commitHFInfo(info)) {
+      return;
+    }
 
     if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
       stopContinuousHFScan();
@@ -345,23 +390,38 @@ class ReadCardPageState extends State<ReadCardPage> {
                                               });
 
                                               if (isMifareClassic(newValue!)) {
+                                                final pendingInfo =
+                                                    MifareClassicInfo(
+                                                        state: mfcInfo.state);
                                                 var info =
                                                     await performMifareClassicScan(
                                                         appState.communicator!,
-                                                        mfcInfo,
+                                                        pendingInfo,
                                                         context,
                                                         updateMifareClassicRecovery,
                                                         override: newValue);
+                                                if (!mounted) {
+                                                  return;
+                                                }
                                                 setState(() {
                                                   mfcInfo = info.$2;
                                                 });
                                               } else if (isMifareUltralight(
                                                   newValue)) {
+                                                final pendingInfo =
+                                                    MifareUltralightInfo()
+                                                      ..version =
+                                                          mfuInfo.version
+                                                      ..signature =
+                                                          mfuInfo.signature;
                                                 var info =
                                                     await performMifareUltralightScan(
                                                         appState.communicator!,
-                                                        mfuInfo,
+                                                        pendingInfo,
                                                         override: newValue);
+                                                if (!mounted) {
+                                                  return;
+                                                }
                                                 setState(() {
                                                   mfuInfo = info.$2;
                                                 });
@@ -447,12 +507,8 @@ class ReadCardPageState extends State<ReadCardPage> {
                                               var info = await readHFInfo(
                                                   context,
                                                   updateMifareClassicRecovery);
-                                              setState(() {
-                                                hfInfo = info.$1;
-                                                mfcInfo = info.$2;
-                                                mfuInfo = info.$3;
-                                                scanInProgress = false;
-                                              });
+                                              _commitHFInfo(info,
+                                                  scanFinished: true);
                                             } else if (appState
                                                     .connector!.device ==
                                                 ChameleonDevice.lite) {
@@ -546,11 +602,7 @@ class ReadCardPageState extends State<ReadCardPage> {
                                           ChameleonDevice.ultra) {
                                         var info = await readHFInfo(context,
                                             updateMifareClassicRecovery);
-                                        setState(() {
-                                          hfInfo = info.$1;
-                                          mfcInfo = info.$2;
-                                          mfuInfo = info.$3;
-                                        });
+                                        _commitHFInfo(info);
                                       } else if (appState.connector!.device ==
                                           ChameleonDevice.lite) {
                                         showDialog<String>(

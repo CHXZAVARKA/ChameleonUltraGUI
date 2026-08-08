@@ -1,8 +1,8 @@
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
+import 'package:chameleonultragui/helpers/card_info.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
-import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';

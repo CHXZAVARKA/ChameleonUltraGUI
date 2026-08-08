@@ -7,11 +7,13 @@ import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
-import 'package:chameleonultragui/helpers/read_card_session.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/types.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+export 'package:chameleonultragui/helpers/mifare_classic/types.dart';
 
 // Mifare Classic keys from Proxmark3
 final gMifareClassicKeysList = {
@@ -71,14 +73,6 @@ final gMifareClassicBackdoorKeysList = {
   0x518B3354E760,
   0x73B9836CF168,
 };
-
-enum MifareClassicType {
-  none,
-  mini,
-  m1k,
-  m2k,
-  m4k
-} // can't start with number...
 
 class MifareClassicGeometry {
   final MifareClassicType type;

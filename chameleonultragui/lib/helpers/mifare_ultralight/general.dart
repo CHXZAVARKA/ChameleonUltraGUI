@@ -1,7 +1,7 @@
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
-import 'package:chameleonultragui/helpers/read_card_session.dart';
+import 'package:chameleonultragui/helpers/mifare_ultralight/types.dart';
 import 'package:flutter/services.dart';
 
 bool isMifareUltralight(TagType type) {
