@@ -5,8 +5,8 @@ import 'package:chameleonultragui/gui/component/mifare/ultralight.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
@@ -18,69 +18,6 @@ import 'dart:async';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
-enum MifareClassicState {
-  none,
-  checkKeys,
-  checkKeysOngoing,
-  recovery,
-  recoveryOngoing,
-  dump,
-  dumpOngoing,
-  save
-}
-
-// cardExist true because we don't show error to user if nothing is done
-class HFCardInfo {
-  String uid;
-  String sak;
-  String atqa;
-  String tech;
-  String ats;
-  TagType type;
-  bool cardExist;
-
-  HFCardInfo(
-      {this.uid = '',
-      this.sak = '',
-      this.atqa = '',
-      this.tech = '',
-      this.ats = '',
-      this.type = TagType.unknown,
-      this.cardExist = true});
-}
-
-class LFCardInfo {
-  LFCard? card;
-  bool cardExist;
-
-  LFCardInfo({this.cardExist = true});
-}
-
-class MifareClassicInfo {
-  bool isEV1;
-  MifareClassicRecovery? recovery;
-  MifareClassicType type;
-  MifareClassicState state;
-  NTLevel? ntLevel;
-  bool? hasBackdoor;
-
-  MifareClassicInfo({
-    MifareClassicRecovery? recovery,
-    this.isEV1 = false,
-    this.type = MifareClassicType.none,
-    this.state = MifareClassicState.none,
-    NTLevel? ntLevel,
-    bool? hasBackdoor,
-  });
-}
-
-class MifareUltralightInfo {
-  Uint8List? version;
-  Uint8List? signature;
-
-  MifareUltralightInfo();
-}
-
 class ReadCardPage extends StatefulWidget {
   const ReadCardPage({super.key});
 
@@ -89,11 +26,22 @@ class ReadCardPage extends StatefulWidget {
 }
 
 class ReadCardPageState extends State<ReadCardPage> {
-  String dumpName = "";
-  HFCardInfo hfInfo = HFCardInfo();
-  LFCardInfo lfInfo = LFCardInfo();
-  MifareClassicInfo mfcInfo = MifareClassicInfo();
-  MifareUltralightInfo mfuInfo = MifareUltralightInfo();
+  late ReadCardSession _session;
+
+  String get dumpName => _session.dumpName;
+  set dumpName(String value) => _session.dumpName = value;
+
+  HFCardInfo get hfInfo => _session.hfInfo;
+  set hfInfo(HFCardInfo value) => _session.hfInfo = value;
+
+  LFCardInfo get lfInfo => _session.lfInfo;
+  set lfInfo(LFCardInfo value) => _session.lfInfo = value;
+
+  MifareClassicInfo get mfcInfo => _session.mfcInfo;
+  set mfcInfo(MifareClassicInfo value) => _session.mfcInfo = value;
+
+  MifareUltralightInfo get mfuInfo => _session.mfuInfo;
+  set mfuInfo(MifareUltralightInfo value) => _session.mfuInfo = value;
 
   bool isContinuousHFScan = false;
   bool isContinuousLFScan = false;
@@ -101,7 +49,18 @@ class ReadCardPageState extends State<ReadCardPage> {
   Timer? hfScanTimer;
   Timer? lfScanTimer;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _session =
+        Provider.of<ChameleonGUIState>(context, listen: false).readCardSession;
+    mfcInfo.recovery?.update = updateMifareClassicRecovery;
+  }
+
   void updateMifareClassicRecovery() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       mfcInfo.recovery = mfcInfo.recovery;
     });
@@ -129,7 +88,6 @@ class ReadCardPageState extends State<ReadCardPage> {
     card ??= await appState.communicator!.readViking();
     card ??= await appState.communicator!.readPac();
     card ??= await appState.communicator!.readIoProx();
-
 
     if (card != null) {
       setState(() {
@@ -245,8 +203,10 @@ class ReadCardPageState extends State<ReadCardPage> {
 
   @override
   void dispose() {
-    stopContinuousHFScan();
-    stopContinuousLFScan();
+    hfScanTimer?.cancel();
+    hfScanTimer = null;
+    lfScanTimer?.cancel();
+    lfScanTimer = null;
     super.dispose();
   }
 
