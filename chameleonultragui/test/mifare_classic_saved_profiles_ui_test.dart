@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/component/mifare/saved_key_profiles.dart';
 import 'package:chameleonultragui/gui/page/saved_cards.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/main.dart';
@@ -11,6 +12,53 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('saved cards imports a canonical profile from its import action',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final profile = MifareClassicKeyProfile(
+      id: 'imported-profile',
+      name: 'Imported keys',
+      cardType: 'm1k',
+      sectorCount: 16,
+      assignments: [
+        MifareClassicKeyAssignment(
+          sector: 0,
+          keyA: Uint8List.fromList([1, 2, 3, 4, 5, 6]),
+        ),
+      ],
+    );
+    final appState = ChameleonGUIState(preferences);
+    tester.view.physicalSize = const Size(1200, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: MifareClassicKeyProfilesCard(
+              pickProfile: () async => profile,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Import key profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Imported keys'), findsOneWidget);
+    expect(preferences.getMifareClassicKeyProfiles().single.id,
+        'imported-profile');
+  });
+
   testWidgets('saved cards automatically lists assigned key profiles',
       (tester) async {
     SharedPreferences.setMockInitialValues({'confirm_delete': false});

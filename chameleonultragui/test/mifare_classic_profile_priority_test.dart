@@ -14,6 +14,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 
 void main() {
+  test('profile includes only found slots with six-byte keys', () async {
+    final appState = ChameleonGUIState(SharedPreferencesProvider());
+    final localizations =
+        await AppLocalizations.delegate.load(const Locale('en'));
+    final checkMarks =
+        List.filled(80, ChameleonKeyCheckmark.none, growable: false);
+    final validKeys = List.generate(80, (_) => Uint8List(0), growable: false);
+    checkMarks[0] = ChameleonKeyCheckmark.found;
+    validKeys[0] = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+    validKeys[1] = Uint8List.fromList([6, 5, 4, 3, 2, 1]);
+    checkMarks[40] = ChameleonKeyCheckmark.found;
+
+    final recovery = MifareClassicRecovery(
+      appState: appState,
+      update: () {},
+      localizations: localizations,
+      mifareClassicType: MifareClassicType.m1k,
+      checkMarks: checkMarks,
+      validKeys: validKeys,
+    );
+
+    expect(recovery.hasVerifiedKeys, isTrue);
+    final profile = recovery.createKeyProfile(name: 'Live keys');
+    expect(profile.keyCount, 1);
+    expect(profile.assignedKey(0, 0), orderedEquals([1, 2, 3, 4, 5, 6]));
+    expect(profile.assignedKey(1, 0), isNull);
+    expect(profile.assignedKey(0, 1), isNull);
+  });
+
   test('EV1 signature defaults are exported only after live authentication',
       () async {
     final communicator = _RecordingCommunicator(
@@ -38,7 +67,8 @@ void main() {
       checkMarks: checkMarks,
     );
 
-    expect(recovery.getSectorState(16, 0), ChameleonKeyCheckmark.found);
+    expect(recovery.getSectorState(16, 0), ChameleonKeyCheckmark.disabled);
+    expect(recovery.getSectorKey(16, 0), isEmpty);
     expect(recovery.hasVerifiedKeys, isFalse);
     expect(
       () => recovery.createKeyProfile(name: 'EV1 defaults'),

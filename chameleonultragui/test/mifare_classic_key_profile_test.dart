@@ -45,29 +45,6 @@ void main() {
     expect(zeroKey['keyB'], isEmpty);
   });
 
-  test('runtime A and B slots preserve their sector assignments', () {
-    final keys = List.generate(80, (_) => Uint8List(0));
-    final verified = List.filled(80, false);
-    keys[0] = _key([1, 2, 3, 4, 5, 6]);
-    verified[0] = true;
-    keys[40 + 39] = _key([6, 5, 4, 3, 2, 1]);
-    verified[40 + 39] = true;
-
-    final profile = MifareClassicKeyProfile.fromVerifiedRuntimeKeys(
-      name: 'Mapped keys',
-      cardType: 'm4k',
-      sectorCount: 40,
-      validKeys: keys,
-      isVerified: verified,
-    );
-
-    expect(profile.assignments.map((entry) => entry.sector), [0, 39]);
-    expect(profile.assignedKey(0, 0), orderedEquals([1, 2, 3, 4, 5, 6]));
-    expect(profile.assignedKey(0, 1), isNull);
-    expect(profile.assignedKey(39, 0), isNull);
-    expect(profile.assignedKey(39, 1), orderedEquals([6, 5, 4, 3, 2, 1]));
-  });
-
   test('compact JSON stores a repeated key once for all assigned sectors', () {
     final repeated = _key([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
     final profile = MifareClassicKeyProfile(
@@ -93,6 +70,27 @@ void main() {
     expect(decoded.keyUsages.single.keyHex, 'FFFFFFFFFFFF');
     expect(decoded.keyUsages.single.keyASectors, [0, 1]);
     expect(decoded.keyUsages.single.keyBSectors, [1, 39]);
+  });
+
+  test('profile import rejects the unpublished assignments draft', () {
+    expect(
+      () => MifareClassicKeyProfile.fromJson(jsonEncode({
+        'format': mifareClassicKeyProfileFormat,
+        'version': mifareClassicKeyProfileVersion,
+        'id': 'draft-profile',
+        'name': 'Draft',
+        'cardType': 'm1k',
+        'sectorCount': 16,
+        'assignments': [
+          {
+            'sector': 0,
+            'keyA': '010203040506',
+            'keyB': null,
+          },
+        ],
+      })),
+      throwsFormatException,
+    );
   });
 
   test('assignments are normalized to ascending sector order', () {

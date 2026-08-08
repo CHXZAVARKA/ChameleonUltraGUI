@@ -73,25 +73,6 @@ class MifareClassicKeyAssignment {
     return Uint8List.fromList(key);
   }
 
-  factory MifareClassicKeyAssignment.fromMap(Map<String, dynamic> data) {
-    final sector = data['sector'];
-    if (sector is! int) {
-      throw const FormatException('sector must be an integer');
-    }
-
-    return MifareClassicKeyAssignment(
-      sector: sector,
-      keyA: data['keyA'] == null ? null : _keyFromHex(data['keyA'], 'keyA'),
-      keyB: data['keyB'] == null ? null : _keyFromHex(data['keyB'], 'keyB'),
-    );
-  }
-
-  Map<String, dynamic> toMap() => {
-        'sector': sector,
-        'keyA': keyA == null ? null : _bytesToUpperHex(keyA!),
-        'keyB': keyB == null ? null : _bytesToUpperHex(keyB!),
-      };
-
   Uint8List? keyForType(int keyType) {
     if (keyType == 0) {
       return keyA == null ? null : Uint8List.fromList(keyA!);
@@ -191,49 +172,6 @@ class MifareClassicKeyProfile {
     );
   }
 
-  factory MifareClassicKeyProfile.fromVerifiedRuntimeKeys({
-    required String name,
-    required String cardType,
-    required int sectorCount,
-    String? uid,
-    required List<Uint8List> validKeys,
-    required List<bool> isVerified,
-  }) {
-    if (validKeys.length < 80 || isVerified.length < 80) {
-      throw const FormatException(
-          'Runtime key state must contain 80 Key A/Key B slots');
-    }
-
-    final assignments = <MifareClassicKeyAssignment>[];
-    for (var sector = 0; sector < sectorCount; sector++) {
-      final keyA = isVerified[sector] && validKeys[sector].length == 6
-          ? validKeys[sector]
-          : null;
-      final keyB = isVerified[sector + 40] && validKeys[sector + 40].length == 6
-          ? validKeys[sector + 40]
-          : null;
-      if (keyA != null || keyB != null) {
-        assignments.add(MifareClassicKeyAssignment(
-          sector: sector,
-          keyA: keyA,
-          keyB: keyB,
-        ));
-      }
-    }
-
-    if (assignments.isEmpty) {
-      throw const FormatException('No verified keys to save');
-    }
-
-    return MifareClassicKeyProfile(
-      name: name,
-      cardType: cardType,
-      sectorCount: sectorCount,
-      uid: uid,
-      assignments: assignments,
-    );
-  }
-
   int get keyCount => assignments.fold(
       0,
       (count, assignment) =>
@@ -308,54 +246,42 @@ class MifareClassicKeyProfile {
   static List<MifareClassicKeyAssignment> _assignmentsFromProfileMap(
       Map<String, dynamic> decoded) {
     final compactKeys = decoded['keys'];
-    if (compactKeys is List<dynamic>) {
-      final bySector = <int, Map<String, Uint8List>>{};
-      for (final item in compactKeys) {
-        if (item is! Map<String, dynamic>) {
-          throw const FormatException('Invalid compact key entry');
-        }
-        final key = _keyFromHex(item['key'], 'key');
-        for (final keyType in ['keyA', 'keyB']) {
-          final sectors = item[keyType];
-          if (sectors is! List<dynamic>) {
-            throw FormatException('$keyType must be a list of sectors');
-          }
-          for (final sector in sectors) {
-            if (sector is! int) {
-              throw const FormatException('Sector must be an integer');
-            }
-            final assignment =
-                bySector.putIfAbsent(sector, () => <String, Uint8List>{});
-            if (assignment.containsKey(keyType)) {
-              throw FormatException(
-                  'Sector $sector has more than one $keyType assignment');
-            }
-            assignment[keyType] = key;
-          }
-        }
-      }
-
-      final sectors = bySector.keys.toList()..sort();
-      return sectors
-          .map((sector) => MifareClassicKeyAssignment(
-                sector: sector,
-                keyA: bySector[sector]!['keyA'],
-                keyB: bySector[sector]!['keyB'],
-              ))
-          .toList();
-    }
-
-    // Accept the earlier sector-oriented draft so already exported local files
-    // remain importable. New exports always use the compact key-oriented form.
-    final legacyAssignments = decoded['assignments'];
-    if (legacyAssignments is! List<dynamic>) {
+    if (compactKeys is! List<dynamic>) {
       throw const FormatException('keys must be a list');
     }
-    return legacyAssignments.map((assignment) {
-      if (assignment is! Map<String, dynamic>) {
-        throw const FormatException('Invalid sector assignment');
+    final bySector = <int, Map<String, Uint8List>>{};
+    for (final item in compactKeys) {
+      if (item is! Map<String, dynamic>) {
+        throw const FormatException('Invalid compact key entry');
       }
-      return MifareClassicKeyAssignment.fromMap(assignment);
-    }).toList();
+      final key = _keyFromHex(item['key'], 'key');
+      for (final keyType in ['keyA', 'keyB']) {
+        final sectors = item[keyType];
+        if (sectors is! List<dynamic>) {
+          throw FormatException('$keyType must be a list of sectors');
+        }
+        for (final sector in sectors) {
+          if (sector is! int) {
+            throw const FormatException('Sector must be an integer');
+          }
+          final assignment =
+              bySector.putIfAbsent(sector, () => <String, Uint8List>{});
+          if (assignment.containsKey(keyType)) {
+            throw FormatException(
+                'Sector $sector has more than one $keyType assignment');
+          }
+          assignment[keyType] = key;
+        }
+      }
+    }
+
+    final sectors = bySector.keys.toList()..sort();
+    return sectors
+        .map((sector) => MifareClassicKeyAssignment(
+              sector: sector,
+              keyA: bySector[sector]!['keyA'],
+              keyB: bySector[sector]!['keyB'],
+            ))
+        .toList();
   }
 }

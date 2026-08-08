@@ -40,7 +40,6 @@ class MifareClassicRecovery {
   MifareClassicKeyProfile? selectedKeyProfile;
   List<ChameleonKeyCheckmark> checkMarks;
   List<Uint8List> validKeys;
-  List<bool> verifiedKeys;
   List<Uint8List> cardData;
   double dumpProgress;
   double? hardnestedProgress;
@@ -66,15 +65,11 @@ class MifareClassicRecovery {
       this.isMifareClassicEV1 = false,
       List<ChameleonKeyCheckmark>? checkMarks,
       List<Uint8List>? validKeys,
-      List<bool>? verifiedKeys,
       List<Uint8List>? cardData})
       : checkMarks =
             checkMarks ?? List.generate(80, (_) => ChameleonKeyCheckmark.none),
         validKeys = validKeys ?? List.generate(80, (_) => Uint8List(0)),
-        verifiedKeys = verifiedKeys ?? List.filled(80, false),
-        cardData = cardData ?? List.generate(256, (_) => Uint8List(0)) {
-    initializeEV1();
-  }
+        cardData = cardData ?? List.generate(256, (_) => Uint8List(0));
 
   Future<bool> checkKeysOnSector(
       List<Uint8List> keys, int keyType, int sector) async {
@@ -130,7 +125,6 @@ class MifareClassicRecovery {
 
     isMifareClassicEV1 =
         await appState.communicator!.mf1Auth(0x45, 0x61, gMifareClassicKeys[3]);
-    initializeEV1();
     if (isMifareClassicEV1) {
       setKeyAsFound(17, 1, gMifareClassicKeys[3]);
     }
@@ -165,21 +159,7 @@ class MifareClassicRecovery {
     }
   }
 
-  void initializeEV1() {
-    if (isMifareClassicEV1) {
-      _setKnownKeyWithoutVerification(
-          16, 0, gMifareClassicKeys[4]); // MFC EV1 SIGNATURE 16 A
-      _setKnownKeyWithoutVerification(
-          16, 1, gMifareClassicKeys[5]); // MFC EV1 SIGNATURE 16 B
-      _setKnownKeyWithoutVerification(
-          17, 0, gMifareClassicKeys[6]); // MFC EV1 SIGNATURE 17 A
-      _setKnownKeyWithoutVerification(
-          17, 1, gMifareClassicKeys[3]); // MFC EV1 SIGNATURE 17 B
-    }
-  }
-
   Future<void> checkKeys({bool skipDefaultDictionary = false}) async {
-    initializeEV1();
     await _verifyKnownEV1Keys();
 
     await checkAssignedProfileKeys();
@@ -234,7 +214,7 @@ class MifareClassicRecovery {
     ];
     for (final (sector, keyType, key) in knownKeys) {
       final index = sector + keyType * 40;
-      if (verifiedKeys[index]) {
+      if (_hasConfirmedKeyAt(index)) {
         continue;
       }
       final authResult = await appState.communicator!.mf1AuthResult(
@@ -302,8 +282,8 @@ class MifareClassicRecovery {
   }
 
   bool get hasVerifiedKeys {
-    for (var index = 0; index < verifiedKeys.length; index++) {
-      if (verifiedKeys[index] && validKeys[index].length == 6) {
+    for (var index = 0; index < checkMarks.length; index++) {
+      if (_hasConfirmedKeyAt(index)) {
         return true;
       }
     }
@@ -314,16 +294,37 @@ class MifareClassicRecovery {
     required String name,
     String? uid,
   }) {
-    return MifareClassicKeyProfile.fromVerifiedRuntimeKeys(
+    final sectorCount =
+        mfClassicGetSectorCount(mifareClassicType, isEV1: isMifareClassicEV1);
+    final assignments = <MifareClassicKeyAssignment>[];
+    for (var sector = 0; sector < sectorCount; sector++) {
+      final keyA = _hasConfirmedKeyAt(sector) ? validKeys[sector] : null;
+      final keyB =
+          _hasConfirmedKeyAt(sector + 40) ? validKeys[sector + 40] : null;
+      if (keyA != null || keyB != null) {
+        assignments.add(MifareClassicKeyAssignment(
+          sector: sector,
+          keyA: keyA,
+          keyB: keyB,
+        ));
+      }
+    }
+    if (assignments.isEmpty) {
+      throw const FormatException('No verified keys to save');
+    }
+
+    return MifareClassicKeyProfile(
       name: name,
       cardType: mifareClassicType.name,
-      sectorCount:
-          mfClassicGetSectorCount(mifareClassicType, isEV1: isMifareClassicEV1),
+      sectorCount: sectorCount,
       uid: uid,
-      validKeys: validKeys,
-      isVerified: verifiedKeys,
+      assignments: assignments,
     );
   }
+
+  bool _hasConfirmedKeyAt(int index) =>
+      checkMarks[index] == ChameleonKeyCheckmark.found &&
+      validKeys[index].length == 6;
 
   Future<void> recoverKeys() async {
     state = localizations.checking_card_info;
@@ -792,17 +793,6 @@ class MifareClassicRecovery {
 
   void setKeyAsFound(int sector, int keyType, Uint8List key) {
     final index = sector + (keyType * 40);
-    checkMarks[index] = ChameleonKeyCheckmark.found;
-    validKeys[index] = key;
-    verifiedKeys[index] = true;
-    update();
-  }
-
-  void _setKnownKeyWithoutVerification(int sector, int keyType, Uint8List key) {
-    final index = sector + (keyType * 40);
-    if (verifiedKeys[index]) {
-      return;
-    }
     checkMarks[index] = ChameleonKeyCheckmark.found;
     validKeys[index] = key;
     update();

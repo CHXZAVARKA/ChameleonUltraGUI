@@ -13,13 +13,18 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 class MifareClassicKeyProfilesCard extends StatelessWidget {
-  const MifareClassicKeyProfilesCard({super.key});
+  final Future<MifareClassicKeyProfile?> Function() pickProfile;
+
+  const MifareClassicKeyProfilesCard({
+    super.key,
+    this.pickProfile = pickMifareClassicKeyProfileFile,
+  });
 
   Future<void> _importProfile(BuildContext context) async {
     final appState = context.read<ChameleonGUIState>();
     final strings = MifareClassicFeatureStrings.of(context);
     try {
-      final profile = await pickMifareClassicKeyProfileFile();
+      final profile = await pickProfile();
       if (profile == null) {
         return;
       }

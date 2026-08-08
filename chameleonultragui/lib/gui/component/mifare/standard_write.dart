@@ -113,12 +113,10 @@ class _StandardMifareClassicWritePanelState
 
   Future<void> _pickBinaryDump() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['bin'],
       );
-      final picked =
-          result == null || result.files.isEmpty ? null : result.files.first;
       if (picked == null) {
         return;
       }
@@ -141,8 +139,7 @@ class _StandardMifareClassicWritePanelState
     final strings = MifareClassicFeatureStrings.of(context);
     final cards = appState.sharedPreferencesProvider
         .getCards()
-        .where((card) =>
-            card.extraData.mifareClassicDumpComplete != false)
+        .where((card) => card.extraData.mifareClassicDumpComplete != false)
         .where((card) => MifareClassicGeometry.fromSavedCardData(card) != null)
         .toList()
       ..sort((first, second) => first.name.compareTo(second.name));

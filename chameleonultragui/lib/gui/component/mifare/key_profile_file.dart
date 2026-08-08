@@ -5,9 +5,7 @@ import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:file_picker/file_picker.dart';
 
 Future<MifareClassicKeyProfile?> pickMifareClassicKeyProfileFile() async {
-  final result = await FilePicker.pickFiles();
-  final picked =
-      result == null || result.files.isEmpty ? null : result.files.first;
+  final picked = await FilePicker.pickFile();
   if (picked == null) {
     return null;
   }
