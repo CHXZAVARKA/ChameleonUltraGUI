@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,83 @@ import 'package:shared_preferences/shared_preferences.dart';
 Uint8List _key(List<int> bytes) => Uint8List.fromList(bytes);
 
 void main() {
+  test('profile exposes exact typed geometry for its wire fields', () {
+    final cases = [
+      (
+        cardType: 'mini',
+        sectorCount: 5,
+        type: MifareClassicType.mini,
+        isEV1: false,
+        blockCount: 20,
+      ),
+      (
+        cardType: 'm1k',
+        sectorCount: 16,
+        type: MifareClassicType.m1k,
+        isEV1: false,
+        blockCount: 64,
+      ),
+      (
+        cardType: 'm1k',
+        sectorCount: 18,
+        type: MifareClassicType.m1k,
+        isEV1: true,
+        blockCount: 72,
+      ),
+      (
+        cardType: 'm2k',
+        sectorCount: 32,
+        type: MifareClassicType.m2k,
+        isEV1: false,
+        blockCount: 128,
+      ),
+      (
+        cardType: 'm4k',
+        sectorCount: 40,
+        type: MifareClassicType.m4k,
+        isEV1: false,
+        blockCount: 256,
+      ),
+    ];
+
+    for (final testCase in cases) {
+      final profile = MifareClassicKeyProfile(
+        name: testCase.cardType,
+        cardType: testCase.cardType,
+        sectorCount: testCase.sectorCount,
+        assignments: const [],
+      );
+
+      expect(profile.geometry?.type, testCase.type);
+      expect(profile.geometry?.isEV1, testCase.isEV1);
+      expect(profile.geometry?.sectorCount, testCase.sectorCount);
+      expect(profile.geometry?.blockCount, testCase.blockCount);
+    }
+
+    final invalid = MifareClassicKeyProfile(
+      name: 'Invalid geometry',
+      cardType: 'm1k',
+      sectorCount: 17,
+      assignments: const [],
+    );
+    expect(invalid.geometry, isNull);
+  });
+
+  test('legacy wire JSON round-trips with identical text and bytes', () {
+    const legacyJson =
+        '{"format":"chameleon-ultra-gui-mf1-key-profile","version":1,'
+        '"id":"legacy-profile","name":"Legacy EV1","cardType":"m1k",'
+        '"sectorCount":18,"uid":null,"keys":['
+        '{"key":"A0A1A2A3A4A5","keyA":[0,17],"keyB":[17]}]}';
+
+    final profile = MifareClassicKeyProfile.fromJson(legacyJson);
+
+    expect(profile.toJson(), legacyJson);
+    expect(profile.toFile(), orderedEquals(utf8.encode(legacyJson)));
+    expect(profile.cardType, 'm1k');
+    expect(profile.sectorCount, 18);
+  });
+
   test('profile round-trips assigned keys without losing null or zero key', () {
     final profile = MifareClassicKeyProfile(
       id: 'profile-1',

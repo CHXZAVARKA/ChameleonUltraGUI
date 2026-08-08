@@ -6,6 +6,7 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -183,6 +184,27 @@ class MifareClassicGeometry {
       }
     }
     return geometry;
+  }
+}
+
+extension MifareClassicKeyProfileGeometry on MifareClassicKeyProfile {
+  MifareClassicGeometry? get geometry {
+    MifareClassicType? type;
+    for (final candidate in MifareClassicType.values) {
+      if (candidate.name == cardType) {
+        type = candidate;
+        break;
+      }
+    }
+    if (type == null) {
+      return null;
+    }
+
+    final geometry = MifareClassicGeometry.fromType(
+      type,
+      isEV1: type == MifareClassicType.m1k && sectorCount == 18,
+    );
+    return geometry?.sectorCount == sectorCount ? geometry : null;
   }
 }
 

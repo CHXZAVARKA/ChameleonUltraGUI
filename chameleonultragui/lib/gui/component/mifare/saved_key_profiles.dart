@@ -7,7 +7,6 @@ import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/main.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
@@ -47,11 +46,9 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
   Future<void> _exportProfile(
       BuildContext context, MifareClassicKeyProfile profile) async {
     final localizations = AppLocalizations.of(context)!;
-    final safeName = profile.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '_');
-    await FilePicker.saveFile(
+    await exportMifareClassicKeyProfileFile(
+      profile,
       dialogTitle: '${localizations.output_file}:',
-      fileName: '$safeName.mf1keys.json',
-      bytes: profile.toFile(),
     );
   }
 
@@ -77,20 +74,7 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
   }
 
   String _description(MifareClassicKeyProfile profile) {
-    MifareClassicType? type;
-    for (final candidate in MifareClassicType.values) {
-      if (candidate.name == profile.cardType) {
-        type = candidate;
-        break;
-      }
-    }
-    final geometry = type == null
-        ? null
-        : MifareClassicGeometry.fromType(
-            type,
-            isEV1: type == MifareClassicType.m1k && profile.sectorCount == 18,
-          );
-    final cardLabel = geometry?.label ?? profile.cardType;
+    final cardLabel = profile.geometry?.label ?? profile.cardType;
     final uid = profile.uid == null ? '' : ' · UID ${profile.uid}';
     return '$cardLabel · ${profile.keyCount} keys$uid';
   }

@@ -4,6 +4,7 @@ import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/key_check_marks.dart';
 import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
+import 'package:chameleonultragui/gui/component/mifare/key_profile_file.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
 import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -156,13 +157,11 @@ class CardReaderState extends State<MifareClassicHelper> {
     }
 
     if (exportToFile) {
-      final safeName = name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '_');
-      final outputPath = await FilePicker.saveFile(
+      final exported = await exportMifareClassicKeyProfileFile(
+        profile,
         dialogTitle: '${localizations.output_file}:',
-        fileName: '$safeName.mf1keys.json',
-        bytes: profile.toFile(),
       );
-      if (outputPath == null) {
+      if (!exported) {
         return;
       }
     } else {

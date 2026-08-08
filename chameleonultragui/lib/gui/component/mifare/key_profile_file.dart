@@ -4,6 +4,19 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:file_picker/file_picker.dart';
 
+Future<bool> exportMifareClassicKeyProfileFile(
+  MifareClassicKeyProfile profile, {
+  required String dialogTitle,
+}) async {
+  final safeName = profile.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '_');
+  final outputPath = await FilePicker.saveFile(
+    dialogTitle: dialogTitle,
+    fileName: '$safeName.mf1keys.json',
+    bytes: profile.toFile(),
+  );
+  return outputPath != null;
+}
+
 Future<MifareClassicKeyProfile?> pickMifareClassicKeyProfileFile() async {
   final picked = await FilePicker.pickFile();
   if (picked == null) {
