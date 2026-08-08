@@ -7,7 +7,10 @@ import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -66,13 +69,41 @@ class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   ChameleonGUIState(this.sharedPreferencesProvider);
 
+  RfOperationCoordinator _rfOperations = RfOperationCoordinator();
+  RfOperationCoordinator get rfOperations => _rfOperations;
+
   SharedPreferencesProvider? _sharedPreferencesProvider;
   Logger? log; // Logger
 
   // Android uses AndroidSerial, iOS can only use BLESerial
   // The rest (desktops?) can use NativeSerial
-  AbstractSerial? connector;
-  ChameleonCommunicator? communicator;
+  AbstractSerial? _connector;
+  AbstractSerial? get connector => _connector;
+  set connector(AbstractSerial? value) {
+    if (identical(_connector, value)) {
+      return;
+    }
+    _disposeConnectedDeviceStatus();
+    _rfOperations = RfOperationCoordinator();
+    _communicator = null;
+    _connector = value;
+  }
+
+  ChameleonCommunicator? _communicator;
+  ChameleonCommunicator? get communicator => _communicator;
+  set communicator(ChameleonCommunicator? value) {
+    if (identical(_communicator, value)) {
+      _attachConnectedDeviceStatusIfPossible();
+      return;
+    }
+    _disposeConnectedDeviceStatus();
+    _rfOperations = RfOperationCoordinator();
+    _communicator = value;
+    _attachConnectedDeviceStatusIfPossible();
+  }
+
+  ConnectedDeviceStatus? _connectedDeviceStatus;
+  ConnectedDeviceStatus? get connectedDeviceStatus => _connectedDeviceStatus;
 
   bool devMode = false;
   double? progress; // DFU
@@ -89,9 +120,11 @@ class ChameleonGUIState extends ChangeNotifier {
   }
 
   void onConnectorStateChanged() {
-    if (connector == null || !connector!.connected) {
+    if (connector == null || !connector!.connected || connector!.isDFU) {
       communicator = null;
       progress = null;
+    } else {
+      _attachConnectedDeviceStatusIfPossible();
     }
     notifyListeners();
   }
@@ -134,6 +167,37 @@ class ChameleonGUIState extends ChangeNotifier {
   void setProgressBar(dynamic value) {
     progress = value;
     notifyListeners();
+  }
+
+  bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
+    return connector?.connected == true &&
+        connector?.isDFU != true &&
+        identical(communicator, candidate);
+  }
+
+  void _attachConnectedDeviceStatusIfPossible() {
+    if (_connectedDeviceStatus != null) {
+      return;
+    }
+    final session = ConnectedDeviceSession.capture(this);
+    if (session == null) {
+      return;
+    }
+    _connectedDeviceStatus = ConnectedDeviceStatus(
+      session: session,
+      rfOperations: rfOperations,
+    );
+  }
+
+  void _disposeConnectedDeviceStatus() {
+    _connectedDeviceStatus?.dispose();
+    _connectedDeviceStatus = null;
+  }
+
+  @override
+  void dispose() {
+    _disposeConnectedDeviceStatus();
+    super.dispose();
   }
 }
 

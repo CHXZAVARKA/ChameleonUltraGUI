@@ -4,6 +4,7 @@ import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/github.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
@@ -24,14 +25,34 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   int selectedSlot = 1;
   bool isLegacyFirmware = false;
+  ConnectedDeviceStatus? _status;
+  StatusPresence? _homePresence;
 
   @override
   void initState() {
     super.initState();
   }
 
-  Future<((Icon, BatteryCharge), String, List<String>, bool, bool)>
-      getFutureData() async {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextStatus =
+        Provider.of<ChameleonGUIState>(context).connectedDeviceStatus;
+    if (identical(_status, nextStatus)) {
+      return;
+    }
+    _homePresence?.dispose();
+    _status = nextStatus;
+    _homePresence = nextStatus?.present(StatusSurface.home);
+  }
+
+  @override
+  void dispose() {
+    _homePresence?.dispose();
+    super.dispose();
+  }
+
+  Future<(String, List<String>, bool, bool)> getFutureData() async {
     var appState = context.read<ChameleonGUIState>();
     List<SlotTypes> slotTypes = [];
     try {
@@ -41,7 +62,6 @@ class HomePageState extends State<HomePage> {
     }
 
     return (
-      await getBatteryInfo(),
       await getUsedSlotsOut8(slotTypes),
       await getVersion(),
       await isReaderDeviceMode(),
@@ -75,38 +95,6 @@ class HomePageState extends State<HomePage> {
     }
 
     return true;
-  }
-
-  Future<(Icon, BatteryCharge)> getBatteryInfo() async {
-    var appState = context.read<ChameleonGUIState>();
-    var icon = const Icon(Icons.battery_unknown);
-    BatteryCharge battery = BatteryCharge(percent: 0, voltage: 0);
-
-    try {
-      battery = await appState.communicator!.getBatteryCharge();
-    } catch (_) {}
-
-    if (battery.percent > 98) {
-      icon = const Icon(Icons.battery_full);
-    } else if (battery.percent > 87) {
-      icon = const Icon(Icons.battery_6_bar);
-    } else if (battery.percent > 75) {
-      icon = const Icon(Icons.battery_5_bar);
-    } else if (battery.percent > 62) {
-      icon = const Icon(Icons.battery_4_bar);
-    } else if (battery.percent > 50) {
-      icon = const Icon(Icons.battery_3_bar);
-    } else if (battery.percent > 37) {
-      icon = const Icon(Icons.battery_2_bar);
-    } else if (battery.percent > 10) {
-      icon = const Icon(Icons.battery_1_bar);
-    } else if (battery.percent > 3) {
-      icon = const Icon(Icons.battery_0_bar);
-    } else if (battery.percent > 0) {
-      icon = const Icon(Icons.battery_alert);
-    }
-
-    return (icon, battery);
   }
 
   Future<String> getUsedSlotsOut8(List<SlotTypes> slotTypes) async {
@@ -209,28 +197,32 @@ class HomePageState extends State<HomePage> {
     var appState = context.read<ChameleonGUIState>();
     var localizations = AppLocalizations.of(context)!;
     var scaffoldMessenger = ScaffoldMessenger.of(context);
+    final status = _status;
+    if (status == null) {
+      return Scaffold(appBar: AppBar(title: Text(localizations.home)));
+    }
     return FutureBuilder(
         future: getFutureData(),
         builder: (BuildContext context, AsyncSnapshot snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Scaffold(
-              appBar: AppBar(
-                title: Text(localizations.home),
+              appBar: _ConnectedDeviceAppBar(
+                appState: appState,
+                status: status,
               ),
               body: const Center(child: CircularProgressIndicator()),
             );
           } else if (snapshot.hasError) {
-            appState.disconnect();
             return Scaffold(
-              appBar: AppBar(
-                title: Text(localizations.home),
+              appBar: _ConnectedDeviceAppBar(
+                appState: appState,
+                status: status,
               ),
               body: Center(
                   child: ErrorPage(errorMessage: snapshot.error.toString())),
             );
           } else {
             final (
-              batteryInfo,
               usedSlots,
               fwVersion,
               isReaderDeviceMode,
@@ -238,78 +230,14 @@ class HomePageState extends State<HomePage> {
             ) = snapshot.data;
 
             return Scaffold(
-              appBar: AppBar(
-                title: Text(localizations.home),
+              appBar: _ConnectedDeviceAppBar(
+                appState: appState,
+                status: status,
               ),
               body: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                IconButton(
-                                  onPressed: () async {
-                                    // Disconnect
-                                    await appState.disconnect(manual: true);
-                                  },
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                    flex: 1,
-                                    child: FittedBox(
-                                        alignment: Alignment.centerRight,
-                                        fit: BoxFit.scaleDown,
-                                        child: Row(children: [
-                                          Text(
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              appState.connector!.portName,
-                                              style:
-                                                  const TextStyle(fontSize: 20))
-                                        ]))),
-                                Icon(appState.connector!.connectionType ==
-                                        ConnectionType.ble
-                                    ? Icons.bluetooth
-                                    : Icons.usb),
-                                Tooltip(
-                                  message: localizations.battery_info(
-                                      batteryInfo.$2.percent,
-                                      batteryInfo.$2.voltage),
-                                  child: batteryInfo.$1,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                            "Chameleon ${chameleonDeviceName(appState.connector!.device)}",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: min(
-                                MediaQuery.of(context).size.width / 25,
-                                MediaQuery.of(context).size.height / 20,
-                              ),
-                            )),
-                      ],
-                    ),
                     const SizedBox(height: 20),
                     Text("${localizations.used_slots}: $usedSlots/8",
                         style: TextStyle(
@@ -580,5 +508,133 @@ class HomePageState extends State<HomePage> {
             );
           }
         });
+  }
+}
+
+class _ConnectedDeviceAppBar extends StatelessWidget
+    implements PreferredSizeWidget {
+  const _ConnectedDeviceAppBar({
+    required this.appState,
+    required this.status,
+  });
+
+  final ChameleonGUIState appState;
+  final ConnectedDeviceStatus status;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final snapshot = status.snapshot;
+        final identity = snapshot.identity;
+        return AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Chameleon ${chameleonDeviceName(identity.device)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                identity.portName,
+                key: const Key('home-device-port'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            Tooltip(
+              message: identity.connectionType == ConnectionType.ble
+                  ? 'Bluetooth'
+                  : 'USB',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  identity.connectionType == ConnectionType.ble
+                      ? Icons.bluetooth
+                      : Icons.usb,
+                ),
+              ),
+            ),
+            _BatteryIndicator(battery: snapshot.battery),
+            IconButton(
+              tooltip: 'Disconnect',
+              onPressed: () => appState.disconnect(manual: true),
+              icon: const Icon(Icons.link_off),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _BatteryIndicator extends StatelessWidget {
+  const _BatteryIndicator({required this.battery});
+
+  final BatteryStatus battery;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = battery.percent;
+    final color = _batteryColor(context, percent);
+    final percentLabel = percent == null ? '--%' : '$percent%';
+    final voltage = battery.voltageMillivolts;
+    final tooltip = voltage == null
+        ? percentLabel
+        : '$percentLabel · ${(voltage / 1000).toStringAsFixed(2)} V';
+
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        label: tooltip,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_batteryIcon(percent), color: color),
+              const SizedBox(width: 4),
+              Text(percentLabel, style: TextStyle(color: color)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _batteryColor(BuildContext context, int? percent) {
+    final colors = Theme.of(context).colorScheme;
+    if (percent == null) {
+      return colors.onSurfaceVariant;
+    }
+    if (percent <= 10) {
+      return colors.error;
+    }
+    if (percent <= 20) {
+      return Colors.amber.shade700;
+    }
+    return colors.onSurface;
+  }
+
+  IconData _batteryIcon(int? percent) {
+    if (percent == null) return Icons.battery_unknown;
+    if (percent > 98) return Icons.battery_full;
+    if (percent > 87) return Icons.battery_6_bar;
+    if (percent > 75) return Icons.battery_5_bar;
+    if (percent > 62) return Icons.battery_4_bar;
+    if (percent > 50) return Icons.battery_3_bar;
+    if (percent > 37) return Icons.battery_2_bar;
+    if (percent > 10) return Icons.battery_1_bar;
+    if (percent > 3) return Icons.battery_0_bar;
+    return Icons.battery_alert;
   }
 }
