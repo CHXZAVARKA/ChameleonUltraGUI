@@ -23,11 +23,7 @@ class DebugPage extends StatelessWidget {
 
   Future<void> _runNestedAttack(
       BuildContext context, ChameleonGUIState appState) async {
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
@@ -97,11 +93,7 @@ class DebugPage extends StatelessWidget {
 
   Future<void> _runStaticNestedAttack(
       BuildContext context, ChameleonGUIState appState) async {
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
@@ -170,11 +162,7 @@ class DebugPage extends StatelessWidget {
 
   Future<void> _runDarksideAttack(
       BuildContext context, ChameleonGUIState appState) async {
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
@@ -233,11 +221,7 @@ class DebugPage extends StatelessWidget {
 
   Future<void> _copyUid(
       BuildContext context, ChameleonGUIState appState) async {
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;

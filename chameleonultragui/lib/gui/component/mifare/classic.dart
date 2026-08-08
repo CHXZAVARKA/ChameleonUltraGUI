@@ -431,23 +431,22 @@ class CardReaderState extends State<MifareClassicHelper> {
                   ? () async {
                       final info = widget.mfcInfo;
                       final recovery = info.recovery!;
-                      final session = ConnectedDeviceSession.capture(appState);
-                      if (session == null) {
-                        return;
-                      }
                       setState(() {
                         info.state = MifareClassicState.recoveryOngoing;
                       });
 
+                      ConnectedDeviceSession? operationSession;
                       try {
-                        final completed =
-                            await appState.rfOperations.runForeground(() async {
-                          if (!_canContinue(info, recovery, session)) {
-                            return false;
-                          }
-                          return recovery.recoverKeys();
-                        });
-                        if (!completed) {
+                        final result = await appState.runSessionBoundForeground(
+                          (session) async {
+                            operationSession = session;
+                            if (!_canContinue(info, recovery, session)) {
+                              return false;
+                            }
+                            return recovery.recoverKeys();
+                          },
+                        );
+                        if (!result.executed || result.value != true) {
                           _restoreCanceledOperation(
                             info,
                             recovery,
@@ -455,6 +454,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                           );
                           return;
                         }
+                        final session = result.session!;
                         if (!_canContinue(info, recovery, session)) {
                           return;
                         }
@@ -474,7 +474,9 @@ class CardReaderState extends State<MifareClassicHelper> {
                           recovery,
                           MifareClassicState.recovery,
                         );
-                        if (!_canContinue(info, recovery, session)) {
+                        if (operationSession == null ||
+                            !_canContinue(
+                                info, recovery, operationSession)) {
                           return;
                         }
                         (appState.log ?? appState.communicator?.log)?.e(
@@ -499,24 +501,23 @@ class CardReaderState extends State<MifareClassicHelper> {
                     ? () async {
                         final info = widget.mfcInfo;
                         final recovery = info.recovery!;
-                        final session =
-                            ConnectedDeviceSession.capture(appState);
-                        if (session == null) {
-                          return;
-                        }
                         setState(() {
                           info.state = MifareClassicState.dumpOngoing;
                         });
 
+                        ConnectedDeviceSession? operationSession;
                         try {
-                          final completed = await appState.rfOperations
-                              .runForeground(() async {
-                            if (!_canContinue(info, recovery, session)) {
-                              return false;
-                            }
-                            return recovery.dumpData();
-                          });
-                          if (!completed) {
+                          final result =
+                              await appState.runSessionBoundForeground(
+                            (session) async {
+                              operationSession = session;
+                              if (!_canContinue(info, recovery, session)) {
+                                return false;
+                              }
+                              return recovery.dumpData();
+                            },
+                          );
+                          if (!result.executed || result.value != true) {
                             _restoreCanceledOperation(
                               info,
                               recovery,
@@ -524,6 +525,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                             );
                             return;
                           }
+                          final session = result.session!;
                           if (!_canContinue(info, recovery, session)) {
                             return;
                           }
@@ -538,7 +540,9 @@ class CardReaderState extends State<MifareClassicHelper> {
                             recovery,
                             MifareClassicState.recovery,
                           );
-                          if (!_canContinue(info, recovery, session)) {
+                          if (operationSession == null ||
+                              !_canContinue(
+                                  info, recovery, operationSession)) {
                             return;
                           }
                           setState(() {
@@ -660,41 +664,20 @@ class CardReaderState extends State<MifareClassicHelper> {
                   ? () async {
                       final info = widget.mfcInfo;
                       final recovery = info.recovery!;
-                      final session = ConnectedDeviceSession.capture(appState);
-                      if (session == null) {
-                        return;
-                      }
                       setState(() {
                         info.state = MifareClassicState.checkKeysOngoing;
                       });
 
+                      ConnectedDeviceSession? operationSession;
                       try {
-                        if (!await _confirmSelectedProfileUid()) {
-                          if (!_canContinue(info, recovery, session)) {
-                            _restoreCanceledOperation(
-                              info,
-                              recovery,
-                              MifareClassicState.checkKeys,
-                            );
-                            return;
-                          }
-                          setState(() {
-                            info.state = MifareClassicState.checkKeys;
-                          });
-                          return;
-                        }
-                        if (!_canContinue(info, recovery, session)) {
-                          _restoreCanceledOperation(
-                            info,
-                            recovery,
-                            MifareClassicState.checkKeys,
-                          );
-                          return;
-                        }
-                        final completed =
-                            await appState.rfOperations.runForeground(
-                          () async {
+                        final result = await appState.runSessionBoundForeground(
+                          (session) async {
+                            operationSession = session;
                             if (!_canContinue(info, recovery, session)) {
+                              return false;
+                            }
+                            if (!await _confirmSelectedProfileUid() ||
+                                !_canContinue(info, recovery, session)) {
                               return false;
                             }
                             return recovery.checkKeys(
@@ -702,7 +685,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                             );
                           },
                         );
-                        if (!completed) {
+                        if (!result.executed || result.value != true) {
                           _restoreCanceledOperation(
                             info,
                             recovery,
@@ -710,6 +693,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                           );
                           return;
                         }
+                        final session = result.session!;
                         if (!_canContinue(info, recovery, session)) {
                           return;
                         }
@@ -730,7 +714,9 @@ class CardReaderState extends State<MifareClassicHelper> {
                           recovery,
                           MifareClassicState.checkKeys,
                         );
-                        if (!_canContinue(info, recovery, session)) {
+                        if (operationSession == null ||
+                            !_canContinue(
+                                info, recovery, operationSession)) {
                           return;
                         }
                         for (var checkmark = 0; checkmark < 80; checkmark++) {
@@ -762,23 +748,22 @@ class CardReaderState extends State<MifareClassicHelper> {
                   ? () async {
                       final info = widget.mfcInfo;
                       final recovery = info.recovery!;
-                      final session = ConnectedDeviceSession.capture(appState);
-                      if (session == null) {
-                        return;
-                      }
                       setState(() {
                         info.state = MifareClassicState.dumpOngoing;
                       });
 
+                      ConnectedDeviceSession? operationSession;
                       try {
-                        final completed =
-                            await appState.rfOperations.runForeground(() async {
-                          if (!_canContinue(info, recovery, session)) {
-                            return false;
-                          }
-                          return recovery.dumpData();
-                        });
-                        if (!completed) {
+                        final result = await appState.runSessionBoundForeground(
+                          (session) async {
+                            operationSession = session;
+                            if (!_canContinue(info, recovery, session)) {
+                              return false;
+                            }
+                            return recovery.dumpData();
+                          },
+                        );
+                        if (!result.executed || result.value != true) {
                           _restoreCanceledOperation(
                             info,
                             recovery,
@@ -786,6 +771,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                           );
                           return;
                         }
+                        final session = result.session!;
                         if (!_canContinue(info, recovery, session)) {
                           return;
                         }
@@ -800,7 +786,9 @@ class CardReaderState extends State<MifareClassicHelper> {
                           recovery,
                           MifareClassicState.dump,
                         );
-                        if (!_canContinue(info, recovery, session)) {
+                        if (operationSession == null ||
+                            !_canContinue(
+                                info, recovery, operationSession)) {
                           return;
                         }
                         setState(() {

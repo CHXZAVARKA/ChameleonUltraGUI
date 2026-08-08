@@ -70,10 +70,6 @@ class CardReaderState extends State<MifareUltralightHelper> {
     final localizations = AppLocalizations.of(context)!;
     final hfInfo = widget.hfInfo;
     final type = hfInfo.type;
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
     final password = keyController.text;
     final pageCount = mfUltralightGetPagesCount(type);
     final operation = Object();
@@ -85,7 +81,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
       state = MifareUltralightState.read;
     });
 
-    await appState.rfOperations.runForeground(() async {
+    final result = await appState.runSessionBoundForeground((session) async {
       bool canContinue() =>
           mounted &&
           identical(widget.hfInfo, hfInfo) &&
@@ -190,6 +186,9 @@ class CardReaderState extends State<MifareUltralightHelper> {
         state = MifareUltralightState.save;
       });
     });
+    if (!result.executed) {
+      _restoreCanceledRead(operation);
+    }
   }
 
   Future<void> saveCard({bool bin = false}) async {

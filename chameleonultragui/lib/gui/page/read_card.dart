@@ -114,17 +114,14 @@ class ReadCardPageState extends State<ReadCardPage> {
     );
   }
 
-  Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) {
-    final session = ConnectedDeviceSession.capture(_appState);
-    if (session == null) {
-      return Future.value(false);
-    }
-    return _appState.rfOperations.runForeground(
-      () => _readAndCommitHFInfoUnderLease(
+  Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) async {
+    final result = await _appState.runSessionBoundForeground(
+      (session) => _readAndCommitHFInfoUnderLease(
         session: session,
         scanFinished: scanFinished,
       ),
     );
+    return result.executed && result.value == true;
   }
 
   Future<bool> _readLFInfoUnderLease(ConnectedDeviceSession session) async {
@@ -193,14 +190,11 @@ class ReadCardPageState extends State<ReadCardPage> {
     return true;
   }
 
-  Future<bool> readLFInfo() {
-    final session = ConnectedDeviceSession.capture(_appState);
-    if (session == null) {
-      return Future.value(false);
-    }
-    return _appState.rfOperations.runForeground(
-      () => _readLFInfoUnderLease(session),
+  Future<bool> readLFInfo() async {
+    final result = await _appState.runSessionBoundForeground(
+      _readLFInfoUnderLease,
     );
+    return result.executed && result.value == true;
   }
 
   Future<void> _runContinuousHFScanTick() async {
@@ -481,26 +475,18 @@ class ReadCardPageState extends State<ReadCardPage> {
                                               });
 
                                               if (isMifareClassic(newValue!)) {
-                                                final session =
-                                                    ConnectedDeviceSession
-                                                        .capture(_appState);
-                                                if (session == null) {
-                                                  return;
-                                                }
-                                                final communicator =
-                                                    session.communicator;
                                                 final pendingInfo =
                                                     MifareClassicInfo(
                                                         state: mfcInfo.state);
-                                                var info = await _appState
-                                                    .rfOperations
-                                                    .runForeground(() async {
+                                                final result = await _appState
+                                                    .runSessionBoundForeground(
+                                                        (session) async {
                                                   if (!session.isCurrent ||
                                                       !mounted) {
                                                     return null;
                                                   }
                                                   return performMifareClassicScan(
-                                                    communicator,
+                                                    session.communicator,
                                                     pendingInfo,
                                                     context,
                                                     updateMifareClassicRecovery,
@@ -510,9 +496,11 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                         session.isCurrent,
                                                   );
                                                 });
+                                                final info = result.value;
                                                 if (info == null) {
                                                   return;
                                                 }
+                                                final session = result.session!;
                                                 if (!mounted ||
                                                     !session.isCurrent) {
                                                   return;
@@ -522,29 +510,21 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                 });
                                               } else if (isMifareUltralight(
                                                   newValue)) {
-                                                final session =
-                                                    ConnectedDeviceSession
-                                                        .capture(_appState);
-                                                if (session == null) {
-                                                  return;
-                                                }
-                                                final communicator =
-                                                    session.communicator;
                                                 final pendingInfo =
                                                     MifareUltralightInfo()
                                                       ..version =
                                                           mfuInfo.version
                                                       ..signature =
                                                           mfuInfo.signature;
-                                                var info = await _appState
-                                                    .rfOperations
-                                                    .runForeground(() async {
+                                                final result = await _appState
+                                                    .runSessionBoundForeground(
+                                                        (session) async {
                                                   if (!mounted ||
                                                       !session.isCurrent) {
                                                     return null;
                                                   }
                                                   return performMifareUltralightScan(
-                                                    communicator,
+                                                    session.communicator,
                                                     pendingInfo,
                                                     override: newValue,
                                                     canContinue: () =>
@@ -552,9 +532,11 @@ class ReadCardPageState extends State<ReadCardPage> {
                                                         session.isCurrent,
                                                   );
                                                 });
+                                                final info = result.value;
                                                 if (info == null) {
                                                   return;
                                                 }
+                                                final session = result.session!;
                                                 if (!mounted ||
                                                     !session.isCurrent) {
                                                   return;
