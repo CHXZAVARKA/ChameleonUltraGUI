@@ -93,6 +93,110 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('recover error restores the current model and reports safely',
+      (tester) async {
+    final fixture =
+        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    await fixture.recovery.started.future;
+    fixture.recovery.result.completeError(StateError('RF transport failed'));
+    await tester.pump();
+
+    expect(fixture.info.state, MifareClassicState.recovery);
+    expect(
+      fixture.recovery.checkMarks[0],
+      ChameleonKeyCheckmark.none,
+    );
+    expect(fixture.recovery.error, fixture.localizations.error);
+    expect(find.text(fixture.localizations.error), findsOneWidget);
+    expect(
+      fixture.logOutput.buffer.map((event) => event.origin.error),
+      contains(isA<StateError>()),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recover error restores only the replaced original model',
+      (tester) async {
+    final fixture =
+        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    await fixture.recovery.started.future;
+
+    final replacement = fixture.createReplacement();
+    await fixture.pump(replacement);
+    fixture.recovery.result.completeError(StateError('RF transport failed'));
+    await tester.pump();
+
+    expect(fixture.info.state, MifareClassicState.recovery);
+    expect(
+      fixture.recovery.checkMarks[0],
+      ChameleonKeyCheckmark.none,
+    );
+    expect(fixture.recovery.error, isEmpty);
+    expect(replacement.state, MifareClassicState.recovery);
+    expect(replacement.recovery?.error, isEmpty);
+    expect(
+      fixture.logOutput.buffer.map((event) => event.origin.error),
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recover error after reconnect restores without reporting',
+      (tester) async {
+    final fixture =
+        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    await fixture.recovery.started.future;
+    fixture.reconnect();
+    fixture.recovery.result.completeError(StateError('port closed'));
+    await tester.pump();
+
+    expect(fixture.info.state, MifareClassicState.recovery);
+    expect(
+      fixture.recovery.checkMarks[0],
+      ChameleonKeyCheckmark.none,
+    );
+    expect(fixture.recovery.error, isEmpty);
+    expect(
+      fixture.logOutput.buffer.map((event) => event.origin.error),
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recover error restores state after helper disposal',
+      (tester) async {
+    final fixture =
+        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    await fixture.recovery.started.future;
+    await tester.pumpWidget(const SizedBox());
+    fixture.recovery.result.completeError(StateError('RF transport failed'));
+    await tester.pump();
+
+    expect(fixture.info.state, MifareClassicState.recovery);
+    expect(
+      fixture.recovery.checkMarks[0],
+      ChameleonKeyCheckmark.none,
+    );
+    expect(fixture.recovery.error, isEmpty);
+    expect(
+      fixture.logOutput.buffer.map((event) => event.origin.error),
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 enum _ClassicOperation { check, recover, dump }
@@ -119,6 +223,7 @@ class _ClassicFixture {
     required this.operation,
     required this.info,
     required this.recovery,
+    required this.logOutput,
   });
 
   final WidgetTester tester;
@@ -127,6 +232,7 @@ class _ClassicFixture {
   final _ClassicOperation operation;
   final MifareClassicInfo info;
   final _CancellableRecovery recovery;
+  final MemoryOutput logOutput;
 
   String get buttonLabel => switch (operation) {
     _ClassicOperation.check => localizations.check_keys_dict,
@@ -151,10 +257,17 @@ class _ClassicFixture {
     final localizations = await AppLocalizations.delegate.load(
       const Locale('en'),
     );
+    final logOutput = MemoryOutput();
+    final logger = Logger(
+      filter: ProductionFilter(),
+      printer: SimplePrinter(colors: false),
+      output: logOutput,
+    );
+    addTearDown(logger.close);
     final appState = ChameleonGUIState(preferences)
-      ..connector = (_TestSerial(log: Logger())..connected = true)
-      ..communicator = ChameleonCommunicator(Logger())
-      ..log = Logger();
+      ..connector = (_TestSerial(log: logger)..connected = true)
+      ..communicator = ChameleonCommunicator(logger)
+      ..log = logger;
     final recovery = _CancellableRecovery(
       appState: appState,
       localizations: localizations,
@@ -171,6 +284,7 @@ class _ClassicFixture {
       operation: operation,
       info: info,
       recovery: recovery,
+      logOutput: logOutput,
     );
     await fixture.pump(info);
     return fixture;

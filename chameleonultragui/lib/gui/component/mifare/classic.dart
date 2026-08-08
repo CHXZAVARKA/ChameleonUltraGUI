@@ -439,32 +439,52 @@ class CardReaderState extends State<MifareClassicHelper> {
                         info.state = MifareClassicState.recoveryOngoing;
                       });
 
-                      final completed =
-                          await appState.rfOperations.runForeground(() async {
-                        if (!_canContinue(info, recovery, session)) {
-                          return false;
+                      try {
+                        final completed =
+                            await appState.rfOperations.runForeground(() async {
+                          if (!_canContinue(info, recovery, session)) {
+                            return false;
+                          }
+                          return recovery.recoverKeys();
+                        });
+                        if (!completed) {
+                          _restoreCanceledOperation(
+                            info,
+                            recovery,
+                            MifareClassicState.recovery,
+                          );
+                          return;
                         }
-                        return recovery.recoverKeys();
-                      });
-                      if (!completed) {
+                        if (!_canContinue(info, recovery, session)) {
+                          return;
+                        }
+
+                        if (recovery.error.isNotEmpty) {
+                          setState(() {
+                            info.state = MifareClassicState.recovery;
+                          });
+                        } else {
+                          setState(() {
+                            info.state = MifareClassicState.dump;
+                          });
+                        }
+                      } catch (error, stackTrace) {
                         _restoreCanceledOperation(
                           info,
                           recovery,
                           MifareClassicState.recovery,
                         );
-                        return;
-                      }
-                      if (!_canContinue(info, recovery, session)) {
-                        return;
-                      }
-
-                      if (recovery.error.isNotEmpty) {
+                        if (!_canContinue(info, recovery, session)) {
+                          return;
+                        }
+                        (appState.log ?? appState.communicator?.log)?.e(
+                          'MIFARE Classic key recovery failed',
+                          error: error,
+                          stackTrace: stackTrace,
+                        );
                         setState(() {
+                          recovery.error = localizations.error;
                           info.state = MifareClassicState.recovery;
-                        });
-                      } else {
-                        setState(() {
-                          info.state = MifareClassicState.dump;
                         });
                       }
                     }
