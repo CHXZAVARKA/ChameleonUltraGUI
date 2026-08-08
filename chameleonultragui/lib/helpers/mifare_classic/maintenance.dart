@@ -159,7 +159,6 @@ class _MifareClassicCredential {
 class _MifareClassicMaintenanceOperation {
   final int sector;
   final int block;
-  final Uint8List expectedData;
   final Uint8List targetData;
   final _MifareClassicCredential writeCredential;
   final _MifareClassicCredential readCredential;
@@ -167,12 +166,10 @@ class _MifareClassicMaintenanceOperation {
   _MifareClassicMaintenanceOperation({
     required this.sector,
     required this.block,
-    required Uint8List expectedData,
     required Uint8List targetData,
     required this.writeCredential,
     required this.readCredential,
-  })  : expectedData = Uint8List.fromList(expectedData),
-        targetData = Uint8List.fromList(targetData);
+  }) : targetData = Uint8List.fromList(targetData);
 }
 
 class _MifareClassicMaintenancePrecondition {
@@ -470,7 +467,6 @@ class MifareClassicMaintenance {
           operations.add(_MifareClassicMaintenanceOperation(
             sector: sector,
             block: block,
-            expectedData: current.data,
             targetData: blocks[block],
             writeCredential: writeCredential,
             readCredential: readCredential,
@@ -697,38 +693,6 @@ class MifareClassicMaintenance {
           verifiedBlocks: verified,
         );
       }
-
-      final currentBlock = await _communicate(
-        () => port.readBlock(
-          operation.block,
-          operation.readCredential.keyType,
-          operation.readCredential.key,
-        ),
-        'Communication with Chameleon was lost before writing the data block',
-        sector: operation.sector,
-        block: operation.block,
-        verifiedBlocks: verified,
-      );
-      if (!currentBlock.isSuccess || currentBlock.data.length != 16) {
-        throw MifareClassicMaintenanceException(
-          MifareClassicMaintenanceFailure.readFailed,
-          'Could not re-read a data block before writing',
-          sector: operation.sector,
-          block: operation.block,
-          status: currentBlock.status,
-          verifiedBlocks: verified,
-        );
-      }
-      if (!_sameBytes(currentBlock.data, operation.expectedData)) {
-        throw MifareClassicMaintenanceException(
-          MifareClassicMaintenanceFailure.stalePlan,
-          'A data block changed after preflight; run preflight again',
-          sector: operation.sector,
-          block: operation.block,
-          verifiedBlocks: verified,
-        );
-      }
-      _throwIfCancelledBeforeBlock(shouldCancel, operation, verified);
 
       onProgress?.call(MifareClassicMaintenanceProgress(
         phase: MifareClassicMaintenancePhase.writing,

@@ -64,6 +64,9 @@ class _FakePort implements MifareClassicMaintenancePort {
   int replaceUidOnScan = -1;
   int noCardOnScan = -1;
   int scans = 0;
+  int authentications = 0;
+  int reads = 0;
+  int writeCommands = 0;
   bool acknowledgeWithoutWriting = false;
   int writeStatus = 0;
   bool throwAfterWriting = false;
@@ -71,11 +74,18 @@ class _FakePort implements MifareClassicMaintenancePort {
   bool throwOnReadAfterWrite = false;
   int throwOnReadBlock = -1;
   void Function(int block)? onReadAfterWrite;
-  void Function(int block)? onReadBeforeWrite;
+  void Function(int block)? onSourceRead;
   int availableBlockCount = 256;
   MifareClassicType type = MifareClassicType.m4k;
 
   _FakePort(this.blocks);
+
+  void resetCommandCounts() {
+    scans = 0;
+    authentications = 0;
+    reads = 0;
+    writeCommands = 0;
+  }
 
   @override
   Future<void> ensureReaderMode() async {}
@@ -109,12 +119,14 @@ class _FakePort implements MifareClassicMaintenancePort {
   @override
   Future<MifareClassicIoResult> authenticate(
       int block, int keyType, Uint8List key) async {
+    authentications++;
     return MifareClassicIoResult(status: block < availableBlockCount ? 0 : 6);
   }
 
   @override
   Future<MifareClassicIoResult> readBlock(
       int block, int keyType, Uint8List key) async {
+    reads++;
     if (block >= availableBlockCount) {
       return MifareClassicIoResult(status: 6);
     }
@@ -127,7 +139,7 @@ class _FakePort implements MifareClassicMaintenancePort {
     if (writes.contains(block)) {
       onReadAfterWrite?.call(block);
     } else {
-      onReadBeforeWrite?.call(block);
+      onSourceRead?.call(block);
       if (block == replaceUidAfterReadBlock) {
         replacementUid = Uint8List.fromList([9, 9, 9, 9]);
         replaceUidOnScan = scans + 1;
@@ -139,6 +151,7 @@ class _FakePort implements MifareClassicMaintenancePort {
   @override
   Future<MifareClassicIoResult> writeBlock(
       int block, int keyType, Uint8List key, Uint8List data) async {
+    writeCommands++;
     writes.add(block);
     if (!acknowledgeWithoutWriting) {
       blocks[block] = Uint8List.fromList(data);
@@ -406,6 +419,32 @@ void main() {
     expect(report.writtenBlocks, 215);
     expect(report.verifiedBlocks, 215);
     expect(port.writes, orderedEquals(plannedBlocks));
+  });
+
+  test('execute keeps a fully changed 4K card within its RF command budget',
+      () async {
+    final current = _blankCard();
+    final target = current.map(Uint8List.fromList).toList();
+    for (var block = 1; block < 256; block++) {
+      final sector = mfClassicGetSectorByBlock(block);
+      if (block != mfClassicGetSectorTrailerBlockBySector(sector)) {
+        target[block] = Uint8List.fromList(List.filled(16, block));
+      }
+    }
+    final port = _FakePort(current);
+    final maintenance = MifareClassicMaintenance(port);
+    final plan =
+        await maintenance.preflight(image: _image(target), profile: _profile());
+    port.resetCommandCounts();
+
+    final report = await maintenance.execute(plan);
+
+    expect(report.writtenBlocks, 215);
+    expect(report.verifiedBlocks, 215);
+    expect(port.reads, 431);
+    expect(port.authentications, 1);
+    expect(port.writeCommands, 215);
+    expect(port.scans, 472);
   });
 
   test('block 0 must exactly match even when the UID prefix matches', () async {
@@ -710,6 +749,26 @@ void main() {
     expect(port.writes, isEmpty);
   });
 
+  test('execute revalidates the last source block before the first write',
+      () async {
+    final current = _blankCard();
+    final target = current.map(Uint8List.fromList).toList();
+    target[1] = Uint8List.fromList(List.filled(16, 0x3C));
+    final port = _FakePort(current);
+    final maintenance = MifareClassicMaintenance(port);
+    final plan =
+        await maintenance.preflight(image: _image(target), profile: _profile());
+    port.blocks[254] = Uint8List.fromList(List.filled(16, 0x3D));
+
+    final error = await _expectMaintenanceFailure(() async {
+      await maintenance.execute(plan);
+    });
+
+    expect(error.failure, MifareClassicMaintenanceFailure.stalePlan);
+    expect(error.block, 254);
+    expect(port.writes, isEmpty);
+  });
+
   test('execute revalidates blocks that already matched during preflight',
       () async {
     final current = _blankCard();
@@ -823,7 +882,8 @@ void main() {
     expect(port.blocks[2], isNot(orderedEquals(target[2])));
   });
 
-  test('cancellation during the source read stops the pending write', () async {
+  test('cancellation during common revalidation stops before any write',
+      () async {
     final current = _blankCard();
     final target = current.map(Uint8List.fromList).toList();
     target[1] = Uint8List.fromList(List.filled(16, 0x55));
@@ -832,7 +892,7 @@ void main() {
     final maintenance = MifareClassicMaintenance(port);
     final plan =
         await maintenance.preflight(image: _image(target), profile: _profile());
-    port.onReadBeforeWrite = (block) {
+    port.onSourceRead = (block) {
       if (block == 1) {
         cancelled = true;
       }

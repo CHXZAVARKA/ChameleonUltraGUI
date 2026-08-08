@@ -123,11 +123,12 @@ on the first error or mismatch and does not retry a write automatically.
 Maintenance plans are bound to the device port that created them and can be
 used only once. Execute starts with a read-only revalidation of every data block
 seen during preflight, including blocks that already matched the image. No write
-starts if any source byte changed. Before each individual write, the app checks
-that block again. If a card disappears, changes, or is replaced, only earlier
-read-back-verified blocks are considered complete. The error shown to the user
-includes that count. If the write response and read-back are both lost, the
-result of that block is reported as unknown and the app does not retry it.
+starts if any source byte changed. After this complete revalidation, the app
+scans the card UID immediately before each individual write. If a card
+disappears, changes, or is replaced, only earlier read-back-verified blocks are
+considered complete. The error shown to the user includes that count. If the
+write response and read-back are both lost, the result of that block is reported
+as unknown and the app does not retry it.
 
 The current device protocol performs identity scans and writes as separate RF
 commands. Software therefore cannot make the UID check and the following write
