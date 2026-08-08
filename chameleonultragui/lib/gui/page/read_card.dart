@@ -99,7 +99,7 @@ class ReadCardPageState extends State<ReadCardPage> {
     required ConnectedDeviceSession session,
     bool scanFinished = false,
   }) async {
-    if (!session.isCurrent) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
     final info = await readHFInfo(
@@ -128,7 +128,7 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   Future<bool> _readLFInfoUnderLease(ConnectedDeviceSession session) async {
-    if (!session.isCurrent) {
+    if (!mounted || !session.isCurrent) {
       return false;
     }
     final communicator = session.communicator;

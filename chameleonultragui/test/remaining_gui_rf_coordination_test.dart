@@ -63,6 +63,47 @@ void main() {
     expect(state.state, MifareUltralightState.save);
   });
 
+  testWidgets('queued Ultralight dump rejects a replacement card model',
+      (tester) async {
+    final communicator = _UltralightCommunicator();
+    final appState = _connectedState(communicator);
+    final releaseBackground = Completer<void>();
+    final background = appState.rfOperations.tryRunBackground(() async {
+      await releaseBackground.future;
+    });
+    await tester.pump();
+    final originalInfo = HFCardInfo(type: TagType.ultralight);
+
+    await _pumpLocalized(
+      tester,
+      appState,
+      MifareUltralightHelper(hfInfo: originalInfo, allowSave: false),
+    );
+    final state = tester.state<CardReaderState>(
+      find.byType(MifareUltralightHelper),
+    );
+    final read = state.readCard();
+    await tester.pump();
+
+    final replacementInfo = HFCardInfo(type: TagType.ntag216);
+    await _pumpLocalized(
+      tester,
+      appState,
+      MifareUltralightHelper(hfInfo: replacementInfo, allowSave: false),
+    );
+    expect(
+      tester.state<CardReaderState>(find.byType(MifareUltralightHelper)),
+      same(state),
+    );
+    releaseBackground.complete();
+    await background;
+    await read;
+    await tester.pump();
+
+    expect(communicator.rawCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Ultralight dump stops after reconnect at an inner boundary',
       (tester) async {
     final communicator = _DelayedUltralightCommunicator();

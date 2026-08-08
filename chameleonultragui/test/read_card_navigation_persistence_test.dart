@@ -186,6 +186,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('queued manual HF read does not start after page disposal', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousHFCommunicator(logger, port: connector),
+    );
+    final communicator = fixture.communicator as _ContinuousHFCommunicator;
+    await fixture.openReadCard();
+    final blocker = Completer<void>();
+    final background = fixture.appState.rfOperations.tryRunBackground(() async {
+      await blocker.future;
+    });
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    blocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(communicator.scanCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('queued manual LF read does not start after page disposal', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousLFCommunicator(logger, port: connector),
+    );
+    final communicator = fixture.communicator as _ContinuousLFCommunicator;
+    await fixture.openReadCard();
+    final blocker = Completer<void>();
+    final background = fixture.appState.rfOperations.tryRunBackground(() async {
+      await blocker.future;
+    });
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    blocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(communicator.readCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('pending LF read updates the session while Read Card is hidden', (
     tester,
   ) async {

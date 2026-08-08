@@ -44,12 +44,14 @@ class CardReaderState extends State<MifareUltralightHelper> {
   Future<void> readCard({bool withPassword = false}) async {
     final appState = context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
+    final hfInfo = widget.hfInfo;
+    final type = hfInfo.type;
     final session = ConnectedDeviceSession.capture(appState);
     if (session == null) {
       return;
     }
     final password = keyController.text;
-    final pageCount = mfUltralightGetPagesCount(widget.hfInfo.type);
+    final pageCount = mfUltralightGetPagesCount(type);
 
     setState(() {
       cardData = [];
@@ -58,7 +60,8 @@ class CardReaderState extends State<MifareUltralightHelper> {
     });
 
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() => mounted && session.isCurrent;
+      bool canContinue() =>
+          mounted && identical(widget.hfInfo, hfInfo) && session.isCurrent;
       if (!canContinue()) {
         return;
       }
@@ -118,10 +121,10 @@ class CardReaderState extends State<MifareUltralightHelper> {
       }
 
       var nextCounters = <int>[];
-      if (mfUltralightHasCounters(widget.hfInfo.type)) {
+      if (mfUltralightHasCounters(type)) {
         nextCounters = await mfUltralightReadAllCountersFromCard(
           communicator,
-          widget.hfInfo.type,
+          type,
           canContinue: canContinue,
         );
         if (!canContinue()) {
@@ -129,7 +132,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
         }
       }
 
-      final passwordPage = mfUltralightGetPasswordPage(widget.hfInfo.type);
+      final passwordPage = mfUltralightGetPasswordPage(type);
       if (passwordPage != 0 && withPassword) {
         nextCardData[passwordPage] = hexToBytes(password);
         nextCardData[passwordPage + 1] = Uint8List(4);

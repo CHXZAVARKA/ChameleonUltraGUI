@@ -55,6 +55,31 @@ class CardReaderState extends State<MifareClassicHelper> {
         (session?.isCurrent ?? true);
   }
 
+  void _restoreCanceledOperation(
+    MifareClassicInfo info,
+    MifareClassicRecovery recovery,
+    MifareClassicState actionableState,
+  ) {
+    if (!identical(info.recovery, recovery)) {
+      return;
+    }
+
+    void restore() {
+      for (var index = 0; index < recovery.checkMarks.length; index++) {
+        if (recovery.checkMarks[index] == ChameleonKeyCheckmark.checking) {
+          recovery.checkMarks[index] = ChameleonKeyCheckmark.none;
+        }
+      }
+      info.state = actionableState;
+    }
+
+    if (mounted && identical(widget.mfcInfo, info)) {
+      setState(restore);
+    } else {
+      restore();
+    }
+  }
+
   @override
   void didUpdateWidget(covariant MifareClassicHelper oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -421,8 +446,15 @@ class CardReaderState extends State<MifareClassicHelper> {
                         }
                         return recovery.recoverKeys();
                       });
-                      if (!completed ||
-                          !_canContinue(info, recovery, session)) {
+                      if (!completed) {
+                        _restoreCanceledOperation(
+                          info,
+                          recovery,
+                          MifareClassicState.recovery,
+                        );
+                        return;
+                      }
+                      if (!_canContinue(info, recovery, session)) {
                         return;
                       }
 
@@ -464,8 +496,15 @@ class CardReaderState extends State<MifareClassicHelper> {
                             }
                             return recovery.dumpData();
                           });
-                          if (!completed ||
-                              !_canContinue(info, recovery, session)) {
+                          if (!completed) {
+                            _restoreCanceledOperation(
+                              info,
+                              recovery,
+                              MifareClassicState.recovery,
+                            );
+                            return;
+                          }
+                          if (!_canContinue(info, recovery, session)) {
                             return;
                           }
 
@@ -474,6 +513,11 @@ class CardReaderState extends State<MifareClassicHelper> {
                             info.state = MifareClassicState.save;
                           });
                         } catch (_) {
+                          _restoreCanceledOperation(
+                            info,
+                            recovery,
+                            MifareClassicState.recovery,
+                          );
                           if (!_canContinue(info, recovery, session)) {
                             return;
                           }
@@ -607,6 +651,11 @@ class CardReaderState extends State<MifareClassicHelper> {
                       try {
                         if (!await _confirmSelectedProfileUid()) {
                           if (!_canContinue(info, recovery, session)) {
+                            _restoreCanceledOperation(
+                              info,
+                              recovery,
+                              MifareClassicState.checkKeys,
+                            );
                             return;
                           }
                           setState(() {
@@ -615,6 +664,11 @@ class CardReaderState extends State<MifareClassicHelper> {
                           return;
                         }
                         if (!_canContinue(info, recovery, session)) {
+                          _restoreCanceledOperation(
+                            info,
+                            recovery,
+                            MifareClassicState.checkKeys,
+                          );
                           return;
                         }
                         final completed =
@@ -628,8 +682,15 @@ class CardReaderState extends State<MifareClassicHelper> {
                             );
                           },
                         );
-                        if (!completed ||
-                            !_canContinue(info, recovery, session)) {
+                        if (!completed) {
+                          _restoreCanceledOperation(
+                            info,
+                            recovery,
+                            MifareClassicState.checkKeys,
+                          );
+                          return;
+                        }
+                        if (!_canContinue(info, recovery, session)) {
                           return;
                         }
 
@@ -644,6 +705,11 @@ class CardReaderState extends State<MifareClassicHelper> {
                           });
                         }
                       } catch (_) {
+                        _restoreCanceledOperation(
+                          info,
+                          recovery,
+                          MifareClassicState.checkKeys,
+                        );
                         if (!_canContinue(info, recovery, session)) {
                           return;
                         }
@@ -692,8 +758,15 @@ class CardReaderState extends State<MifareClassicHelper> {
                           }
                           return recovery.dumpData();
                         });
-                        if (!completed ||
-                            !_canContinue(info, recovery, session)) {
+                        if (!completed) {
+                          _restoreCanceledOperation(
+                            info,
+                            recovery,
+                            MifareClassicState.dump,
+                          );
+                          return;
+                        }
+                        if (!_canContinue(info, recovery, session)) {
                           return;
                         }
 
@@ -702,6 +775,11 @@ class CardReaderState extends State<MifareClassicHelper> {
                           info.state = MifareClassicState.save;
                         });
                       } catch (_) {
+                        _restoreCanceledOperation(
+                          info,
+                          recovery,
+                          MifareClassicState.dump,
+                        );
                         if (!_canContinue(info, recovery, session)) {
                           return;
                         }
