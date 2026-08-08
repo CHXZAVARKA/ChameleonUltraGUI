@@ -148,6 +148,23 @@ class MifareClassicGeometry {
     );
   }
 
+  bool matchesBlockData(List<Uint8List> data) {
+    if (data.length < blockCount) {
+      return false;
+    }
+    for (var block = 0; block < blockCount; block++) {
+      if (data[block].length != 16) {
+        return false;
+      }
+    }
+    for (var block = blockCount; block < data.length; block++) {
+      if (data[block].isNotEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   static MifareClassicGeometry? fromSavedCard(CardSave card) {
     if (!isMifareClassic(card.tag) ||
         card.extraData.mifareClassicDumpComplete != true) {
@@ -170,18 +187,8 @@ class MifareClassicGeometry {
       type,
       isEV1: chameleonTagSaveCheckForMifareClassicEV1(card),
     );
-    if (geometry == null || card.data.length < geometry.blockCount) {
+    if (geometry == null || !geometry.matchesBlockData(card.data)) {
       return null;
-    }
-    for (var block = 0; block < geometry.blockCount; block++) {
-      if (card.data[block].length != 16) {
-        return null;
-      }
-    }
-    for (var block = geometry.blockCount; block < card.data.length; block++) {
-      if (card.data[block].isNotEmpty) {
-        return null;
-      }
     }
     return geometry;
   }

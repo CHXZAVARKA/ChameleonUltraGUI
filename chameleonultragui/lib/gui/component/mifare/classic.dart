@@ -214,10 +214,20 @@ class CardReaderState extends State<MifareClassicHelper> {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
 
     var localizations = AppLocalizations.of(context)!;
-    if (bin && widget.mfcInfo.recovery?.dumpComplete != true) {
-      _showMessage(
-          MifareClassicFeatureStrings.of(context).partialBinExportBlocked);
-      return;
+    if (bin) {
+      final recovery = widget.mfcInfo.recovery;
+      final geometry = MifareClassicGeometry.fromType(
+        widget.mfcInfo.type,
+        isEV1: widget.mfcInfo.isEV1,
+      );
+      if (recovery == null ||
+          !recovery.dumpComplete ||
+          geometry == null ||
+          !geometry.matchesBlockData(recovery.cardData)) {
+        _showMessage(
+            MifareClassicFeatureStrings.of(context).partialBinExportBlocked);
+        return;
+      }
     }
 
     Uint8List cardDump = Uint8List(0);
