@@ -16,6 +16,23 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('initialization stops shared type detection after reconnect', () async {
+    final oldCommunicator = _DelayedTypeCommunicator();
+    final appState = _connectedState(oldCommunicator);
+    final recovery = await _recovery(appState)
+      ..mifareClassicType = MifareClassicType.none;
+
+    final operation = recovery.initialize();
+    await oldCommunicator.started.future;
+
+    _reconnect(appState, _RecordingCommunicator());
+    oldCommunicator.result.complete(Uint8List(0));
+
+    expect(await operation, isFalse);
+    expect(oldCommunicator.typeProbes, 1);
+    expect(recovery.mifareClassicType, MifareClassicType.none);
+  });
+
   test('key checking does not continue on a reconnected communicator',
       () async {
     final oldCommunicator = _DelayedKeyCheckCommunicator();
@@ -254,6 +271,35 @@ class _RecordingCommunicator extends ChameleonCommunicator {
   Future<Uint8List> mf1ReadBlock(int block, int keyType, Uint8List key) async {
     blockReads++;
     return Uint8List(0);
+  }
+}
+
+class _DelayedTypeCommunicator extends _RecordingCommunicator {
+  final Completer<void> started = Completer<void>();
+  final Completer<Uint8List> result = Completer<Uint8List>();
+  int typeProbes = 0;
+
+  @override
+  Future<bool> isReaderDeviceMode() async => true;
+
+  @override
+  Future<bool> detectMf1Support() async => true;
+
+  @override
+  Future<Uint8List> send14ARaw(Uint8List data,
+      {int respTimeoutMs = 100,
+      int? bitLen,
+      bool activateRfField = true,
+      bool waitResponse = true,
+      bool appendCrc = true,
+      bool autoSelect = true,
+      bool keepRfField = false,
+      bool checkResponseCrc = true}) {
+    typeProbes++;
+    if (!started.isCompleted) {
+      started.complete();
+    }
+    return result.future;
   }
 }
 

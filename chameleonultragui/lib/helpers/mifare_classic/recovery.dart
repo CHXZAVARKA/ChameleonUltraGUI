@@ -134,60 +134,6 @@ class MifareClassicRecovery {
     }
   }
 
-  Future<MifareClassicType> _getType(_RecoveryOperation operation) async {
-    for (final candidate in const [
-      (255, MifareClassicType.m4k),
-      (80, MifareClassicType.m2k),
-      (63, MifareClassicType.m1k),
-    ]) {
-      final response = await operation.waitFor(
-        operation.communicator.send14ARaw(
-          Uint8List.fromList([0x60, candidate.$1]),
-          checkResponseCrc: false,
-        ),
-      );
-      if (response.length == 4) {
-        return candidate.$2;
-      }
-    }
-    return MifareClassicType.mini;
-  }
-
-  Future<bool> _hasBackdoor(_RecoveryOperation operation) async {
-    final response = await operation.waitFor(
-      operation.communicator.send14ARaw(
-        Uint8List.fromList([0x64, 0x00]),
-        autoSelect: true,
-        checkResponseCrc: false,
-      ),
-    );
-    if (response.length != 4) {
-      return false;
-    }
-    return await operation.waitFor(operation.communicator
-            .getMf1StaticEncryptedNestedAcquire(sectorCount: 1)) !=
-        null;
-  }
-
-  Future<bool> _isStaticEncrypted(
-    _RecoveryOperation operation,
-    int block,
-    int keyType,
-    Uint8List knownKey,
-  ) async {
-    final nonces = await operation.waitFor(
-      operation.communicator.getMf1NestedNonces(
-        block,
-        0x60 + keyType,
-        knownKey,
-        3,
-        0x61,
-        level: NTLevel.hard,
-      ),
-    );
-    return nonces.getNoncesInfo()[1] == 1;
-  }
-
   Future<bool> checkKeysOnSector(
       List<Uint8List> keys, int keyType, int sector) async {
     final operation = _captureOperation();
@@ -257,7 +203,10 @@ class MifareClassicRecovery {
         await operation.waitFor(operation.communicator.detectMf1Support());
 
     if (mifare) {
-      mifareClassicType = await operation.waitFor(_getType(operation));
+      mifareClassicType = await operation.waitFor(mfClassicGetType(
+        operation.communicator,
+        canContinue: () => operation.isCurrent,
+      ));
     } else {
       appState.log!.e("Not Mifare Classic tag!");
     }
@@ -521,7 +470,10 @@ class MifareClassicRecovery {
 
     error = "";
     bool hasKey = false;
-    bool hasBackdoor = await operation.waitFor(_hasBackdoor(operation));
+    bool hasBackdoor = await operation.waitFor(mfClassicHasBackdoor(
+      operation.communicator,
+      canContinue: () => operation.isCurrent,
+    ));
     (int, NestedNonces, NestedNonces, Uint8List)? backdoorInfo;
     if (hasBackdoor) {
       backdoorInfo = await operation.waitFor(
@@ -552,8 +504,8 @@ class MifareClassicRecovery {
     bool isStaticEncrypted = false;
 
     if (hasBackdoor) {
-      isStaticEncrypted = await operation
-          .waitFor(_isStaticEncrypted(operation, 0, 4, backdoorInfo!.$4));
+      isStaticEncrypted = await operation.waitFor(mfClassicIsStaticEncrypted(
+          operation.communicator, 0, 4, backdoorInfo!.$4));
     }
 
     NTLevel prng =
@@ -666,8 +618,9 @@ class MifareClassicRecovery {
           validKeyBlock = mfClassicGetSectorTrailerBlockBySector(sector);
           validKeyType = keyType;
           if (!isStaticEncrypted) {
-            isStaticEncrypted = await operation.waitFor(_isStaticEncrypted(
-                operation, validKeyBlock, validKeyType, validKey));
+            isStaticEncrypted = await operation.waitFor(
+                mfClassicIsStaticEncrypted(operation.communicator,
+                    validKeyBlock, validKeyType, validKey));
           }
           break;
         }
