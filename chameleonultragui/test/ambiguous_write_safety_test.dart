@@ -205,6 +205,44 @@ void main() {
     expect(communicator.authenticatedWrites, 0);
   });
 
+  test('Gen3 clears ambiguous outcome before the next full write', () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _AmbiguousWriteCommunicator(
+      logger,
+      completeGen3Write: true,
+      returnScannedCard: true,
+    );
+    final helper = MifareClassicGen3WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+    );
+    final verifiedBlockZero = Uint8List.fromList([
+      0x01,
+      0x02,
+      0x03,
+      0x04,
+      ...List.filled(12, 0),
+    ]);
+
+    final ambiguousResult = await helper.writeData(
+      _classicCardWithData([
+        verifiedBlockZero,
+        Uint8List(16),
+      ]),
+      (_) {},
+    );
+    final verifiedResult = await helper.writeData(
+      _classicCardWithData([verifiedBlockZero]),
+      (_) {},
+    );
+
+    expect(ambiguousResult, isFalse);
+    expect(verifiedResult, isTrue);
+    expect(communicator.authenticatedWrites, 1);
+    expect(communicator.gen3Writes, 4);
+  });
+
   test('Gen3 skips read-back after its captured session becomes stale',
       () async {
     final logger = Logger(output: MemoryOutput());

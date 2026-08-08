@@ -6,12 +6,18 @@ import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/base.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:flutter/foundation.dart' show protected;
 
 class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   List<int> failedBlocks = [];
   bool _lastWriteWasAmbiguous = false;
 
   bool get lastWriteWasAmbiguous => _lastWriteWasAmbiguous;
+
+  @protected
+  void resetWriteOutcome() {
+    _lastWriteWasAmbiguous = false;
+  }
 
   MifareClassicGen2WriteHelper(super.communicator, {required super.recovery});
 
@@ -54,7 +60,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
 
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
-    _lastWriteWasAmbiguous = false;
+    resetWriteOutcome();
     for (int retry = 0; retry < 10; retry++) {
       if (!operationCanContinue) return false;
       try {
@@ -148,6 +154,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
+    resetWriteOutcome();
     if (!operationCanContinue) return false;
     List<Uint8List> data = card.data;
     List<bool> cleanSectors = List.generate(40, (index) => false);

@@ -14,6 +14,12 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   bool get lastWriteWasAmbiguous =>
       _gen3WriteWasAmbiguous || super.lastWriteWasAmbiguous;
 
+  @override
+  void resetWriteOutcome() {
+    super.resetWriteOutcome();
+    _gen3WriteWasAmbiguous = false;
+  }
+
   MifareClassicGen3WriteHelper(super.communicator, {required super.recovery});
 
   @override
@@ -59,7 +65,7 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   @override
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
-    _gen3WriteWasAmbiguous = false;
+    resetWriteOutcome();
     for (int retry = 0; retry < 10; retry++) {
       if (!operationCanContinue) return false;
       try {
