@@ -124,7 +124,7 @@ void main() {
     );
 
     final result = await helper.writeData(
-      _classicCardWithData([
+      _classicCard([
         Uint8List(16),
         Uint8List(16),
         Uint8List(16),
@@ -152,7 +152,7 @@ void main() {
     );
 
     final result = await helper.writeData(
-      _classicCardWithData([Uint8List(16)]),
+      _classicCard([Uint8List(16)]),
       (_) {},
     );
 
@@ -193,7 +193,7 @@ void main() {
     );
 
     final result = await helper.writeData(
-      _classicCardWithData([
+      _classicCard([
         Uint8List(16),
         Uint8List.fromList(List.filled(16, 0x01)),
       ]),
@@ -227,7 +227,7 @@ void main() {
     ]);
 
     final ambiguousResult = await helper.writeData(
-      _classicCardWithData([
+      _classicCard([
         verifiedBlockZero,
         Uint8List(16),
         Uint8List.fromList(List.filled(16, 0x02)),
@@ -239,7 +239,7 @@ void main() {
     expect(communicator.authenticatedWrites, 1);
 
     final verifiedResult = await helper.writeData(
-      _classicCardWithData([verifiedBlockZero]),
+      _classicCard([verifiedBlockZero]),
       (_) {},
     );
 
@@ -377,13 +377,7 @@ Future<T> _runPasswordCleaner<T extends ChameleonCommunicator>(
   return communicator;
 }
 
-CardSave _classicCard() => CardSave(
-      uid: '01020304',
-      name: 'Classic',
-      tag: TagType.mifare1K,
-    );
-
-CardSave _classicCardWithData(List<Uint8List> data) => CardSave(
+CardSave _classicCard([List<Uint8List> data = const []]) => CardSave(
       uid: '01020304',
       name: 'Classic',
       tag: TagType.mifare1K,
