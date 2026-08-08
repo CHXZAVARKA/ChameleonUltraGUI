@@ -40,6 +40,30 @@ class CardReaderState extends State<MifareUltralightHelper> {
   String dumpName = "";
   String error = "";
   double progress = -1;
+  Object? _readOperation;
+
+  void _restoreCanceledRead(Object operation) {
+    if (!identical(_readOperation, operation) ||
+        state != MifareUltralightState.read) {
+      return;
+    }
+
+    void restore() {
+      if (!identical(_readOperation, operation) ||
+          state != MifareUltralightState.read) {
+        return;
+      }
+      _readOperation = null;
+      state = MifareUltralightState.none;
+      progress = -1;
+    }
+
+    if (mounted) {
+      setState(restore);
+    } else {
+      restore();
+    }
+  }
 
   Future<void> readCard({bool withPassword = false}) async {
     final appState = context.read<ChameleonGUIState>();
@@ -52,8 +76,10 @@ class CardReaderState extends State<MifareUltralightHelper> {
     }
     final password = keyController.text;
     final pageCount = mfUltralightGetPagesCount(type);
+    final operation = Object();
 
     setState(() {
+      _readOperation = operation;
       cardData = [];
       error = "";
       state = MifareUltralightState.read;
@@ -61,8 +87,19 @@ class CardReaderState extends State<MifareUltralightHelper> {
 
     await appState.rfOperations.runForeground(() async {
       bool canContinue() =>
-          mounted && identical(widget.hfInfo, hfInfo) && session.isCurrent;
-      if (!canContinue()) {
+          mounted &&
+          identical(widget.hfInfo, hfInfo) &&
+          identical(_readOperation, operation) &&
+          session.isCurrent;
+      bool canceled() {
+        if (canContinue()) {
+          return false;
+        }
+        _restoreCanceledRead(operation);
+        return true;
+      }
+
+      if (canceled()) {
         return;
       }
 
@@ -75,11 +112,12 @@ class CardReaderState extends State<MifareUltralightHelper> {
             Uint8List.fromList([0x1B, ...hexToBytes(password)]),
             keepRfField: true,
           );
-          if (!canContinue()) {
+          if (canceled()) {
             return;
           }
           if (pack.length < 2) {
             setState(() {
+              _readOperation = null;
               state = MifareUltralightState.none;
               error = localizations.invalid_password;
             });
@@ -90,7 +128,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
         final pageData = await communicator.send14ARaw(
           Uint8List.fromList([0x30, page]),
         );
-        if (!canContinue()) {
+        if (canceled()) {
           return;
         }
         nextCardData.add(pageData.isNotEmpty
@@ -106,17 +144,18 @@ class CardReaderState extends State<MifareUltralightHelper> {
           progress = 0;
           cardData = [];
           error = localizations.failed_to_read_block;
+          _readOperation = null;
           state = MifareUltralightState.none;
         });
         return;
       }
 
       final nextVersion = await mfUltralightGetVersion(communicator);
-      if (!canContinue()) {
+      if (canceled()) {
         return;
       }
       final nextSignature = await mfUltralightGetSignature(communicator);
-      if (!canContinue()) {
+      if (canceled()) {
         return;
       }
 
@@ -127,7 +166,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
           type,
           canContinue: canContinue,
         );
-        if (!canContinue()) {
+        if (canceled()) {
           return;
         }
       }
@@ -147,6 +186,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
         signature = bytesToHexSpace(nextSignature);
         counters = nextCounters;
         error = "";
+        _readOperation = null;
         state = MifareUltralightState.save;
       });
     });
