@@ -89,10 +89,6 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
 
     setState(() {
       _isCapturing = true;
@@ -100,8 +96,10 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
       _statusMessage = localizations.lf_sniff_capture_in_progress(timeoutMs);
     });
 
+    ConnectedDeviceSession? operationSession;
     try {
-      final samples = await appState.rfOperations.runForeground(() async {
+      final result = await appState.runSessionBoundForeground((session) async {
+        operationSession = session;
         if (!mounted || !session.isCurrent) {
           return null;
         }
@@ -120,7 +118,13 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
             await session.communicator.lfSniff(timeoutMs: timeoutMs);
         return mounted && session.isCurrent ? samples : null;
       });
-      if (samples == null || !mounted || !session.isCurrent) {
+      final session = result.session;
+      final samples = result.value;
+      if (!result.executed ||
+          session == null ||
+          samples == null ||
+          !mounted ||
+          !session.isCurrent) {
         return;
       }
 
@@ -145,7 +149,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
             localizations.lf_sniff_capture_done(capture.summary.sampleCount);
       });
     } catch (error) {
-      if (!mounted || !session.isCurrent) {
+      final session = operationSession;
+      if (!mounted || session == null || !session.isCurrent) {
         return;
       }
 

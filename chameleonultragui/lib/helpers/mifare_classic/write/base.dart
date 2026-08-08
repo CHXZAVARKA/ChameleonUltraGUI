@@ -10,7 +10,6 @@ import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen1.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen2.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/write/gen3.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/types.dart';
 import 'package:chameleonultragui/helpers/write.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -210,19 +209,16 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
 
     Future<void> prepareMifareClassic() async {
       final appState = context.read<ChameleonGUIState>();
-      final session = ConnectedDeviceSession.capture(appState);
-      if (session == null || !identical(session.communicator, communicator)) {
-        return;
-      }
       setState(() {
         hfInfo = null;
         mfcInfo = null;
       });
 
-      var info = await appState.rfOperations.runForeground(
-        () async {
-          if (!context.mounted || !session.isCurrent) {
-            return (HFCardInfo(), MifareClassicInfo(), MifareUltralightInfo());
+      final result = await appState.runSessionBoundForeground(
+        (session) async {
+          if (!context.mounted ||
+              !identical(session.communicator, communicator)) {
+            return null;
           }
           return readHFInfo(
             context,
@@ -238,7 +234,13 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
           );
         },
       );
-      if (!context.mounted || !session.isCurrent) {
+      final session = result.session;
+      final info = result.value;
+      if (!result.executed ||
+          session == null ||
+          info == null ||
+          !context.mounted ||
+          !session.isCurrent) {
         return;
       }
 

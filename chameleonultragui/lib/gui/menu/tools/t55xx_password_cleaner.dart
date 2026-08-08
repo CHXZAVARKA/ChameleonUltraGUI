@@ -48,8 +48,6 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     Dictionary? selectedDictionary =
         dictionaries.where((d) => d.id == selectedDictionaryId).firstOrNull;
     if (selectedDictionary == null) return;
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) return;
     final newKey = hexToBytes(newKeyController.text);
 
     setState(() {
@@ -61,9 +59,11 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
 
     var localizations = AppLocalizations.of(context)!;
     var sessionCancelled = false;
+    ConnectedDeviceSession? operationSession;
 
     try {
-      await appState.rfOperations.runForeground(() async {
+      final result = await appState.runSessionBoundForeground((session) async {
+        operationSession = session;
         if (!mounted || !session.isCurrent) {
           sessionCancelled = true;
           return;
@@ -118,8 +118,13 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
           }
         }
       });
+      final session = result.session;
 
-      if (sessionCancelled || !mounted || !session.isCurrent) {
+      if (!result.executed ||
+          session == null ||
+          sessionCancelled ||
+          !mounted ||
+          !session.isCurrent) {
         if (mounted) {
           setState(() {
             isProcessing = false;
@@ -138,7 +143,8 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
         }
       }
     } catch (e) {
-      if (!mounted || !session.isCurrent) return;
+      final session = operationSession;
+      if (!mounted || session == null || !session.isCurrent) return;
       setState(() {
         isProcessing = false;
       });

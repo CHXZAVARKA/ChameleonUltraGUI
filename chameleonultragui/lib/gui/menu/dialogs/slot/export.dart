@@ -39,12 +39,7 @@ class SlotExportMenuState extends State<SlotExportMenu> {
 
   Future<CardSave?> rebuildCardSaveFromSlot(TagFrequency frequency) async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return null;
-    }
-
-    return appState.rfOperations.runForeground(() async {
+    final result = await appState.runSessionBoundForeground((session) async {
       bool canContinue() => mounted && session.isCurrent;
       if (!canContinue()) {
         return null;
@@ -59,6 +54,7 @@ class SlotExportMenuState extends State<SlotExportMenu> {
         canContinue,
       );
     });
+    return result.executed ? result.value : null;
   }
 
   Future<CardSave?> _rebuildCardSaveUnderLease(

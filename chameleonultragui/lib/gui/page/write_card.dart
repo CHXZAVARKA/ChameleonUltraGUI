@@ -55,57 +55,46 @@ class WriteCardPageState extends State<WriteCardPage> {
   Future<void> onTap(CardSave selectedCard, dynamic close,
       AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-
-    setState(() {
-      card = selectedCard;
-      baseHelper = AbstractWriteHelper.getClassByCardType(
-          selectedCard.tag, appState, updateState, localizations);
-    });
-
-    if (baseHelper != null) {
-      setState(() {
-        helper = baseHelper!.getAvailableMethods()[0];
-      });
-    }
-    final selectedHelper = helper;
-
-    await appState.rfOperations.runForeground(() async {
-      if (!_canUseHelper(session, selectedHelper) ||
-          !identical(helper, selectedHelper)) {
-        return;
+    final result = await appState.runSessionBoundForeground((session) async {
+      if (!mounted) {
+        return false;
       }
-      selectedHelper!.setOperationContinuation(
+      setState(() {
+        card = selectedCard;
+        baseHelper = AbstractWriteHelper.getClassByCardType(
+            selectedCard.tag, appState, updateState, localizations);
+        helper = baseHelper?.getAvailableMethods()[0];
+      });
+      final operationHelper = helper;
+      if (!_canUseHelper(session, operationHelper) ||
+          !identical(helper, operationHelper)) {
+        return false;
+      }
+      operationHelper!.setOperationContinuation(
         () =>
-            _canUseHelper(session, selectedHelper) &&
-            identical(helper, selectedHelper),
+            _canUseHelper(session, operationHelper) &&
+            identical(helper, operationHelper),
       );
-      await selectedHelper.getCardType();
+      await operationHelper.getCardType();
+      return _canUseHelper(session, operationHelper) &&
+          identical(helper, operationHelper);
     });
 
-    if (!_canUseHelper(session, selectedHelper) ||
-        !identical(helper, selectedHelper)) {
+    if (!result.executed || result.value != true || !mounted) {
       return;
     }
-    if (!mounted) return;
     close(context, selectedCard.name);
   }
 
   Future<void> detectMagicType() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final session = ConnectedDeviceSession.capture(appState);
     final operationBaseHelper = baseHelper;
     final operationCard = card;
-    if (session == null ||
-        operationCard == null ||
-        !_canUseHelper(session, operationBaseHelper)) {
+    if (operationBaseHelper == null || operationCard == null) {
       return;
     }
 
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       if (!_canUseHelper(session, operationBaseHelper) ||
           !identical(baseHelper, operationBaseHelper) ||
           !identical(card, operationCard)) {
@@ -113,7 +102,7 @@ class WriteCardPageState extends State<WriteCardPage> {
       }
       await _detectMagicTypeUnderLease(
         session,
-        operationBaseHelper!,
+        operationBaseHelper,
         operationCard,
         ScaffoldMessenger.of(context),
         AppLocalizations.of(context)!,
@@ -232,28 +221,28 @@ class WriteCardPageState extends State<WriteCardPage> {
 
   Future<void> writeCard() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final session = ConnectedDeviceSession.capture(appState);
     final operationHelper = helper;
     final operationCard = card;
-    if (session == null ||
-        operationCard == null ||
-        !_canUseHelper(session, operationHelper)) {
+    if (operationHelper == null || operationCard == null) {
       return;
     }
-    await appState.rfOperations.runForeground(
-      () async {
+    final result = await appState.runSessionBoundForeground(
+      (session) async {
         if (_canUseHelper(session, operationHelper) &&
             identical(helper, operationHelper) &&
             identical(card, operationCard)) {
           await _writeCardUnderLease(
             session,
-            operationHelper!,
+            operationHelper,
             operationCard,
           );
         }
       },
     );
-    if (mounted &&
+    final session = result.session;
+    if (result.executed &&
+        session != null &&
+        mounted &&
         progress != -1 &&
         (!_canUseHelper(session, operationHelper) ||
             !identical(helper, operationHelper) ||
@@ -363,23 +352,20 @@ class WriteCardPageState extends State<WriteCardPage> {
       SnackBar snackBar;
       updateProgress(0);
 
-      final session = ConnectedDeviceSession.capture(appState);
       final operationHelper = helper;
       final operationCard = card;
-      if (session == null ||
-          operationCard == null ||
-          !_canUseHelper(session, operationHelper)) {
+      if (operationHelper == null || operationCard == null) {
         updateProgress(-1);
         return;
       }
 
-      final compatible = await appState.rfOperations.runForeground(() async {
+      final result = await appState.runSessionBoundForeground((session) async {
         if (!_canUseHelper(session, operationHelper) ||
             !identical(helper, operationHelper) ||
             !identical(card, operationCard)) {
           return null;
         }
-        operationHelper!.setOperationContinuation(
+        operationHelper.setOperationContinuation(
           () =>
               _canUseHelper(session, operationHelper) &&
               identical(helper, operationHelper) &&
@@ -400,7 +386,11 @@ class WriteCardPageState extends State<WriteCardPage> {
         }
         return compatible;
       });
-      if (compatible == null ||
+      final session = result.session;
+      final compatible = result.value;
+      if (!result.executed ||
+          session == null ||
+          compatible == null ||
           !_canUseHelper(session, operationHelper) ||
           !identical(helper, operationHelper) ||
           !identical(card, operationCard)) {

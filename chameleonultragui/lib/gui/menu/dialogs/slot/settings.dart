@@ -35,12 +35,7 @@ class SlotSettingsState extends State<SlotSettings> {
   Future<void> fetchInfo() async {
     final appState = context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       bool canContinue() => mounted && session.isCurrent;
       if (!canContinue()) {
         return;
@@ -109,17 +104,14 @@ class SlotSettingsState extends State<SlotSettings> {
     Future<void> Function(ConnectedDeviceSession session) command,
   ) async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return false;
-    }
-    return appState.rfOperations.runForeground(() async {
+    final result = await appState.runSessionBoundForeground((session) async {
       if (!mounted || !session.isCurrent) {
         return false;
       }
       await command(session);
       return mounted && session.isCurrent;
     });
+    return result.executed && result.value == true;
   }
 
   Future<bool> _deleteSlot(TagFrequency frequency) {

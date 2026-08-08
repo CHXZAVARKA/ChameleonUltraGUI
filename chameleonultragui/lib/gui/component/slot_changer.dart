@@ -64,11 +64,7 @@ class SlotChangerState extends State<SlotChanger> {
 
   Future<void> _activateSlot(int slot) async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       if (!mounted || !session.isCurrent) {
         return;
       }

@@ -82,11 +82,9 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   Future<void> onTap(
       CardSave card, dynamic close, AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) return;
     final targetSlot = gridPosition;
 
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       if (!mounted || !session.isCurrent) {
         return;
       }

@@ -103,11 +103,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     Future<void> Function(ConnectedDeviceSession session) operation,
   ) async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return false;
-    }
-    return appState.rfOperations.runForeground(() async {
+    final result = await appState.runSessionBoundForeground((session) async {
       try {
         if (!_canContinue(session)) {
           return false;
@@ -118,6 +114,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
         return false;
       }
     });
+    return result.executed && result.value == true;
   }
 
   Future<bool> _runCommand(

@@ -98,10 +98,6 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
 
     setState(() {
       _isCapturing = true;
@@ -111,8 +107,10 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
       _statusMessage = localizations.hf_sniff_capture_in_progress(timeoutMs);
     });
 
+    ConnectedDeviceSession? operationSession;
     try {
-      final rawBytes = await appState.rfOperations.runForeground(() async {
+      final result = await appState.runSessionBoundForeground((session) async {
+        operationSession = session;
         if (!mounted || !session.isCurrent) {
           return null;
         }
@@ -131,7 +129,13 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
             await session.communicator.hf14aSniff(timeoutMs: timeoutMs);
         return mounted && session.isCurrent ? rawBytes : null;
       });
-      if (rawBytes == null || !mounted || !session.isCurrent) {
+      final session = result.session;
+      final rawBytes = result.value;
+      if (!result.executed ||
+          session == null ||
+          rawBytes == null ||
+          !mounted ||
+          !session.isCurrent) {
         return;
       }
 
@@ -150,7 +154,8 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
             : localizations.hf_sniff_capture_done(capture.frames.length);
       });
     } catch (error) {
-      if (!mounted || !session.isCurrent) {
+      final session = operationSession;
+      if (!mounted || session == null || !session.isCurrent) {
         return;
       }
 

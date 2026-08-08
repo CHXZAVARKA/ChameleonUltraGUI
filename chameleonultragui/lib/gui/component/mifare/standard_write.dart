@@ -243,7 +243,6 @@ class _StandardMifareClassicWritePanelState
 
   Future<void> _runPreflight() async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
     final profiles = _profiles(appState);
     MifareClassicKeyProfile? profile;
     for (final candidate in profiles) {
@@ -252,38 +251,42 @@ class _StandardMifareClassicWritePanelState
         break;
       }
     }
-    if (_image == null || profile == null || session == null) {
+    final image = _image;
+    if (image == null || profile == null) {
       return;
     }
+    final selectedProfile = profile;
 
     setState(_invalidatePlan);
     _setBusy(true);
     try {
-      final maintenance = MifareClassicMaintenance(
-        ChameleonMifareClassicMaintenancePort(session.communicator),
-      );
-      final plan = await appState.rfOperations.runForeground(() async {
-        if (_cancelled || !session.isCurrent) {
+      final result = await appState.runSessionBoundForeground((session) async {
+        if (_cancelled) {
           return null;
         }
-        return maintenance.preflight(
-            image: _image!,
-            profile: profile!,
+        final maintenance = MifareClassicMaintenance(
+          ChameleonMifareClassicMaintenancePort(session.communicator),
+        );
+        final plan = await maintenance.preflight(
+            image: image,
+            profile: selectedProfile,
             shouldCancel: () => _cancelled || !session.isCurrent,
             onProgress: (progress) {
               if (mounted) {
                 setState(() => _progress = progress);
               }
             });
+        return (maintenance: maintenance, plan: plan);
       });
-      if (plan == null) {
+      final value = result.value;
+      if (!result.executed || value == null) {
         return;
       }
       if (mounted) {
         setState(() {
-          _maintenance = maintenance;
-          _maintenanceSession = session;
-          _plan = plan;
+          _maintenance = value.maintenance;
+          _maintenanceSession = result.session;
+          _plan = value.plan;
         });
       }
     } catch (error, stackTrace) {
@@ -299,10 +302,10 @@ class _StandardMifareClassicWritePanelState
   Future<void> _writeAndVerify() async {
     final plan = _plan;
     final maintenance = _maintenance;
-    final session = _maintenanceSession;
+    final maintenanceSession = _maintenanceSession;
     if (plan == null ||
         maintenance == null ||
-        session == null ||
+        maintenanceSession == null ||
         !_authorized) {
       return;
     }
@@ -314,8 +317,10 @@ class _StandardMifareClassicWritePanelState
     });
     _setBusy(true);
     try {
-      final report = await appState.rfOperations.runForeground(() async {
-        if (_cancelled || !session.isCurrent) {
+      final result = await appState.runSessionBoundForeground((session) async {
+        if (_cancelled ||
+            !identical(session.connector, maintenanceSession.connector) ||
+            !identical(session.communicator, maintenanceSession.communicator)) {
           return null;
         }
         return maintenance.execute(plan,
@@ -327,7 +332,8 @@ class _StandardMifareClassicWritePanelState
               }
             });
       });
-      if (report == null) {
+      final report = result.value;
+      if (!result.executed || report == null) {
         return;
       }
       if (mounted) {
