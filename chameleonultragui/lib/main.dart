@@ -138,7 +138,13 @@ class ChameleonGUIState extends ChangeNotifier {
     progress = value;
     notifyListeners();
   }
+
+  bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
+    return connector?.connected == true && identical(communicator, candidate);
+  }
 }
+
+const _readCardNavigationIndex = 3;
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key, required this.sharedPreferencesProvider});
@@ -260,7 +266,7 @@ class _MainPageState extends State<MainPage> {
       case 2:
         page = const SavedCardsPage();
         break;
-      case 3:
+      case _readCardNavigationIndex:
         page = readCardPage;
         break;
       case 4:
@@ -279,22 +285,34 @@ class _MainPageState extends State<MainPage> {
         throw UnimplementedError('no widget for $selectedIndex');
     }
 
+    final isDfu = appState.connector!.connected && appState.connector!.isDFU;
+    final foregroundPage = isDfu ? const FlashingPage() : page;
+    final canMountReadCard = appState.connector!.connected && !isDfu;
+    final isReadCardVisible =
+        canMountReadCard && selectedIndex == _readCardNavigationIndex;
+
     try {
-      WakelockPlus.toggle(enable: page is FlashingPage);
+      WakelockPlus.toggle(enable: foregroundPage is FlashingPage);
     } catch (_) {}
 
-    final pageContent = appState.connector!.connected
-        ? Stack(
-            fit: StackFit.expand,
-            children: [
-              Offstage(
-                offstage: selectedIndex != 3,
-                child: readCardPage,
-              ),
-              if (selectedIndex != 3) page,
-            ],
-          )
-        : page;
+    final pageContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (canMountReadCard)
+          Offstage(
+            key: const ValueKey('persistent-read-card'),
+            offstage: !isReadCardVisible,
+            child: readCardPage,
+          ),
+        if (!isReadCardVisible)
+          KeyedSubtree(
+            key: ValueKey(
+              isDfu ? 'foreground-page-dfu' : 'foreground-page-$selectedIndex',
+            ),
+            child: foregroundPage,
+          ),
+      ],
+    );
 
     return MaterialApp(
       title: 'Chameleon Ultra GUI', // App Name

@@ -622,19 +622,30 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
   MifareClassicInfo mfcInfo = MifareClassicInfo();
   MifareUltralightInfo mfuInfo = MifareUltralightInfo();
 
-  final isReaderMode = await appState.communicator!.isReaderDeviceMode();
-  if (!context.mounted) {
+  final communicator = appState.communicator;
+  if (communicator == null) {
+    return (hfInfo, mfcInfo, mfuInfo);
+  }
+  bool canContinue() =>
+      context.mounted && appState.hasConnectedCommunicator(communicator);
+
+  if (!canContinue()) {
+    return (hfInfo, mfcInfo, mfuInfo);
+  }
+
+  final isReaderMode = await communicator.isReaderDeviceMode();
+  if (!canContinue()) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
   if (!isReaderMode) {
-    await appState.communicator!.setReaderDeviceMode(true);
-    if (!context.mounted) {
+    await communicator.setReaderDeviceMode(true);
+    if (!canContinue()) {
       return (hfInfo, mfcInfo, mfuInfo);
     }
   }
 
-  CardData? card = await appState.communicator!.scan14443aTag();
-  if (!context.mounted) {
+  CardData? card = await communicator.scan14443aTag();
+  if (!canContinue()) {
     return (hfInfo, mfcInfo, mfuInfo);
   }
 
@@ -646,21 +657,29 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
   try {
     TagType type = TagType.unknown;
 
-    final supportsMifareClassic =
-        await appState.communicator!.detectMf1Support();
-    if (!context.mounted) {
+    final supportsMifareClassic = await communicator.detectMf1Support();
+    if (!canContinue()) {
       return (hfInfo, mfcInfo, mfuInfo);
     }
     if (!supportsMifareClassic) {
-      (type, mfuInfo) =
-          await performMifareUltralightScan(appState.communicator!, mfuInfo);
-      if (!context.mounted) {
+      (type, mfuInfo) = await performMifareUltralightScan(
+        communicator,
+        mfuInfo,
+      );
+      if (!canContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);
       }
     } else {
-      (type, mfcInfo) = await performMifareClassicScan(appState.communicator!,
-          mfcInfo, context, updateMifareClassicRecovery);
       if (!context.mounted) {
+        return (hfInfo, mfcInfo, mfuInfo);
+      }
+      (type, mfcInfo) = await performMifareClassicScan(
+        communicator,
+        mfcInfo,
+        context,
+        updateMifareClassicRecovery,
+      );
+      if (!canContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);
       }
     }
