@@ -87,6 +87,14 @@ void main() {
           (block) => block < 72 && block != 12 ? Uint8List(16) : Uint8List(0),
         ),
       ),
+      CardSave(
+        id: 'oversized-1k-card',
+        uid: '01020304',
+        name: '4K data marked as 1K',
+        tag: TagType.mifare1K,
+        extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+        data: List.generate(256, (_) => Uint8List(16)),
+      ),
     ]);
     final appState = ChameleonGUIState(preferences);
 
@@ -124,6 +132,7 @@ void main() {
     expect(find.text('Legacy EV1 dump'), findsOneWidget);
     expect(find.text('Incomplete EV1 dump'), findsNothing);
     expect(find.text('Malformed EV1 dump'), findsNothing);
+    expect(find.text('4K data marked as 1K'), findsNothing);
     await tester.tap(find.text('Own EV1 dump'));
     await tester.pumpAndSettle();
 

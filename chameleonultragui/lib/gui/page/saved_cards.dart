@@ -30,7 +30,14 @@ import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 class SavedCardsPage extends StatefulWidget {
-  const SavedCardsPage({super.key});
+  final Future<PlatformFile?> Function()? pickFile;
+  final Future<Uint8List> Function(PlatformFile file)? readFile;
+
+  const SavedCardsPage({
+    super.key,
+    this.pickFile,
+    this.readFile,
+  });
 
   @override
   SavedCardsPageState createState() => SavedCardsPageState();
@@ -774,12 +781,15 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                             Expanded(
                               child: ElevatedButton(
                                 onPressed: importCard = () async {
-                                  PlatformFile? result =
-                                      await FilePicker.pickFile();
+                                  final result =
+                                      await (widget.pickFile?.call() ??
+                                          FilePicker.pickFile());
 
                                   if (result != null) {
-                                    File file = File(result.path!);
-                                    var contents = await file.readAsBytes();
+                                    final file = File(result.path!);
+                                    final contents =
+                                        await (widget.readFile?.call(result) ??
+                                            file.readAsBytes());
                                     try {
                                       var string =
                                           const Utf8Decoder().convert(contents);
@@ -1147,17 +1157,13 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                         uid:
                                                             uid4Controller.text,
                                                         tag: selectedType,
-                                                        data: blocks,
-                                                        extraData:
-                                                            CardSaveExtra(
-                                                          mifareClassicDumpComplete: isMifareClassic(
-                                                                  selectedType) &&
-                                                              MifareClassicGeometry
-                                                                      .fromImageSize(
-                                                                          contents
-                                                                              .length) !=
-                                                                  null,
-                                                        ));
+                                                        data: blocks);
+                                                    tag.extraData
+                                                            .mifareClassicDumpComplete =
+                                                        MifareClassicGeometry
+                                                                .fromSavedCardData(
+                                                                    tag) !=
+                                                            null;
                                                     tag.folderId =
                                                         currentFolderId;
                                                     tags.add(tag);
@@ -1232,16 +1238,13 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                           atqa7Controller.text),
                                                       uid: uid7Controller.text,
                                                       tag: selectedType,
-                                                      data: blocks,
-                                                      extraData: CardSaveExtra(
-                                                        mifareClassicDumpComplete: isMifareClassic(
-                                                                selectedType) &&
-                                                            MifareClassicGeometry
-                                                                    .fromImageSize(
-                                                                        contents
-                                                                            .length) !=
-                                                                null,
-                                                      ));
+                                                      data: blocks);
+                                                  tag.extraData
+                                                          .mifareClassicDumpComplete =
+                                                      MifareClassicGeometry
+                                                              .fromSavedCardData(
+                                                                  tag) !=
+                                                          null;
                                                   tag.folderId =
                                                       currentFolderId;
                                                   tags.add(tag);

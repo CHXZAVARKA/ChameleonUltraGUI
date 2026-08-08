@@ -177,6 +177,11 @@ class MifareClassicGeometry {
         return null;
       }
     }
+    for (var block = geometry.blockCount; block < card.data.length; block++) {
+      if (card.data[block].isNotEmpty) {
+        return null;
+      }
+    }
     return geometry;
   }
 }
