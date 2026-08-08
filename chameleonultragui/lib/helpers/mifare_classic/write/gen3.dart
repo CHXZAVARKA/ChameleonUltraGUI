@@ -8,18 +8,6 @@ import 'package:chameleonultragui/helpers/mifare_classic/write/gen2.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 
 class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
-  bool _gen3WriteWasAmbiguous = false;
-
-  @override
-  bool get lastWriteWasAmbiguous =>
-      _gen3WriteWasAmbiguous || super.lastWriteWasAmbiguous;
-
-  @override
-  void resetWriteOutcome() {
-    super.resetWriteOutcome();
-    _gen3WriteWasAmbiguous = false;
-  }
-
   MifareClassicGen3WriteHelper(super.communicator, {required super.recovery});
 
   @override
@@ -63,69 +51,81 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   }
 
   @override
-  Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
-      {bool tryBothKeys = false, bool useGenericKey = false}) async {
-    resetWriteOutcome();
-    for (int retry = 0; retry < 10; retry++) {
-      if (!operationCanContinue) return false;
-      try {
-        await Future.delayed(
-            const Duration(milliseconds: 50)); // Stability delay
-        if (!operationCanContinue) return false;
-        if (block == 0) {
-          if (await writeGen3Block(card, data) && operationCanContinue) {
-            return true;
-          }
-          if (_gen3WriteWasAmbiguous) return false;
-        } else {
-          if (await writeBlock(block, data,
-              tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
-            return true;
-          }
-          if (lastWriteWasAmbiguous) return false;
-        }
-        if (!operationCanContinue) return false;
-        await Future.delayed(const Duration(milliseconds: 150));
-        if (!operationCanContinue) return false;
-      } catch (_) {
-        if (_gen3WriteWasAmbiguous || lastWriteWasAmbiguous) return false;
-      }
+  Future<MifareClassicMagicWriteOutcome> writeSingleBlockOutcome(
+      CardSave card, int block, Uint8List data,
+      {bool tryBothKeys = false, bool useGenericKey = false}) {
+    if (block == 0) {
+      return writeGen3BlockOutcome(card, data);
     }
-
-    return false;
+    return super.writeSingleBlockOutcome(
+      card,
+      block,
+      data,
+      tryBothKeys: tryBothKeys,
+      useGenericKey: useGenericKey,
+    );
   }
 
-  Future<bool> writeGen3Block(CardSave dump, Uint8List data) async {
-    if (!operationCanContinue) return false;
+  Future<bool> writeGen3Block(CardSave dump, Uint8List data) async =>
+      (await writeGen3BlockOutcome(dump, data)).succeeded &&
+      operationCanContinue;
+
+  Future<MifareClassicMagicWriteOutcome> writeGen3BlockOutcome(
+      CardSave dump, Uint8List data) async {
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.rejected;
+    }
     // Try to write whole block
-    _gen3WriteWasAmbiguous = true;
-    await communicator.send14ARaw(
-        Uint8List.fromList([0x90, 0xFB, 0xCC, 0xCC, 0x10, ...data]),
-        checkResponseCrc: false);
+    try {
+      await communicator.send14ARaw(
+          Uint8List.fromList([0x90, 0xFB, 0xCC, 0xCC, 0x10, ...data]),
+          checkResponseCrc: false);
+    } catch (_) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
 
     // Try to write UID only
-    if (operationCanContinue) {
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
+    try {
       await communicator.send14ARaw(
           Uint8List.fromList(
               [0x90, 0xFB, 0xCC, 0xCC, 0x07, ...hexToBytes(dump.uid)]),
           checkResponseCrc: false);
+    } catch (_) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
     }
 
-    if (!operationCanContinue) return false;
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
 
     // Card doesn't respond with anything, just compare UID
     await Future.delayed(
         const Duration(milliseconds: 500)); // Wait for card to reboot
-    if (!operationCanContinue) return false;
-    CardData? card = await communicator.scan14443aTag();
-    if (!operationCanContinue) return false;
-    final verified = card != null &&
-            bytesToHex(card.uid) ==
-                bytesToHex(data.sublist(0, card.uid.length)) ||
-        card != null && bytesToHexSpace(card.uid) == dump.uid;
-    if (verified) {
-      _gen3WriteWasAmbiguous = false;
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
     }
-    return verified;
+    CardData? card;
+    try {
+      card = await communicator.scan14443aTag();
+    } catch (_) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
+    try {
+      final verified = card != null &&
+              bytesToHex(card.uid) ==
+                  bytesToHex(data.sublist(0, card.uid.length)) ||
+          card != null && bytesToHexSpace(card.uid) == dump.uid;
+      return verified
+          ? MifareClassicMagicWriteOutcome.success
+          : MifareClassicMagicWriteOutcome.ambiguous;
+    } catch (_) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
   }
 }

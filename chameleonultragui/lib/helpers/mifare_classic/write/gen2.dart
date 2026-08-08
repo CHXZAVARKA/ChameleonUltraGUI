@@ -8,16 +8,16 @@ import 'package:chameleonultragui/helpers/mifare_classic/write/base.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/foundation.dart' show protected;
 
+enum MifareClassicMagicWriteOutcome {
+  success,
+  rejected,
+  ambiguous;
+
+  bool get succeeded => this == MifareClassicMagicWriteOutcome.success;
+}
+
 class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   List<int> failedBlocks = [];
-  bool _lastWriteWasAmbiguous = false;
-
-  bool get lastWriteWasAmbiguous => _lastWriteWasAmbiguous;
-
-  @protected
-  void resetWriteOutcome() {
-    _lastWriteWasAmbiguous = false;
-  }
 
   MifareClassicGen2WriteHelper(super.communicator, {required super.recovery});
 
@@ -59,102 +59,166 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   }
 
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
+          {bool tryBothKeys = false, bool useGenericKey = false}) async =>
+      (await writeBlockModifierOutcome(
+        card,
+        block,
+        data,
+        tryBothKeys: tryBothKeys,
+        useGenericKey: useGenericKey,
+      ))
+          .succeeded;
+
+  @protected
+  Future<MifareClassicMagicWriteOutcome> writeBlockModifierOutcome(
+      CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
-    resetWriteOutcome();
     for (int retry = 0; retry < 10; retry++) {
-      if (!operationCanContinue) return false;
+      if (!operationCanContinue) {
+        return MifareClassicMagicWriteOutcome.rejected;
+      }
       try {
         await Future.delayed(
             const Duration(milliseconds: 50)); // Stability delay
-        if (!operationCanContinue) return false;
-        if (await writeBlock(block, data,
-            tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
-          return true;
+        if (!operationCanContinue) {
+          return MifareClassicMagicWriteOutcome.rejected;
         }
-        if (_lastWriteWasAmbiguous) return false;
-        if (!operationCanContinue) return false;
+        final outcome = await writeSingleBlockOutcome(
+          card,
+          block,
+          data,
+          tryBothKeys: tryBothKeys,
+          useGenericKey: useGenericKey,
+        );
+        switch (outcome) {
+          case MifareClassicMagicWriteOutcome.success:
+            return operationCanContinue
+                ? outcome
+                : MifareClassicMagicWriteOutcome.rejected;
+          case MifareClassicMagicWriteOutcome.ambiguous:
+            return outcome;
+          case MifareClassicMagicWriteOutcome.rejected:
+            break;
+        }
+        if (!operationCanContinue) {
+          return MifareClassicMagicWriteOutcome.rejected;
+        }
         await Future.delayed(const Duration(milliseconds: 150));
-        if (!operationCanContinue) return false;
+        if (!operationCanContinue) {
+          return MifareClassicMagicWriteOutcome.rejected;
+        }
       } catch (_) {
-        if (_lastWriteWasAmbiguous) return false;
+        // Only failures before the typed write boundary remain retryable.
       }
     }
 
-    return false;
+    return MifareClassicMagicWriteOutcome.rejected;
+  }
+
+  @protected
+  Future<MifareClassicMagicWriteOutcome> writeSingleBlockOutcome(
+      CardSave card, int block, Uint8List data,
+      {bool tryBothKeys = false, bool useGenericKey = false}) {
+    return writeBlockOutcome(
+      block,
+      data,
+      tryBothKeys: tryBothKeys,
+      useGenericKey: useGenericKey,
+    );
   }
 
   @override
   Future<bool> writeBlock(int block, Uint8List data,
-      {bool tryBothKeys = false, bool useGenericKey = false}) async {
-    if (!operationCanContinue) return false;
-    final keyAResult = await _writeBlockTrackingOutcome(
+          {bool tryBothKeys = false, bool useGenericKey = false}) async =>
+      (await writeBlockOutcome(
         block,
+        data,
+        tryBothKeys: tryBothKeys,
+        useGenericKey: useGenericKey,
+      ))
+          .succeeded &&
+      operationCanContinue;
+
+  @protected
+  Future<MifareClassicMagicWriteOutcome> writeBlockOutcome(
+      int block, Uint8List data,
+      {bool tryBothKeys = false, bool useGenericKey = false}) async {
+    if (!operationCanContinue) {
+      return MifareClassicMagicWriteOutcome.rejected;
+    }
+    final sector = mfClassicGetSectorByBlock(block);
+    final keys = <(int, Uint8List)>[
+      (
         0x60,
-        (useGenericKey)
-            ? gMifareClassicKeys[0]
-            : recovery.validKeys[mfClassicGetSectorByBlock(block)],
-        data);
-    if (keyAResult) {
-      return operationCanContinue;
-    }
-    if (!operationCanContinue) return false;
-
+        useGenericKey ? gMifareClassicKeys[0] : recovery.validKeys[sector],
+      ),
+    ];
     if (useGenericKey) {
-      final assignedKeyAResult = await _writeBlockTrackingOutcome(block, 0x60,
-          recovery.validKeys[mfClassicGetSectorByBlock(block)], data);
-      if (assignedKeyAResult) {
-        return operationCanContinue;
-      }
-      if (!operationCanContinue) return false;
+      keys.add((0x60, recovery.validKeys[sector]));
     }
-
     if (tryBothKeys) {
-      final keyBResult = await _writeBlockTrackingOutcome(
-          block,
-          0x61,
-          (useGenericKey)
-              ? gMifareClassicKeys[0]
-              : recovery.validKeys[40 + mfClassicGetSectorByBlock(block)],
-          data);
-      if (keyBResult) {
-        return operationCanContinue;
-      }
-      if (!operationCanContinue) return false;
-
+      keys.add((
+        0x61,
+        useGenericKey ? gMifareClassicKeys[0] : recovery.validKeys[40 + sector],
+      ));
       if (useGenericKey) {
-        final assignedKeyBResult = await _writeBlockTrackingOutcome(block, 0x61,
-            recovery.validKeys[40 + mfClassicGetSectorByBlock(block)], data);
-        if (assignedKeyBResult) {
-          return operationCanContinue;
-        }
-        if (!operationCanContinue) return false;
+        keys.add((0x61, recovery.validKeys[40 + sector]));
       }
     }
 
-    return false;
+    for (final (keyType, key) in keys) {
+      if (!operationCanContinue) {
+        return MifareClassicMagicWriteOutcome.rejected;
+      }
+      final outcome = await writeAuthenticatedBlock(
+        block,
+        keyType,
+        key,
+        data,
+      );
+      switch (outcome) {
+        case MifareClassicMagicWriteOutcome.success:
+        case MifareClassicMagicWriteOutcome.ambiguous:
+          return outcome;
+        case MifareClassicMagicWriteOutcome.rejected:
+          break;
+      }
+      if (!operationCanContinue) {
+        return MifareClassicMagicWriteOutcome.rejected;
+      }
+    }
+
+    return MifareClassicMagicWriteOutcome.rejected;
   }
 
-  Future<bool> _writeBlockTrackingOutcome(
+  @protected
+  Future<MifareClassicMagicWriteOutcome> writeAuthenticatedBlock(
     int block,
     int keyType,
     Uint8List key,
     Uint8List data,
   ) async {
-    _lastWriteWasAmbiguous = true;
-    final result = await communicator.mf1WriteBlock(
-      block,
-      keyType,
-      key,
-      data,
-    );
-    _lastWriteWasAmbiguous = false;
-    return result;
+    try {
+      final result = await communicator.mf1WriteBlock(
+        block,
+        keyType,
+        key,
+        data,
+      );
+      if (!operationCanContinue) {
+        return MifareClassicMagicWriteOutcome.rejected;
+      }
+      return result
+          ? MifareClassicMagicWriteOutcome.success
+          : MifareClassicMagicWriteOutcome.rejected;
+    } catch (_) {
+      return MifareClassicMagicWriteOutcome.ambiguous;
+    }
   }
 
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
-    resetWriteOutcome();
     if (!operationCanContinue) return false;
     List<Uint8List> data = card.data;
     List<bool> cleanSectors = List.generate(40, (index) => false);
@@ -178,10 +242,17 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
       if (!operationCanContinue) return false;
       var block = mfClassicGetSectorTrailerBlockBySector(sector);
       if (data.length > block && data[block].isNotEmpty) {
-        cleanSectors[sector] = await writeBlockModifier(
+        final outcome = await writeBlockModifierOutcome(
             card, block, data[block],
             tryBothKeys: true);
-        if (lastWriteWasAmbiguous) return false;
+        switch (outcome) {
+          case MifareClassicMagicWriteOutcome.success:
+            cleanSectors[sector] = true;
+          case MifareClassicMagicWriteOutcome.rejected:
+            cleanSectors[sector] = false;
+          case MifareClassicMagicWriteOutcome.ambiguous:
+            return false;
+        }
         if (!operationCanContinue) return false;
         if (cleanSectors[sector]) {
           // Update keys to match the newly written trailer,
@@ -205,10 +276,18 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
 
         if (data.length > blockToWrite && data[blockToWrite].isNotEmpty) {
           if (!operationCanContinue) return false;
-          final writeSucceeded = await writeBlockModifier(
+          final outcome = await writeBlockModifierOutcome(
               card, blockToWrite, data[blockToWrite],
               useGenericKey: cleanSectors[sector], tryBothKeys: true);
-          if (lastWriteWasAmbiguous) return false;
+          late final bool writeSucceeded;
+          switch (outcome) {
+            case MifareClassicMagicWriteOutcome.success:
+              writeSucceeded = true;
+            case MifareClassicMagicWriteOutcome.rejected:
+              writeSucceeded = false;
+            case MifareClassicMagicWriteOutcome.ambiguous:
+              return false;
+          }
           if (!(writeSucceeded && cleanSectors[sector]) && blockToWrite != 0) {
             failedBlocks.add(blockToWrite);
           }
@@ -226,10 +305,21 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
       if (cleanSectors[sector] &&
           data.length > block &&
           data[block].isNotEmpty) {
-        if (!(await writeBlockModifier(card, block, data[block],
-            tryBothKeys: true, useGenericKey: true))) {
-          // how we went here? We set to default sector trailer and now we can't write to it. Probably card is lost
-          return false;
+        final outcome = await writeBlockModifierOutcome(
+          card,
+          block,
+          data[block],
+          tryBothKeys: true,
+          useGenericKey: true,
+        );
+        switch (outcome) {
+          case MifareClassicMagicWriteOutcome.success:
+            break;
+          case MifareClassicMagicWriteOutcome.rejected:
+            // how we went here? We set to default sector trailer and now we can't write to it. Probably card is lost
+            return false;
+          case MifareClassicMagicWriteOutcome.ambiguous:
+            return false;
         }
         if (!operationCanContinue) return false;
       }

@@ -205,7 +205,8 @@ void main() {
     expect(communicator.authenticatedWrites, 0);
   });
 
-  test('Gen3 clears ambiguous outcome before the next full write', () async {
+  test('Gen3 does not retain an ambiguous outcome across full writes',
+      () async {
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
     final communicator = _AmbiguousWriteCommunicator(
