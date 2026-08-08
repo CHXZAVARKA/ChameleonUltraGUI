@@ -1393,17 +1393,21 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                           title: Text(
                                               localizations.select_save_format),
                                           actions: [
-                                            ElevatedButton(
-                                              onPressed: () async {
-                                                await saveTag(
-                                                    tag, context, true);
-                                                if (context.mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                              child: Text(localizations
-                                                  .save_as(".bin")),
-                                            ),
+                                            if (!isMifareClassic(tag.tag) ||
+                                                MifareClassicGeometry
+                                                        .fromSavedCard(tag) !=
+                                                    null)
+                                              ElevatedButton(
+                                                onPressed: () async {
+                                                  await saveTag(
+                                                      tag, context, true);
+                                                  if (context.mounted) {
+                                                    Navigator.pop(context);
+                                                  }
+                                                },
+                                                child: Text(localizations
+                                                    .save_as(".bin")),
+                                              ),
                                             ElevatedButton(
                                               onPressed: () async {
                                                 await saveTag(

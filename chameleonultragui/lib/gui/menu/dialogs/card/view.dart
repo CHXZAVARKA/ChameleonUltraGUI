@@ -331,7 +331,9 @@ class CardViewMenuState extends State<CardViewMenu> {
                       return AlertDialog(
                         title: Text(localizations.select_save_format),
                         actions: [
-                          if (isMifareClassic(currentSavedCard.tag))
+                          if (MifareClassicGeometry.fromSavedCard(
+                                  currentSavedCard) !=
+                              null)
                             ElevatedButton(
                               onPressed: () async {
                                 await saveTag(currentSavedCard, context, true);

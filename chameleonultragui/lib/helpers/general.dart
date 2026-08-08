@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -379,9 +380,21 @@ Future<void> saveTag(CardSave tag, BuildContext context, bool bin) async {
   if (bin) {
     Uint8List tagDump;
     if (isMifareClassic(tag.tag)) {
+      final geometry = MifareClassicGeometry.fromSavedCard(tag);
+      if (geometry == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(MifareClassicFeatureStrings.of(context)
+                .partialBinExportBlocked),
+          ));
+        }
+        return;
+      }
       tagDump = mfClassicGetExportBytes(
-          chameleonTagTypeGetMfClassicType(tag.tag), tag.data,
-          isEV1: chameleonTagSaveCheckForMifareClassicEV1(tag));
+        geometry.type,
+        tag.data,
+        isEV1: geometry.isEV1,
+      );
     } else {
       List<int> dump = [];
       for (var block in tag.data) {
