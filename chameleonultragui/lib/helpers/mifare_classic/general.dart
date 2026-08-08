@@ -231,37 +231,66 @@ final gMifareClassicBackdoorKeys = gMifareClassicBackdoorKeysList
         ]))
     .toList();
 
+bool _canContinueCardScan(CardScanContinuation? canContinue) =>
+    canContinue?.call() ?? true;
+
 Future<MifareClassicType> mfClassicGetType(
-    ChameleonCommunicator communicator) async {
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 255]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  ChameleonCommunicator communicator, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  final m4kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 255]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m4kResponse.length == 4) {
     return MifareClassicType.m4k;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 80]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  final m2kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 80]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m2kResponse.length == 4) {
     return MifareClassicType.m2k;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 63]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  final m1kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 63]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m1kResponse.length == 4) {
     return MifareClassicType.m1k;
   }
 
   return MifareClassicType.mini;
 }
 
-Future<bool> mfClassicHasBackdoor(ChameleonCommunicator communicator) async {
+Future<bool> mfClassicHasBackdoor(
+  ChameleonCommunicator communicator, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
   Uint8List data = await communicator.send14ARaw(
       Uint8List.fromList([0x64, 0x00]),
       autoSelect: true,
       checkResponseCrc: false);
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
 
   if (data.length != 4) {
     return false;
@@ -269,6 +298,9 @@ Future<bool> mfClassicHasBackdoor(ChameleonCommunicator communicator) async {
 
   (int, NestedNonces, NestedNonces, Uint8List)? response =
       await communicator.getMf1StaticEncryptedNestedAcquire(sectorCount: 1);
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
 
   return response != null;
 }
@@ -724,21 +756,35 @@ Future<(TagType, MifareClassicInfo)> performMifareClassicScan(
     MifareClassicInfo mfcInfo,
     BuildContext context,
     dynamic updateMifareClassicRecovery,
-    {TagType? override}) async {
+    {TagType? override,
+    CardScanContinuation? canContinue}) async {
   var appState = Provider.of<ChameleonGUIState>(context, listen: false);
   var localizations = AppLocalizations.of(context)!;
   MifareClassicType mifareClassicType;
 
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
+
   if (override != null) {
     mifareClassicType = chameleonTagTypeGetMfClassicType(override);
   } else {
-    mifareClassicType = await mfClassicGetType(communicator);
+    mifareClassicType = await mfClassicGetType(
+      communicator,
+      canContinue: canContinue,
+    );
+    if (!_canContinueCardScan(canContinue)) {
+      return (TagType.unknown, mfcInfo);
+    }
   }
 
   NTLevel ntLevel = NTLevel.unknown;
 
   bool isMifareClassicEV1 =
       await communicator.mf1Auth(0x45, 0x61, gMifareClassicKeys[3]);
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
   MifareClassicRecovery recovery = MifareClassicRecovery(
       update: updateMifareClassicRecovery,
@@ -753,8 +799,17 @@ Future<(TagType, MifareClassicInfo)> performMifareClassicScan(
   try {
     ntLevel = await communicator.getMf1NTLevel();
   } catch (_) {}
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
-  bool hasBackdoor = await mfClassicHasBackdoor(communicator);
+  bool hasBackdoor = await mfClassicHasBackdoor(
+    communicator,
+    canContinue: canContinue,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
   mfcInfo.recovery = recovery;
   mfcInfo.ntLevel = ntLevel;

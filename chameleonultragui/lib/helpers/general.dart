@@ -665,6 +665,7 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
       (type, mfuInfo) = await performMifareUltralightScan(
         communicator,
         mfuInfo,
+        canContinue: canContinue,
       );
       if (!canContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);
@@ -678,6 +679,7 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
         mfcInfo,
         context,
         updateMifareClassicRecovery,
+        canContinue: canContinue,
       );
       if (!canContinue()) {
         return (hfInfo, mfcInfo, mfuInfo);

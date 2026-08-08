@@ -18,6 +18,9 @@ bool isMifareUltralight(TagType type) {
   ].contains(type);
 }
 
+bool _canContinueCardScan(CardScanContinuation? canContinue) =>
+    canContinue?.call() ?? true;
+
 Future<Uint8List> mfUltralightGetVersion(
     ChameleonCommunicator communicator) async {
   return await communicator.send14ARaw(Uint8List.fromList([0x60]));
@@ -129,46 +132,77 @@ int mfUltralightGetCounterCount(TagType type) {
   }
 }
 
-Future<TagType> mfUltralightType(ChameleonCommunicator communicator) async {
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 15]),
-          checkResponseCrc: false))
-      .isEmpty) {
+Future<TagType> mfUltralightType(
+  ChameleonCommunicator communicator, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  final page15Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 15]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page15Response.isEmpty) {
     // early exit
     return TagType.unknown;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 230]),
-              checkResponseCrc: false))
-          .length !=
-      1) {
+  final page230Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 230]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page230Response.length != 1) {
     return TagType.ntag216;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 134]),
-              checkResponseCrc: false))
-          .length !=
-      1) {
+  final page134Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 134]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page134Response.length != 1) {
     return TagType.ntag215;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 44]),
-              checkResponseCrc: false))
-          .length !=
-      1) {
+  final page44Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 44]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page44Response.length != 1) {
     return TagType.ntag213;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 40]),
-              checkResponseCrc: false))
-          .length !=
-      1) {
+  final page40Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 40]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page40Response.length != 1) {
     return TagType.ntag212;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x30, 19]),
-              checkResponseCrc: false))
-          .length !=
-      1) {
+  final page19Response = await communicator.send14ARaw(
+    Uint8List.fromList([0x30, 19]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return TagType.unknown;
+  }
+  if (page19Response.length != 1) {
     return TagType.ntag210;
   }
 
@@ -234,20 +268,35 @@ List<Uint8List> mfUltralightGenerateFirstBlocks(Uint8List uid, TagType type) {
 
 Future<(TagType, MifareUltralightInfo)> performMifareUltralightScan(
     ChameleonCommunicator communicator, MifareUltralightInfo mfuInfo,
-    {TagType? override}) async {
+    {TagType? override, CardScanContinuation? canContinue}) async {
   TagType type = TagType.unknown;
+  if (!_canContinueCardScan(canContinue)) {
+    return (type, mfuInfo);
+  }
   Uint8List version = await mfUltralightGetVersion(communicator);
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfuInfo);
+  }
 
   if (version.isNotEmpty) {
     type = override ?? mfUltralightGetType(version);
   }
 
   if (type == TagType.unknown) {
-    type = await mfUltralightType(communicator);
+    type = await mfUltralightType(
+      communicator,
+      canContinue: canContinue,
+    );
+    if (!_canContinueCardScan(canContinue)) {
+      return (TagType.unknown, mfuInfo);
+    }
   }
 
   if (version.length == 8) {
     Uint8List signature = await mfUltralightGetSignature(communicator);
+    if (!_canContinueCardScan(canContinue)) {
+      return (TagType.unknown, mfuInfo);
+    }
 
     mfuInfo.version = version;
     mfuInfo.signature = signature;

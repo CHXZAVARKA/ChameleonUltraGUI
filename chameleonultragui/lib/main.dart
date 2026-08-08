@@ -140,7 +140,9 @@ class ChameleonGUIState extends ChangeNotifier {
   }
 
   bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
-    return connector?.connected == true && identical(communicator, candidate);
+    return connector?.connected == true &&
+        connector?.isDFU != true &&
+        identical(communicator, candidate);
   }
 }
 

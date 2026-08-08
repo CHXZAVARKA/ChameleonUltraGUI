@@ -115,10 +115,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(communicator.detectCalls, 1);
-    expect(
-      fixture.appState.readCardSession.hfInfo,
-      isNot(same(originalInfo)),
-    );
+    expect(fixture.appState.readCardSession.hfInfo, isNot(same(originalInfo)));
     expect(fixture.appState.readCardSession.hfInfo.uid, '01 02 03 04');
 
     expect(await fixture.openReadCard(), same(initialState));
@@ -186,69 +183,131 @@ void main() {
   });
 
   testWidgets(
-      'delayed HF response after disconnect cannot continue or mutate session',
-      (tester) async {
+    'delayed HF response after disconnect cannot continue or mutate session',
+    (tester) async {
+      final fixture = await _ReadCardFixture.mount(
+        tester,
+        communicatorFactory: (logger, connector) =>
+            _PendingHFCommunicator(logger, port: connector),
+      );
+      final communicator = fixture.communicator as _PendingHFCommunicator;
+      final readCardState = await fixture.openReadCard();
+      final originalInfo = HFCardInfo(uid: 'persisted');
+      fixture.appState.readCardSession.hfInfo = originalInfo;
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+      await tester.pump();
+      expect(communicator.scanStarted.isCompleted, isTrue);
+
+      await fixture.connector.performDisconnect();
+      expect(readCardState.mounted, isTrue);
+      communicator.completeScan(
+        CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 0x08,
+          atqa: Uint8List.fromList([0x00, 0x04]),
+          ats: Uint8List(0),
+        ),
+      );
+      await tester.idle();
+
+      expect(tester.takeException(), isNull);
+      expect(communicator.detectCalls, 0);
+      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+      expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
+    },
+  );
+
+  testWidgets(
+    'delayed LF response after disconnect cannot continue or mutate session',
+    (tester) async {
+      final fixture = await _ReadCardFixture.mount(
+        tester,
+        communicatorFactory: (logger, connector) =>
+            _PendingLFCommunicator(logger, port: connector),
+      );
+      final communicator = fixture.communicator as _PendingLFCommunicator;
+      final readCardState = await fixture.openReadCard();
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
+      await tester.pump();
+      expect(communicator.readStarted.isCompleted, isTrue);
+      final pendingInfo = fixture.appState.readCardSession.lfInfo;
+
+      await fixture.connector.performDisconnect();
+      expect(readCardState.mounted, isTrue);
+      communicator.completeRead(null);
+      await tester.idle();
+
+      expect(tester.takeException(), isNull);
+      expect(communicator.followUpCalls, 0);
+      expect(fixture.appState.readCardSession.lfInfo, same(pendingInfo));
+      expect(pendingInfo.card, isNull);
+    },
+  );
+
+  testWidgets(
+    'disconnect cancels MIFARE Classic scan before its next RF command',
+    (tester) async {
+      final fixture = await _ReadCardFixture.mount(
+        tester,
+        communicatorFactory: (logger, connector) =>
+            _InnerClassicBoundaryCommunicator(logger, port: connector),
+      );
+      final communicator =
+          fixture.communicator as _InnerClassicBoundaryCommunicator;
+      final readCardState = await fixture.openReadCard();
+      final originalInfo = HFCardInfo(uid: 'persisted');
+      fixture.appState.readCardSession.hfInfo = originalInfo;
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+      await tester.pump();
+      expect(communicator.innerCommandStarted.isCompleted, isTrue);
+
+      await fixture.connector.performDisconnect();
+      expect(readCardState.mounted, isTrue);
+      communicator.completeInnerCommand();
+      await tester.idle();
+
+      expect(tester.takeException(), isNull);
+      expect(communicator.innerCommandCalls, 1);
+      expect(communicator.followUpCalls, 0);
+      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+    },
+  );
+
+  testWidgets('DFU cancels Ultralight scan before its next RF command', (
+    tester,
+  ) async {
     final fixture = await _ReadCardFixture.mount(
       tester,
       communicatorFactory: (logger, connector) =>
-          _PendingHFCommunicator(logger, port: connector),
+          _InnerUltralightBoundaryCommunicator(logger, port: connector),
     );
-    final communicator = fixture.communicator as _PendingHFCommunicator;
+    final communicator =
+        fixture.communicator as _InnerUltralightBoundaryCommunicator;
     final readCardState = await fixture.openReadCard();
     final originalInfo = HFCardInfo(uid: 'persisted');
     fixture.appState.readCardSession.hfInfo = originalInfo;
 
     await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
     await tester.pump();
-    expect(communicator.scanStarted.isCompleted, isTrue);
+    expect(communicator.innerCommandStarted.isCompleted, isTrue);
 
-    await fixture.connector.performDisconnect();
+    fixture.connector.isDFU = true;
+    fixture.appState.changesMade();
     expect(readCardState.mounted, isTrue);
-    communicator.completeScan(
-      CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x08,
-        atqa: Uint8List.fromList([0x00, 0x04]),
-        ats: Uint8List(0),
-      ),
-    );
+    communicator.completeInnerCommand();
     await tester.idle();
 
     expect(tester.takeException(), isNull);
-    expect(communicator.detectCalls, 0);
+    expect(communicator.innerCommandCalls, 1);
     expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
-    expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
   });
 
-  testWidgets(
-      'delayed LF response after disconnect cannot continue or mutate session',
-      (tester) async {
-    final fixture = await _ReadCardFixture.mount(
-      tester,
-      communicatorFactory: (logger, connector) =>
-          _PendingLFCommunicator(logger, port: connector),
-    );
-    final communicator = fixture.communicator as _PendingLFCommunicator;
-    final readCardState = await fixture.openReadCard();
-
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
-    await tester.pump();
-    expect(communicator.readStarted.isCompleted, isTrue);
-    final pendingInfo = fixture.appState.readCardSession.lfInfo;
-
-    await fixture.connector.performDisconnect();
-    expect(readCardState.mounted, isTrue);
-    communicator.completeRead(null);
-    await tester.idle();
-
-    expect(tester.takeException(), isNull);
-    expect(communicator.followUpCalls, 0);
-    expect(fixture.appState.readCardSession.lfInfo, same(pendingInfo));
-    expect(pendingInfo.card, isNull);
-  });
-
-  testWidgets('foreground page State survives connection changes',
-      (tester) async {
+  testWidgets('foreground page State survives connection changes', (
+    tester,
+  ) async {
     final fixture = await _ReadCardFixture.mount(tester);
     await fixture.openSavedCards();
     final initialState = tester.state<SavedCardsPageState>(
@@ -270,8 +329,9 @@ void main() {
     );
   });
 
-  testWidgets('real continuous HF scan executes again while offstage',
-      (tester) async {
+  testWidgets('real continuous HF scan executes again while offstage', (
+    tester,
+  ) async {
     final fixture = await _ReadCardFixture.mount(
       tester,
       communicatorFactory: (logger, connector) =>
@@ -294,8 +354,9 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('real continuous LF scan executes again while offstage',
-      (tester) async {
+  testWidgets('real continuous LF scan executes again while offstage', (
+    tester,
+  ) async {
     final fixture = await _ReadCardFixture.mount(
       tester,
       communicatorFactory: (logger, connector) =>
@@ -334,9 +395,7 @@ void main() {
 }
 
 typedef _CommunicatorFactory = ChameleonCommunicator Function(
-  Logger logger,
-  EmulatorSerial connector,
-);
+    Logger logger, EmulatorSerial connector);
 
 class _ReadCardFixture {
   _ReadCardFixture({
@@ -549,4 +608,108 @@ class _ContinuousLFCommunicator extends ChameleonCommunicator {
 
   @override
   Future<IoProxCard?> readIoProx() async => null;
+}
+
+class _InnerClassicBoundaryCommunicator extends ChameleonCommunicator {
+  _InnerClassicBoundaryCommunicator(super.logger, {super.port});
+
+  final Completer<void> innerCommandStarted = Completer<void>();
+  final Completer<Uint8List> _innerCommandResult = Completer<Uint8List>();
+  int innerCommandCalls = 0;
+  int followUpCalls = 0;
+
+  @override
+  Future<bool> isReaderDeviceMode() async => true;
+
+  @override
+  Future<CardData?> scan14443aTag() async => CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x08,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+        ats: Uint8List(0),
+      );
+
+  @override
+  Future<bool> detectMf1Support() async => true;
+
+  @override
+  Future<Uint8List> send14ARaw(
+    Uint8List data, {
+    int respTimeoutMs = 100,
+    int? bitLen,
+    bool activateRfField = true,
+    bool waitResponse = true,
+    bool appendCrc = true,
+    bool autoSelect = true,
+    bool keepRfField = false,
+    bool checkResponseCrc = true,
+  }) {
+    innerCommandCalls++;
+    if (!innerCommandStarted.isCompleted) {
+      innerCommandStarted.complete();
+      return _innerCommandResult.future;
+    }
+    followUpCalls++;
+    return Future.value(Uint8List(0));
+  }
+
+  @override
+  Future<bool> mf1Auth(int block, int keyType, Uint8List key) async {
+    followUpCalls++;
+    return false;
+  }
+
+  @override
+  Future<NTLevel> getMf1NTLevel() async {
+    followUpCalls++;
+    return NTLevel.unknown;
+  }
+
+  void completeInnerCommand() => _innerCommandResult.complete(Uint8List(0));
+}
+
+class _InnerUltralightBoundaryCommunicator extends ChameleonCommunicator {
+  _InnerUltralightBoundaryCommunicator(super.logger, {super.port});
+
+  final Completer<void> innerCommandStarted = Completer<void>();
+  final Completer<Uint8List> _innerCommandResult = Completer<Uint8List>();
+  int innerCommandCalls = 0;
+
+  @override
+  Future<bool> isReaderDeviceMode() async => true;
+
+  @override
+  Future<CardData?> scan14443aTag() async => CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x00,
+        atqa: Uint8List.fromList([0x00, 0x44]),
+        ats: Uint8List(0),
+      );
+
+  @override
+  Future<bool> detectMf1Support() async => false;
+
+  @override
+  Future<Uint8List> send14ARaw(
+    Uint8List data, {
+    int respTimeoutMs = 100,
+    int? bitLen,
+    bool activateRfField = true,
+    bool waitResponse = true,
+    bool appendCrc = true,
+    bool autoSelect = true,
+    bool keepRfField = false,
+    bool checkResponseCrc = true,
+  }) {
+    innerCommandCalls++;
+    if (!innerCommandStarted.isCompleted) {
+      innerCommandStarted.complete();
+      return _innerCommandResult.future;
+    }
+    return Future.value(Uint8List(0));
+  }
+
+  void completeInnerCommand() => _innerCommandResult.complete(
+        Uint8List.fromList([0, 0, 4, 2, 1, 0, 0x0F, 3]),
+      );
 }
