@@ -29,6 +29,25 @@ void main() {
     expect(result.session!.communicator, same(fixture.communicator));
   });
 
+  test('session-bound foreground preserves an explicitly nullable success',
+      () async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    ConnectedDeviceSession? callbackSession;
+
+    final result = await fixture.appState.runSessionBoundForeground<int?>(
+      (session) async {
+        callbackSession = session;
+        return null;
+      },
+    );
+
+    expect(result.executed, isTrue);
+    expect(result.session, same(callbackSession));
+    expect(result.session, isNotNull);
+    expect(result.value, isNull);
+  });
+
   test('session-bound foreground rejects a missing connection', () async {
     final appState = ChameleonGUIState(SharedPreferencesProvider());
     var callbackRan = false;
