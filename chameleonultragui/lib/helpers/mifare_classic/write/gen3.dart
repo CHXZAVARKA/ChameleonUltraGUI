@@ -8,6 +8,8 @@ import 'package:chameleonultragui/helpers/mifare_classic/write/gen2.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 
 class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
+  bool _gen3WriteWasAmbiguous = false;
+
   MifareClassicGen3WriteHelper(super.communicator, {required super.recovery});
 
   @override
@@ -53,6 +55,7 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   @override
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
+    _gen3WriteWasAmbiguous = false;
     for (int retry = 0; retry < 10; retry++) {
       if (!operationCanContinue) return false;
       try {
@@ -63,16 +66,20 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
           if (await writeGen3Block(card, data) && operationCanContinue) {
             return true;
           }
+          if (_gen3WriteWasAmbiguous) return false;
         } else {
           if (await writeBlock(block, data,
               tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
             return true;
           }
+          if (lastWriteWasAmbiguous) return false;
         }
         if (!operationCanContinue) return false;
         await Future.delayed(const Duration(milliseconds: 150));
         if (!operationCanContinue) return false;
-      } catch (_) {}
+      } catch (_) {
+        if (_gen3WriteWasAmbiguous || lastWriteWasAmbiguous) return false;
+      }
     }
 
     return false;
@@ -81,6 +88,7 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   Future<bool> writeGen3Block(CardSave dump, Uint8List data) async {
     if (!operationCanContinue) return false;
     // Try to write whole block
+    _gen3WriteWasAmbiguous = true;
     await communicator.send14ARaw(
         Uint8List.fromList([0x90, 0xFB, 0xCC, 0xCC, 0x10, ...data]),
         checkResponseCrc: false);
@@ -93,13 +101,21 @@ class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
           checkResponseCrc: false);
     }
 
+    if (!operationCanContinue) return false;
+
     // Card doesn't respond with anything, just compare UID
     await Future.delayed(
         const Duration(milliseconds: 500)); // Wait for card to reboot
+    if (!operationCanContinue) return false;
     CardData? card = await communicator.scan14443aTag();
-    return card != null &&
+    if (!operationCanContinue) return false;
+    final verified = card != null &&
             bytesToHex(card.uid) ==
                 bytesToHex(data.sublist(0, card.uid.length)) ||
         card != null && bytesToHexSpace(card.uid) == dump.uid;
+    if (verified) {
+      _gen3WriteWasAmbiguous = false;
+    }
+    return verified;
   }
 }

@@ -67,6 +67,7 @@ class _FakePort implements MifareClassicMaintenancePort {
   int scans = 0;
   int authentications = 0;
   int reads = 0;
+  int readBackCommands = 0;
   int writeCommands = 0;
   bool acknowledgeWithoutWriting = false;
   int writeStatus = 0;
@@ -135,6 +136,9 @@ class _FakePort implements MifareClassicMaintenancePort {
   Future<MifareClassicIoResult> readBlock(
       int block, int keyType, Uint8List key) async {
     reads++;
+    if (writes.contains(block)) {
+      readBackCommands++;
+    }
     if (block >= availableBlockCount) {
       return MifareClassicIoResult(status: 6);
     }
@@ -944,6 +948,40 @@ void main() {
     expect(port.writes, [1]);
     expect(port.blocks[1], orderedEquals(target[1]));
     expect(port.blocks[2], isNot(orderedEquals(target[2])));
+  });
+
+  test(
+      'session replacement after a sent write skips read-back and reports unknown',
+      () async {
+    final current = _blankCard();
+    final target = current.map(Uint8List.fromList).toList();
+    target[1] = Uint8List.fromList(List.filled(16, 0x58));
+    target[2] = Uint8List.fromList(List.filled(16, 0x59));
+    var sessionCurrent = true;
+    var scansWhenSessionChanged = -1;
+    late final _FakePort port;
+    port = _FakePort(current)
+      ..onWrite = (_) {
+        scansWhenSessionChanged = port.scans;
+        sessionCurrent = false;
+      };
+    final maintenance = MifareClassicMaintenance(port);
+    final plan =
+        await maintenance.preflight(image: _image(target), profile: _profile());
+    final error = await _expectMaintenanceFailure(() async {
+      await maintenance.execute(
+        plan,
+        isSessionCurrent: () => sessionCurrent,
+      );
+    });
+
+    expect(error.failure, MifareClassicMaintenanceFailure.communicationLost);
+    expect(error.writeOutcome, MifareClassicWriteOutcome.unknown);
+    expect(error.block, 1);
+    expect(error.verifiedBlocks, 0);
+    expect(port.writes, [1]);
+    expect(port.readBackCommands, 0);
+    expect(port.scans, scansWhenSessionChanged);
   });
 
   test('cancellation during common revalidation stops before any write',

@@ -543,6 +543,7 @@ class MifareClassicMaintenance {
     MifareClassicMaintenancePlan plan, {
     MifareClassicMaintenanceProgressCallback? onProgress,
     bool Function()? shouldCancel,
+    bool Function()? isSessionCurrent,
   }) async {
     if (!identical(plan._ownerToken, _ownerToken) || plan._claimed) {
       throw const MifareClassicMaintenanceException(
@@ -554,27 +555,30 @@ class MifareClassicMaintenance {
 
     var written = 0;
     var verified = 0;
+    final shouldStop = isSessionCurrent == null
+        ? shouldCancel
+        : () => (shouldCancel?.call() ?? false) || !isSessionCurrent.call();
 
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     await _communicate(
-      () => port.ensureReaderMode(shouldCancel: shouldCancel),
+      () => port.ensureReaderMode(shouldCancel: shouldStop),
       'Communication with Chameleon was lost while enabling reader mode',
       verifiedBlocks: verified,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     await _requireExpectedCard(
       plan._expectedUid,
       plan._expectedSak,
       plan._expectedAtqa,
       sector: 0,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     final detectedType = await _communicate(
-      () => port.detectType(shouldCancel: shouldCancel),
+      () => port.detectType(shouldCancel: shouldStop),
       'Communication with Chameleon was lost while detecting the card type',
       verifiedBlocks: verified,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     if (detectedType != plan._geometry.type) {
       throw MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.wrongCardType,
@@ -582,7 +586,7 @@ class MifareClassicMaintenance {
       );
     }
     await _requireExactGeometry(plan._geometry, verifiedBlocks: verified);
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     final capacityCheck = await _communicate(
       () => port.authenticate(
         plan._capacityBlock,
@@ -594,7 +598,7 @@ class MifareClassicMaintenance {
       block: plan._capacityBlock,
       verifiedBlocks: verified,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     if (!capacityCheck.isSuccess) {
       throw MifareClassicMaintenanceException(
         MifareClassicMaintenanceFailure.wrongCardType,
@@ -615,7 +619,7 @@ class MifareClassicMaintenance {
       block: 0,
       verifiedBlocks: verified,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
     if (!manufacturerBlock.isSuccess ||
         !_sameBytes(manufacturerBlock.data, plan._expectedManufacturerBlock)) {
       throw MifareClassicMaintenanceException(
@@ -630,7 +634,7 @@ class MifareClassicMaintenance {
     var revalidationSector = -1;
     for (var index = 0; index < plan._preconditions.length; index++) {
       final precondition = plan._preconditions[index];
-      _throwIfCancelledBeforePrecondition(shouldCancel, precondition);
+      _throwIfCancelledBeforePrecondition(shouldStop, precondition);
       if (precondition.sector != revalidationSector) {
         await _requireExpectedCard(
           plan._expectedUid,
@@ -638,7 +642,7 @@ class MifareClassicMaintenance {
           plan._expectedAtqa,
           sector: precondition.sector,
         );
-        _throwIfCancelledBeforePrecondition(shouldCancel, precondition);
+        _throwIfCancelledBeforePrecondition(shouldStop, precondition);
         revalidationSector = precondition.sector;
       }
       final currentBlock = await _communicate(
@@ -652,7 +656,7 @@ class MifareClassicMaintenance {
         block: precondition.block,
         verifiedBlocks: verified,
       );
-      _throwIfCancelledBeforePrecondition(shouldCancel, precondition);
+      _throwIfCancelledBeforePrecondition(shouldStop, precondition);
       if (!currentBlock.isSuccess || currentBlock.data.length != 16) {
         throw MifareClassicMaintenanceException(
           MifareClassicMaintenanceFailure.readFailed,
@@ -684,10 +688,10 @@ class MifareClassicMaintenance {
       plan._expectedAtqa,
       sector: plan._geometry.sectorCount - 1,
     );
-    _throwIfCancelled(shouldCancel);
+    _throwIfCancelled(shouldStop);
 
     for (final operation in plan._operations) {
-      _throwIfCancelledBeforeBlock(shouldCancel, operation, verified);
+      _throwIfCancelledBeforeBlock(shouldStop, operation, verified);
       if (operation.block < 0 || operation.block >= plan._geometry.blockCount) {
         throw StateError(
             'Maintenance plan contains invalid block ${operation.block}');
@@ -731,7 +735,7 @@ class MifareClassicMaintenance {
         sector: operation.sector,
         block: operation.block,
       ));
-      _throwIfCancelledBeforeBlock(shouldCancel, operation, verified);
+      _throwIfCancelledBeforeBlock(shouldStop, operation, verified);
       MifareClassicIoResult? writeResult;
       try {
         writeResult = await port.writeBlock(
@@ -744,6 +748,13 @@ class MifareClassicMaintenance {
         // A lost response does not prove that the card rejected the write.
         // Resolve the outcome with the same read-back used for a normal ACK.
       }
+
+      _throwIfSessionChangedAfterWrite(
+        isSessionCurrent,
+        operation,
+        verified,
+        status: writeResult?.status,
+      );
 
       try {
         await _requireExpectedCard(
@@ -763,6 +774,12 @@ class MifareClassicMaintenance {
           writeOutcome: MifareClassicWriteOutcome.unknown,
         );
       }
+      _throwIfSessionChangedAfterWrite(
+        isSessionCurrent,
+        operation,
+        verified,
+        status: writeResult?.status,
+      );
 
       try {
         onProgress?.call(MifareClassicMaintenanceProgress(
@@ -775,6 +792,12 @@ class MifareClassicMaintenance {
       } catch (_) {
         // UI progress reporting cannot interrupt the mandatory read-back.
       }
+      _throwIfSessionChangedAfterWrite(
+        isSessionCurrent,
+        operation,
+        verified,
+        status: writeResult?.status,
+      );
       MifareClassicIoResult? readResult;
       try {
         readResult = await port.readBlock(
@@ -793,6 +816,12 @@ class MifareClassicMaintenance {
           writeOutcome: MifareClassicWriteOutcome.unknown,
         );
       }
+      _throwIfSessionChangedAfterWrite(
+        isSessionCurrent,
+        operation,
+        verified,
+        status: writeResult?.status,
+      );
       if (!readResult.isSuccess ||
           !_sameBytes(readResult.data, operation.targetData)) {
         final writeWasRejected = writeResult != null && !writeResult.isSuccess;
@@ -957,6 +986,25 @@ class MifareClassicMaintenance {
         'The operation was cancelled before writing',
         sector: precondition.sector,
         block: precondition.block,
+      );
+    }
+  }
+
+  void _throwIfSessionChangedAfterWrite(
+    bool Function()? isSessionCurrent,
+    _MifareClassicMaintenanceOperation operation,
+    int verifiedBlocks, {
+    int? status,
+  }) {
+    if (!(isSessionCurrent?.call() ?? true)) {
+      throw MifareClassicMaintenanceException(
+        MifareClassicMaintenanceFailure.communicationLost,
+        'The write outcome is unknown because the device session changed',
+        sector: operation.sector,
+        block: operation.block,
+        status: status,
+        verifiedBlocks: verifiedBlocks,
+        writeOutcome: MifareClassicWriteOutcome.unknown,
       );
     }
   }

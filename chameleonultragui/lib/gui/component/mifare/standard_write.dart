@@ -319,7 +319,8 @@ class _StandardMifareClassicWritePanelState
           return null;
         }
         return maintenance.execute(plan,
-            shouldCancel: () => _cancelled || !session.isCurrent,
+            shouldCancel: () => _cancelled,
+            isSessionCurrent: () => session.isCurrent,
             onProgress: (progress) {
               if (mounted) {
                 setState(() => _progress = progress);

@@ -46,6 +46,7 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
   Future<bool> writeBlock(int block, Uint8List data) async {
     for (int retry = 0; retry < 5; retry++) {
       if (!operationCanContinue) return false;
+      var writeIssued = false;
       try {
         await communicator.send14ARaw(Uint8List(1)); // reset
         if (!operationCanContinue) return false;
@@ -69,16 +70,21 @@ class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
             autoSelect: false, keepRfField: true, checkResponseCrc: false);
         if (!operationCanContinue) return false;
 
+        writeIssued = true;
         Uint8List output = await communicator.send14ARaw(data,
             autoSelect: false, keepRfField: true, checkResponseCrc: false);
+        writeIssued = false;
 
         if (!operationCanContinue) return false;
-        if (output.isNotEmpty && output[0] == 0x0a) {
+        if (output.isEmpty) return false;
+        if (output[0] == 0x0a) {
           return true;
         }
         await Future.delayed(const Duration(milliseconds: 100));
         if (!operationCanContinue) return false;
-      } catch (_) {}
+      } catch (_) {
+        if (writeIssued) return false;
+      }
     }
 
     return false;

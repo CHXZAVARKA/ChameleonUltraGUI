@@ -776,6 +776,96 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+      'disposing Standard UI after a sent write keeps mandatory read-back',
+      (tester) async {
+    final targetBlocks = _miniTargetBlocks();
+    targetBlocks[2][0] = 2;
+    final preferences = await _standardMiniPreferences(targetBlocks);
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final connector = _TestSerial(log: logger)..connected = true;
+    final currentBlocks = [
+      for (var block = 0; block < 20; block++)
+        Uint8List.fromList(targetBlocks[block]),
+    ]
+      ..[1] = Uint8List(16)
+      ..[2] = Uint8List(16);
+    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+      ..writeStarted = Completer<void>()
+      ..allowWriteResponse = Completer<void>();
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = connector
+      ..communicator = communicator;
+    await _prepareStandardMiniPanel(tester, appState);
+
+    final writeAndVerify = find.text('Write and verify');
+    await tester.ensureVisible(writeAndVerify);
+    await tester.tap(writeAndVerify);
+    await tester.pump();
+    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    communicator.allowWriteResponse!.complete();
+    await appState.rfOperations
+        .runForeground(() async {})
+        .timeout(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(communicator.writeCalls, 1);
+    expect(communicator.postWriteScans, 1);
+    expect(communicator.postWriteReads, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'Standard session replacement after a sent write skips stale read-back',
+      (tester) async {
+    final targetBlocks = _miniTargetBlocks();
+    targetBlocks[2][0] = 2;
+    final preferences = await _standardMiniPreferences(targetBlocks);
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final connector = _TestSerial(log: logger)..connected = true;
+    final currentBlocks = [
+      for (var block = 0; block < 20; block++)
+        Uint8List.fromList(targetBlocks[block]),
+    ]
+      ..[1] = Uint8List(16)
+      ..[2] = Uint8List(16);
+    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+      ..writeStarted = Completer<void>()
+      ..allowWriteResponse = Completer<void>();
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = connector
+      ..communicator = communicator;
+    await _prepareStandardMiniPanel(tester, appState);
+
+    final writeAndVerify = find.text('Write and verify');
+    await tester.ensureVisible(writeAndVerify);
+    await tester.tap(writeAndVerify);
+    await tester.pump();
+    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
+
+    connector.connected = false;
+    appState
+      ..connector = (_TestSerial(log: logger)..connected = true)
+      ..communicator = _ReaderModeCommunicator(logger)
+      ..changesMade();
+    communicator.allowWriteResponse!.complete();
+    await appState.rfOperations
+        .runForeground(() async {})
+        .timeout(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(communicator.writeCalls, 1);
+    expect(communicator.postWriteScans, 0);
+    expect(communicator.postWriteReads, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Magic write stops before the next block after reconnect',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -917,6 +1007,70 @@ List<Uint8List> _miniTargetBlocks() {
   return blocks;
 }
 
+Future<SharedPreferencesProvider> _standardMiniPreferences(
+  List<Uint8List> targetBlocks,
+) async {
+  SharedPreferences.setMockInitialValues({});
+  final preferences = SharedPreferencesProvider();
+  await preferences.load();
+  const key = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+  preferences.setMifareClassicKeyProfiles([
+    MifareClassicKeyProfile(
+      id: 'mini-profile',
+      name: 'Mini keys',
+      cardType: 'mini',
+      sectorCount: 5,
+      assignments: List.generate(
+        5,
+        (sector) => MifareClassicKeyAssignment(
+          sector: sector,
+          keyA: Uint8List.fromList(key),
+        ),
+      ),
+    ),
+  ]);
+  preferences.setCards([
+    CardSave(
+      id: 'mini-card',
+      uid: '01020304',
+      name: 'Mini dump',
+      tag: TagType.mifareMini,
+      extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+      data: targetBlocks,
+    ),
+  ]);
+  return preferences;
+}
+
+Future<void> _prepareStandardMiniPanel(
+  WidgetTester tester,
+  ChameleonGUIState appState,
+) async {
+  await tester.pumpWidget(
+    ChangeNotifierProvider<ChameleonGUIState>.value(
+      value: appState,
+      child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(body: StandardMifareClassicWritePanel()),
+      ),
+    ),
+  );
+  await tester.tap(find.text('Select saved card'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Mini dump'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Select key profile'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Mini keys (5)').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Run preflight'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byType(CheckboxListTile));
+  await tester.pump();
+}
+
 class _FailingPreflightCommunicator extends ChameleonCommunicator {
   final String diagnostics;
 
@@ -991,6 +1145,10 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
   final List<Uint8List> blocks;
   int readerModeCalls = 0;
   int writeCalls = 0;
+  int postWriteScans = 0;
+  int postWriteReads = 0;
+  Completer<void>? writeStarted;
+  Completer<void>? allowWriteResponse;
 
   @override
   Future<bool> isReaderDeviceMode() async {
@@ -999,12 +1157,17 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<CardData?> scan14443aTag() async => CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x09,
-        atqa: Uint8List.fromList([0x00, 0x04]),
-        ats: Uint8List(0),
-      );
+  Future<CardData?> scan14443aTag() async {
+    if (writeCalls > 0) {
+      postWriteScans++;
+    }
+    return CardData(
+      uid: Uint8List.fromList([1, 2, 3, 4]),
+      sak: 0x09,
+      atqa: Uint8List.fromList([0x00, 0x04]),
+      ats: Uint8List(0),
+    );
+  }
 
   @override
   Future<bool> detectMf1Support() async => true;
@@ -1036,12 +1199,16 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
     int block,
     int keyType,
     Uint8List key,
-  ) async =>
-      ChameleonMessage(
-        command: 0,
-        status: 0,
-        data: Uint8List.fromList(blocks[block]),
-      );
+  ) async {
+    if (writeCalls > 0) {
+      postWriteReads++;
+    }
+    return ChameleonMessage(
+      command: 0,
+      status: 0,
+      data: Uint8List.fromList(blocks[block]),
+    );
+  }
 
   @override
   Future<ChameleonMessage> mf1WriteBlockResult(
@@ -1052,6 +1219,10 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
   ) async {
     writeCalls++;
     blocks[block] = Uint8List.fromList(data);
+    if (writeStarted != null && !writeStarted!.isCompleted) {
+      writeStarted!.complete();
+    }
+    await allowWriteResponse?.future;
     return ChameleonMessage(command: 0, status: 0, data: Uint8List(0));
   }
 }

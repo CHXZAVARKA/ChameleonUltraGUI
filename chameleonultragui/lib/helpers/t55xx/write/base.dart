@@ -150,31 +150,40 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
     if (isEM410X(card.tag)) {
       await communicator.writeEM410XtoT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       // A write may have reached the tag. Keep only its safety read-back.
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readEM410X();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.hidProx) {
       await communicator.writeHIDProxToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readHIDProx();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.viking) {
       await communicator.writeVikingToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readViking();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.pac) {
       await communicator.writePacToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readPac();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.ioProx) {
       await communicator.writeIoProxToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readIoProx();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.idteck) {

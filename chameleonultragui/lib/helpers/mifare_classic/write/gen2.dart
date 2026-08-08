@@ -9,6 +9,10 @@ import 'package:chameleonultragui/sharedprefsprovider.dart';
 
 class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   List<int> failedBlocks = [];
+  bool _lastWriteWasAmbiguous = false;
+
+  bool get lastWriteWasAmbiguous => _lastWriteWasAmbiguous;
+
   MifareClassicGen2WriteHelper(super.communicator, {required super.recovery});
 
   @override
@@ -50,6 +54,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
 
   Future<bool> writeBlockModifier(CardSave card, int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
+    _lastWriteWasAmbiguous = false;
     for (int retry = 0; retry < 10; retry++) {
       if (!operationCanContinue) return false;
       try {
@@ -60,10 +65,13 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
             tryBothKeys: tryBothKeys, useGenericKey: useGenericKey)) {
           return true;
         }
+        if (_lastWriteWasAmbiguous) return false;
         if (!operationCanContinue) return false;
         await Future.delayed(const Duration(milliseconds: 150));
         if (!operationCanContinue) return false;
-      } catch (_) {}
+      } catch (_) {
+        if (_lastWriteWasAmbiguous) return false;
+      }
     }
 
     return false;
@@ -73,40 +81,44 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   Future<bool> writeBlock(int block, Uint8List data,
       {bool tryBothKeys = false, bool useGenericKey = false}) async {
     if (!operationCanContinue) return false;
-    if (await communicator.mf1WriteBlock(
+    final keyAResult = await _writeBlockTrackingOutcome(
         block,
         0x60,
         (useGenericKey)
             ? gMifareClassicKeys[0]
             : recovery.validKeys[mfClassicGetSectorByBlock(block)],
-        data)) {
+        data);
+    if (keyAResult) {
       return operationCanContinue;
     }
     if (!operationCanContinue) return false;
 
     if (useGenericKey) {
-      if (await communicator.mf1WriteBlock(block, 0x60,
-          recovery.validKeys[mfClassicGetSectorByBlock(block)], data)) {
+      final assignedKeyAResult = await _writeBlockTrackingOutcome(block, 0x60,
+          recovery.validKeys[mfClassicGetSectorByBlock(block)], data);
+      if (assignedKeyAResult) {
         return operationCanContinue;
       }
       if (!operationCanContinue) return false;
     }
 
     if (tryBothKeys) {
-      if (await communicator.mf1WriteBlock(
+      final keyBResult = await _writeBlockTrackingOutcome(
           block,
           0x61,
           (useGenericKey)
               ? gMifareClassicKeys[0]
               : recovery.validKeys[40 + mfClassicGetSectorByBlock(block)],
-          data)) {
+          data);
+      if (keyBResult) {
         return operationCanContinue;
       }
       if (!operationCanContinue) return false;
 
       if (useGenericKey) {
-        if (await communicator.mf1WriteBlock(block, 0x61,
-            recovery.validKeys[40 + mfClassicGetSectorByBlock(block)], data)) {
+        final assignedKeyBResult = await _writeBlockTrackingOutcome(block, 0x61,
+            recovery.validKeys[40 + mfClassicGetSectorByBlock(block)], data);
+        if (assignedKeyBResult) {
           return operationCanContinue;
         }
         if (!operationCanContinue) return false;
@@ -114,6 +126,23 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
     }
 
     return false;
+  }
+
+  Future<bool> _writeBlockTrackingOutcome(
+    int block,
+    int keyType,
+    Uint8List key,
+    Uint8List data,
+  ) async {
+    _lastWriteWasAmbiguous = true;
+    final result = await communicator.mf1WriteBlock(
+      block,
+      keyType,
+      key,
+      data,
+    );
+    _lastWriteWasAmbiguous = false;
+    return result;
   }
 
   @override

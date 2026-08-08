@@ -79,7 +79,9 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
             currentKey = bytesToHexSpace(selectedDictionary.keys[i]);
           });
 
+          var writeIssued = false;
           try {
+            writeIssued = true;
             await session.communicator.writeEM410XtoT55XX(
                 hexToBytes(targetUID), newKey, [selectedDictionary.keys[i]]);
             if (!mounted || !session.isCurrent) {
@@ -88,6 +90,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
             }
 
             var newCard = await session.communicator.readEM410X();
+            writeIssued = false;
             if (!mounted || !session.isCurrent) {
               sessionCancelled = true;
               return;
@@ -107,6 +110,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
               sessionCancelled = true;
               return;
             }
+            if (writeIssued) rethrow;
             continue;
           }
         }
