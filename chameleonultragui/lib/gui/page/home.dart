@@ -204,6 +204,25 @@ class HomePageState extends State<HomePage> {
     return await appState.communicator!.isReaderDeviceMode();
   }
 
+  Future<void> _setReaderDeviceMode(bool readerMode) async {
+    final appState = context.read<ChameleonGUIState>();
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(readerMode);
+      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        return;
+      }
+      setState(() {});
+      appState.changesMade();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
@@ -539,10 +558,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(false);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(false);
                                     },
                                     tooltip: localizations.emulator_mode,
                                     icon: const Icon(Icons.nfc_sharp),
@@ -552,10 +568,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(true);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(true);
                                     },
                                     tooltip: localizations.reader_mode,
                                     icon: const Icon(Icons.barcode_reader),

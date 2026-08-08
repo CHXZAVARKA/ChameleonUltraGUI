@@ -41,84 +41,110 @@ class CardReaderState extends State<MifareUltralightHelper> {
   double progress = -1;
 
   Future<void> readCard({bool withPassword = false}) async {
-    var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    var localizations = AppLocalizations.of(context)!;
-    Uint8List? pack;
+    final appState = context.read<ChameleonGUIState>();
+    final localizations = AppLocalizations.of(context)!;
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    final password = keyController.text;
+    final pageCount = mfUltralightGetPagesCount(widget.hfInfo.type);
+
     setState(() {
       cardData = [];
       error = "";
       state = MifareUltralightState.read;
     });
 
-    for (var page = 0;
-        page < mfUltralightGetPagesCount(widget.hfInfo.type);
-        page++) {
-      if (withPassword) {
-        pack = await appState.communicator!.send14ARaw(
-            Uint8List.fromList([0x1B, ...hexToBytes(keyController.text)]),
-            keepRfField: true);
-        if (pack.length < 2) {
-          setState(() {
-            state = MifareUltralightState.none;
-            error = localizations.invalid_password;
-          });
+    await appState.rfOperations.runForeground(() async {
+      bool canContinue() =>
+          mounted && appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return;
+      }
+
+      final nextCardData = <Uint8List>[];
+      Uint8List? pack;
+      for (var page = 0; page < pageCount; page++) {
+        if (withPassword) {
+          pack = await communicator.send14ARaw(
+            Uint8List.fromList([0x1B, ...hexToBytes(password)]),
+            keepRfField: true,
+          );
+          if (!canContinue()) {
+            return;
+          }
+          if (pack.length < 2) {
+            setState(() {
+              state = MifareUltralightState.none;
+              error = localizations.invalid_password;
+            });
+            return;
+          }
+        }
+
+        final pageData = await communicator.send14ARaw(
+          Uint8List.fromList([0x30, page]),
+        );
+        if (!canContinue()) {
+          return;
+        }
+        nextCardData.add(pageData.isNotEmpty
+            ? Uint8List.fromList(pageData.slice(0, 4).toList())
+            : Uint8List(0));
+        setState(() {
+          progress = page / pageCount;
+        });
+      }
+
+      if (!nextCardData.any((block) => block.isNotEmpty)) {
+        setState(() {
+          progress = 0;
+          cardData = [];
+          error = localizations.failed_to_read_block;
+          state = MifareUltralightState.none;
+        });
+        return;
+      }
+
+      final nextVersion = await mfUltralightGetVersion(communicator);
+      if (!canContinue()) {
+        return;
+      }
+      final nextSignature = await mfUltralightGetSignature(communicator);
+      if (!canContinue()) {
+        return;
+      }
+
+      var nextCounters = <int>[];
+      if (mfUltralightHasCounters(widget.hfInfo.type)) {
+        nextCounters = await mfUltralightReadAllCountersFromCard(
+          communicator,
+          widget.hfInfo.type,
+          canContinue: canContinue,
+        );
+        if (!canContinue()) {
           return;
         }
       }
 
-      Uint8List pageData = await appState.communicator!
-          .send14ARaw(Uint8List.fromList([0x30, page]));
-      if (pageData.isNotEmpty) {
-        cardData.add(Uint8List.fromList(pageData.slice(0, 4).toList()));
-      } else {
-        cardData.add(Uint8List(0));
+      final passwordPage = mfUltralightGetPasswordPage(widget.hfInfo.type);
+      if (passwordPage != 0 && withPassword) {
+        nextCardData[passwordPage] = hexToBytes(password);
+        nextCardData[passwordPage + 1] = Uint8List(4);
+        for (var byte = 0; byte < pack!.length; byte++) {
+          nextCardData[passwordPage + 1][byte] = pack[byte];
+        }
       }
 
       setState(() {
-        progress = page / mfUltralightGetPagesCount(widget.hfInfo.type);
+        cardData = nextCardData;
+        version = bytesToHexSpace(nextVersion);
+        signature = bytesToHexSpace(nextSignature);
+        counters = nextCounters;
+        error = "";
+        state = MifareUltralightState.save;
       });
-    }
-
-    bool hasValidData = false;
-    for (var block in cardData) {
-      if (block.isNotEmpty) {
-        hasValidData = true;
-      }
-    }
-
-    if (!hasValidData) {
-      setState(() {
-        progress = 0;
-        cardData = [];
-        error = localizations.failed_to_read_block;
-        state = MifareUltralightState.none;
-      });
-      return;
-    }
-
-    version =
-        bytesToHexSpace(await mfUltralightGetVersion(appState.communicator!));
-    signature =
-        bytesToHexSpace(await mfUltralightGetSignature(appState.communicator!));
-
-    if (mfUltralightHasCounters(widget.hfInfo.type)) {
-      counters = await mfUltralightReadAllCountersFromCard(
-          appState.communicator!, widget.hfInfo.type);
-    }
-
-    // Save password to dump if was used
-    int passwordPage = mfUltralightGetPasswordPage(widget.hfInfo.type);
-    if (passwordPage != 0 && withPassword) {
-      cardData[passwordPage] = hexToBytes(keyController.text);
-      cardData[passwordPage + 1] = Uint8List(4);
-      for (var byte = 0; byte < pack!.length; byte++) {
-        cardData[passwordPage + 1][byte] = pack[byte];
-      }
-    }
-
-    setState(() {
-      error = "";
-      state = MifareUltralightState.save;
     });
   }
 

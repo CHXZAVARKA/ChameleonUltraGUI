@@ -61,6 +61,25 @@ class SlotChangerState extends State<SlotChanger> {
     return icons;
   }
 
+  Future<void> _activateSlot(int slot) async {
+    final appState = context.read<ChameleonGUIState>();
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        return;
+      }
+      await communicator.activateSlot(slot);
+      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        return;
+      }
+      setState(() {});
+      appState.changesMade();
+    });
+  }
+
   List<Icon> presold = [
     const Icon(Icons.circle_outlined),
     const Icon(Icons.circle_outlined),
@@ -107,10 +126,7 @@ class SlotChangerState extends State<SlotChanger> {
                 IconButton(
                   onPressed: () async {
                     if (selectedSlot > 1) {
-                      await appState.communicator!
-                          .activateSlot(selectedSlot - 2);
-                      setState(() {});
-                      appState.changesMade();
+                      await _activateSlot(selectedSlot - 2);
                     }
                   },
                   icon: const Icon(Icons.arrow_back),
@@ -119,9 +135,7 @@ class SlotChangerState extends State<SlotChanger> {
                 IconButton(
                   onPressed: () async {
                     if (selectedSlot < 8) {
-                      await appState.communicator!.activateSlot(selectedSlot);
-                      setState(() {});
-                      appState.changesMade();
+                      await _activateSlot(selectedSlot);
                     }
                   },
                   icon: const Icon(Icons.arrow_forward),

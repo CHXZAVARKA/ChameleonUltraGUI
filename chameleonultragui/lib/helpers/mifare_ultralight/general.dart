@@ -210,12 +210,21 @@ Future<TagType> mfUltralightType(
 }
 
 Future<int?> mfUltralightReadCounterFromCard(
-    ChameleonCommunicator communicator, int index) async {
+  ChameleonCommunicator communicator,
+  int index, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return null;
+  }
   try {
     Uint8List counterResponse = await communicator.send14ARaw(
       Uint8List.fromList([0x39, index]),
       keepRfField: true,
     );
+    if (!_canContinueCardScan(canContinue)) {
+      return null;
+    }
 
     if (counterResponse.length >= 3) {
       int counterValue = (counterResponse[0]) |
@@ -231,12 +240,25 @@ Future<int?> mfUltralightReadCounterFromCard(
 }
 
 Future<List<int>> mfUltralightReadAllCountersFromCard(
-    ChameleonCommunicator communicator, TagType type) async {
+  ChameleonCommunicator communicator,
+  TagType type, {
+  CardScanContinuation? canContinue,
+}) async {
   List<int> counters = [];
   int counterCount = mfUltralightGetCounterCount(type);
 
   for (int i = 0; i < counterCount; i++) {
-    var result = await mfUltralightReadCounterFromCard(communicator, i);
+    if (!_canContinueCardScan(canContinue)) {
+      return counters;
+    }
+    var result = await mfUltralightReadCounterFromCard(
+      communicator,
+      i,
+      canContinue: canContinue,
+    );
+    if (!_canContinueCardScan(canContinue)) {
+      return counters;
+    }
     if (result != null) {
       counters.add(result);
     }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -16,12 +17,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 class SlotExportMenu extends StatefulWidget {
+  final int slot;
   final SlotNames names;
   final EnabledSlotInfo enabledSlotInfo;
   final SlotTypes slotTypes;
 
   const SlotExportMenu(
       {super.key,
+      required this.slot,
       required this.names,
       required this.enabledSlotInfo,
       required this.slotTypes});
@@ -34,70 +37,138 @@ class SlotExportMenuState extends State<SlotExportMenu> {
   TagFrequency exportFrequency = TagFrequency.unknown;
 
   Future<CardSave?> rebuildCardSaveFromSlot(TagFrequency frequency) async {
-    var appState = context.read<ChameleonGUIState>();
+    final appState = context.read<ChameleonGUIState>();
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return null;
+    }
+
+    return appState.rfOperations.runForeground(() async {
+      bool canContinue() =>
+          mounted && appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return null;
+      }
+      await communicator.activateSlot(widget.slot);
+      if (!canContinue()) {
+        return null;
+      }
+      return _rebuildCardSaveUnderLease(
+        communicator,
+        frequency,
+        canContinue,
+      );
+    });
+  }
+
+  Future<CardSave?> _rebuildCardSaveUnderLease(
+    ChameleonCommunicator communicator,
+    TagFrequency frequency,
+    bool Function() canContinue,
+  ) async {
+    Future<T?> read<T>(Future<T> Function() operation) async {
+      if (!canContinue()) {
+        return null;
+      }
+      final value = await operation();
+      return canContinue() ? value : null;
+    }
 
     if (frequency == TagFrequency.lf) {
       if (isEM410X(widget.slotTypes.lf)) {
+        final uid = await read(communicator.getEM410XEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: bytesToHexSpace(
-              await appState.communicator!.getEM410XEmulatorID()),
+          uid: bytesToHexSpace(uid),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.hidProx) {
+        final uid = await read(communicator.getHIDProxEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: (await appState.communicator!.getHIDProxEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.viking) {
+        final uid = await read(communicator.getVikingEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: (await appState.communicator!.getVikingEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.pac) {
+        final uid = await read(communicator.getPacEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: (await appState.communicator!.getPacEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.ioProx) {
+        final uid = await read(communicator.getIoProxEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: (await appState.communicator!.getIoProxEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.idteck) {
+        final uid = await read(communicator.getIdteckEmulatorID);
+        if (uid == null) {
+          return null;
+        }
         return CardSave(
-          uid: (await appState.communicator!.getIdteckEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       }
     } else {
-      CardData data = await appState.communicator!.mf1GetAntiCollData();
+      final data = await read(communicator.mf1GetAntiCollData);
+      if (data == null) {
+        return null;
+      }
 
       if (isMifareUltralight(widget.slotTypes.hf)) {
         int pageCount = mfUltralightGetPagesCount(widget.slotTypes.hf);
         List<Uint8List> pages = [];
 
         for (int page = 0; page < pageCount; page++) {
-          Uint8List pageData =
-              await appState.communicator!.mf0EmulatorReadPages(page, 1);
+          final pageData =
+              await read(() => communicator.mf0EmulatorReadPages(page, 1));
+          if (pageData == null) {
+            return null;
+          }
           pages.add(pageData);
         }
 
         CardSaveExtra extraData = CardSaveExtra();
 
-        Uint8List version =
-            await appState.communicator!.mf0EmulatorGetVersionData();
+        final version = await read(communicator.mf0EmulatorGetVersionData);
+        if (version == null) {
+          return null;
+        }
         if (version.isNotEmpty) {
           extraData.ultralightVersion = version;
         }
 
-        Uint8List signature =
-            await appState.communicator!.mf0EmulatorGetSignatureData();
+        final signature = await read(communicator.mf0EmulatorGetSignatureData);
+        if (signature == null) {
+          return null;
+        }
         if (signature.isNotEmpty) {
           extraData.ultralightSignature = signature;
         }
@@ -107,8 +178,11 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           int counterCount = mfUltralightGetCounterCount(widget.slotTypes.hf);
 
           for (int i = 0; i < counterCount; i++) {
-            var counterData =
-                await appState.communicator!.mf0EmulatorGetCounterData(i);
+            final counterData =
+                await read(() => communicator.mf0EmulatorGetCounterData(i));
+            if (counterData == null) {
+              return null;
+            }
             counters.add(counterData.$1);
           }
 
@@ -139,8 +213,12 @@ class SlotExportMenuState extends State<SlotExportMenu> {
         for (int currentBlock = 0;
             currentBlock < blockCount;
             currentBlock += readCount) {
-          Uint8List result = await appState.communicator!
-              .mf1GetEmulatorBlock(currentBlock, readCount);
+          final result = await read(
+            () => communicator.mf1GetEmulatorBlock(currentBlock, readCount),
+          );
+          if (result == null) {
+            return null;
+          }
 
           binData.setAll(binDataIndex, result);
           binDataIndex += result.length;
@@ -149,8 +227,15 @@ class SlotExportMenuState extends State<SlotExportMenu> {
         int remainingBlocks = blockCount % readCount;
 
         if (remainingBlocks != 0) {
-          Uint8List result = await appState.communicator!.mf1GetEmulatorBlock(
-              blockCount - remainingBlocks, remainingBlocks);
+          final result = await read(
+            () => communicator.mf1GetEmulatorBlock(
+              blockCount - remainingBlocks,
+              remainingBlocks,
+            ),
+          );
+          if (result == null) {
+            return null;
+          }
           binData.setAll(binDataIndex, result);
         }
 

@@ -20,6 +20,239 @@ class DebugPage extends StatelessWidget {
   // Home Page
   const DebugPage({super.key});
 
+  Future<void> _runNestedAttack(ChameleonGUIState appState) async {
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
+      if (!canContinue()) {
+        return;
+      }
+      final distance = await communicator.getMf1NTDistance(
+        50,
+        0x60,
+        Uint8List.fromList(List.filled(6, 0xFF)),
+      );
+      if (!canContinue()) {
+        return;
+      }
+      var found = false;
+      for (var i = 0; i < 0xFF && !found && canContinue(); i++) {
+        final nonces = await communicator.getMf1NestedNonces(
+          50,
+          0x60,
+          Uint8List.fromList(List.filled(6, 0xFF)),
+          0,
+          0x61,
+        );
+        if (!canContinue()) {
+          return;
+        }
+        final keys = await recovery.nested(NestedDart(
+          uid: distance.uid,
+          distance: distance.distance,
+          nt0: nonces.nonces[0].nt,
+          nt0Enc: nonces.nonces[0].ntEnc,
+          par0: nonces.nonces[0].parity,
+          nt1: nonces.nonces[1].nt,
+          nt1Enc: nonces.nonces[1].ntEnc,
+          par1: nonces.nonces[1].parity,
+        ));
+        if (!canContinue()) {
+          return;
+        }
+        if (keys.isEmpty) {
+          appState.log?.d("Can't find keys, retrying...");
+          continue;
+        }
+        appState.log?.d('Recovered ${keys.length} candidate key(s)');
+        for (final key in keys) {
+          final keyBytes = u64ToBytes(key);
+          final authenticated = await communicator.mf1Auth(
+            0x03,
+            0x61,
+            keyBytes.sublist(2, 8),
+          );
+          if (!canContinue()) {
+            return;
+          }
+          if (authenticated) {
+            appState.log?.i('Found a valid key');
+            found = true;
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _runStaticNestedAttack(ChameleonGUIState appState) async {
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
+      if (!canContinue()) {
+        return;
+      }
+      final distance = await communicator.getMf1NTDistance(
+        50,
+        0x60,
+        Uint8List.fromList(List.filled(6, 0xFF)),
+      );
+      if (!canContinue()) {
+        return;
+      }
+      var found = false;
+      for (var i = 0; i < 0xFF && !found && canContinue(); i++) {
+        final nonces = await communicator.getMf1NestedNonces(
+          50,
+          0x60,
+          Uint8List.fromList(List.filled(6, 0xFF)),
+          0,
+          0x61,
+          level: NTLevel.weak,
+        );
+        if (!canContinue()) {
+          return;
+        }
+        final keys = await recovery.staticNested(StaticNestedDart(
+          uid: distance.uid,
+          keyType: 0x61,
+          nt0: nonces.nonces[0].nt,
+          nt0Enc: nonces.nonces[0].ntEnc,
+          nt1: nonces.nonces[1].nt,
+          nt1Enc: nonces.nonces[1].ntEnc,
+        ));
+        if (!canContinue()) {
+          return;
+        }
+        if (keys.isEmpty) {
+          appState.log?.d("Can't find keys, retrying...");
+          continue;
+        }
+        appState.log?.d('Recovered ${keys.length} candidate key(s)');
+        for (final key in keys) {
+          final keyBytes = u64ToBytes(key);
+          final authenticated = await communicator.mf1Auth(
+            0x03,
+            0x61,
+            keyBytes.sublist(2, 8),
+          );
+          if (!canContinue()) {
+            return;
+          }
+          if (authenticated) {
+            appState.log?.i('Found a valid key');
+            found = true;
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _runDarksideAttack(ChameleonGUIState appState) async {
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
+      if (!canContinue()) {
+        return;
+      }
+      var data = await communicator.getMf1Darkside(0x03, 0x61, true, 15);
+      if (!canContinue()) {
+        return;
+      }
+      final darkside = DarksideDart(uid: data.uid, items: []);
+      var found = false;
+      for (var tries = 0; tries < 0xFF && !found && canContinue(); tries++) {
+        darkside.items.add(DarksideItemDart(
+          nt1: data.nt1,
+          ks1: data.ks1,
+          par: data.par,
+          nr: data.nr,
+          ar: data.ar,
+        ));
+        final keys = await recovery.darkside(darkside);
+        if (!canContinue()) {
+          return;
+        }
+        if (keys.isNotEmpty) {
+          appState.log?.d('Recovered ${keys.length} candidate key(s)');
+          for (final key in keys) {
+            final keyBytes = u64ToBytes(key);
+            final authenticated = await communicator.mf1Auth(
+              0x03,
+              0x61,
+              keyBytes.sublist(2, 8),
+            );
+            if (!canContinue()) {
+              return;
+            }
+            if (authenticated) {
+              appState.log?.i('Found a valid key');
+              found = true;
+              break;
+            }
+          }
+        } else {
+          appState.log?.d("Can't find keys, retrying...");
+          data = await communicator.getMf1Darkside(0x03, 0x61, false, 15);
+          if (!canContinue()) {
+            return;
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _copyUid(ChameleonGUIState appState) async {
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return;
+    }
+    await appState.rfOperations.runForeground(() async {
+      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      if (!canContinue()) {
+        return;
+      }
+      await communicator.setReaderDeviceMode(true);
+      if (!canContinue()) {
+        return;
+      }
+      final card = await communicator.scan14443aTag();
+      if (!canContinue() || card == null) {
+        return;
+      }
+      appState.log?.d('Card UID: ${card.uid}');
+      appState.log?.d('SAK: ${card.sak}');
+      appState.log?.d('ATQA: ${card.atqa}');
+      await communicator.setReaderDeviceMode(false);
+      if (!canContinue()) {
+        return;
+      }
+      await communicator.setMf1AntiCollision(card);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
@@ -152,142 +385,21 @@ class DebugPage extends StatelessWidget {
                   textScaler: const TextScaler.linear(1.5)),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () async {
-                  await appState.communicator!.setReaderDeviceMode(true);
-                  var distance = await appState.communicator!.getMf1NTDistance(
-                      50,
-                      0x60,
-                      Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]));
-                  bool found = false;
-                  for (var i = 0; i < 0xFF && !found; i++) {
-                    var nonces = await appState.communicator!
-                        .getMf1NestedNonces(
-                            50,
-                            0x60,
-                            Uint8List.fromList(
-                                [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
-                            0,
-                            0x61);
-                    var nested = NestedDart(
-                        uid: distance.uid,
-                        distance: distance.distance,
-                        nt0: nonces.nonces[0].nt,
-                        nt0Enc: nonces.nonces[0].ntEnc,
-                        par0: nonces.nonces[0].parity,
-                        nt1: nonces.nonces[1].nt,
-                        nt1Enc: nonces.nonces[1].ntEnc,
-                        par1: nonces.nonces[1].parity);
-
-                    var keys = await recovery.nested(nested);
-                    if (keys.isNotEmpty) {
-                      appState.log!
-                          .d("Recovered ${keys.length} candidate key(s)");
-                      for (var key in keys) {
-                        var keyBytes = u64ToBytes(key);
-                        if ((await appState.communicator!
-                                .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
-                            true) {
-                          appState.log!.i("Found a valid key");
-                          found = true;
-                          break;
-                        }
-                      }
-                    } else {
-                      appState.log!.d("Can't find keys, retrying...");
-                    }
-                  }
-                },
+                onPressed: () => _runNestedAttack(appState),
                 child: Column(children: [
                   Text(localizations.nested_attack),
                 ]),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () async {
-                  await appState.communicator!.setReaderDeviceMode(true);
-                  var distance = await appState.communicator!.getMf1NTDistance(
-                      50,
-                      0x60,
-                      Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]));
-                  bool found = false;
-                  for (var i = 0; i < 0xFF && !found; i++) {
-                    var nonces = await appState.communicator!
-                        .getMf1NestedNonces(
-                            50,
-                            0x60,
-                            Uint8List.fromList(
-                                [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
-                            0,
-                            0x61,
-                            level: NTLevel.weak);
-                    var nested = StaticNestedDart(
-                        uid: distance.uid,
-                        keyType: 0x61,
-                        nt0: nonces.nonces[0].nt,
-                        nt0Enc: nonces.nonces[0].ntEnc,
-                        nt1: nonces.nonces[1].nt,
-                        nt1Enc: nonces.nonces[1].ntEnc);
-
-                    var keys = await recovery.staticNested(nested);
-                    if (keys.isNotEmpty) {
-                      appState.log!
-                          .d("Recovered ${keys.length} candidate key(s)");
-                      for (var key in keys) {
-                        var keyBytes = u64ToBytes(key);
-                        if ((await appState.communicator!
-                                .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
-                            true) {
-                          appState.log!.i("Found a valid key");
-                          found = true;
-                          break;
-                        }
-                      }
-                    } else {
-                      appState.log!.d("Can't find keys, retrying...");
-                    }
-                  }
-                },
+                onPressed: () => _runStaticNestedAttack(appState),
                 child: Column(children: [
                   Text(localizations.static_nested_attack),
                 ]),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () async {
-                  await appState.communicator!.setReaderDeviceMode(true);
-                  var data = await appState.communicator!
-                      .getMf1Darkside(0x03, 0x61, true, 15);
-                  var darkside = DarksideDart(uid: data.uid, items: []);
-                  bool found = false;
-
-                  for (var tries = 0; tries < 0xFF && !found; tries++) {
-                    darkside.items.add(DarksideItemDart(
-                        nt1: data.nt1,
-                        ks1: data.ks1,
-                        par: data.par,
-                        nr: data.nr,
-                        ar: data.ar));
-                    var keys = await recovery.darkside(darkside);
-                    if (keys.isNotEmpty) {
-                      appState.log!
-                          .d("Recovered ${keys.length} candidate key(s)");
-                      for (var key in keys) {
-                        var keyBytes = u64ToBytes(key);
-                        if ((await appState.communicator!
-                                .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
-                            true) {
-                          appState.log!.i("Found a valid key");
-                          found = true;
-                          break;
-                        }
-                      }
-                    } else {
-                      appState.log!.d("Can't find keys, retrying...");
-                      data = await appState.communicator!
-                          .getMf1Darkside(0x03, 0x61, false, 15);
-                    }
-                  }
-                },
+                onPressed: () => _runDarksideAttack(appState),
                 child: Column(children: [
                   Text(localizations.darkside_attack),
                 ]),
@@ -473,17 +585,7 @@ class DebugPage extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () async {
-                  await appState.communicator!.setReaderDeviceMode(true);
-                  var card = await appState.communicator!.scan14443aTag();
-                  if (card != null) {
-                    appState.log!.d('Card UID: ${card.uid}');
-                    appState.log!.d('SAK: ${card.sak}');
-                    appState.log!.d('ATQA: ${card.atqa}');
-                    await appState.communicator!.setReaderDeviceMode(false);
-                    await appState.communicator!.setMf1AntiCollision(card);
-                  }
-                },
+                onPressed: () => _copyUid(appState),
                 child: Column(children: [
                   Text(localizations.copy_uid),
                 ]),
