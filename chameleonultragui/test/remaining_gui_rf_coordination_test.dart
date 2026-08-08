@@ -267,6 +267,23 @@ void main() {
     expect(communicator.commands, ['reader:true', 'scan']);
     expect(replacement.commands, isEmpty);
   });
+
+  testWidgets('Debug Copy UID stops after its page is disposed',
+      (tester) async {
+    final communicator = _DelayedCopyUidCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpLocalized(tester, appState, const DebugPage());
+    final copyUid = find.text('Copy card UID to emulator');
+    await tester.ensureVisible(copyUid);
+    await tester.tap(copyUid);
+    await communicator.scanStarted.future;
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    communicator.scan.complete(_cardData());
+    await tester.pumpAndSettle();
+
+    expect(communicator.commands, ['reader:true', 'scan']);
+  });
 }
 
 Future<void> _pumpLocalized(

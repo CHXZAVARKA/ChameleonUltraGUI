@@ -1,6 +1,7 @@
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/helpers/card_info.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
@@ -43,8 +44,8 @@ class CardReaderState extends State<MifareUltralightHelper> {
   Future<void> readCard({bool withPassword = false}) async {
     final appState = context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     final password = keyController.text;
@@ -57,12 +58,12 @@ class CardReaderState extends State<MifareUltralightHelper> {
     });
 
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() =>
-          mounted && appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
 
+      final communicator = session.communicator;
       final nextCardData = <Uint8List>[];
       Uint8List? pack;
       for (var page = 0; page < pageCount; page++) {

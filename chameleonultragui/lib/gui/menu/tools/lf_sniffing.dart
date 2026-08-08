@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/hex_viewer.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/lf_sniff.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
@@ -88,8 +89,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
 
@@ -101,26 +102,25 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
     try {
       final samples = await appState.rfOperations.runForeground(() async {
-        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        if (!mounted || !session.isCurrent) {
           return null;
         }
 
-        if (!await communicator.isReaderDeviceMode()) {
-          if (!appState.hasConnectedCommunicator(communicator)) {
+        if (!await session.communicator.isReaderDeviceMode()) {
+          if (!mounted || !session.isCurrent) {
             return null;
           }
-          await communicator.setReaderDeviceMode(true);
+          await session.communicator.setReaderDeviceMode(true);
         }
-        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        if (!mounted || !session.isCurrent) {
           return null;
         }
 
-        final samples = await communicator.lfSniff(timeoutMs: timeoutMs);
-        return mounted && appState.hasConnectedCommunicator(communicator)
-            ? samples
-            : null;
+        final samples =
+            await session.communicator.lfSniff(timeoutMs: timeoutMs);
+        return mounted && session.isCurrent ? samples : null;
       });
-      if (samples == null || !mounted) {
+      if (samples == null || !mounted || !session.isCurrent) {
         return;
       }
 
@@ -145,7 +145,7 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
             localizations.lf_sniff_capture_done(capture.summary.sampleCount);
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
 

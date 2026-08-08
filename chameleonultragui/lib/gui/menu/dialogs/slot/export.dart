@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
@@ -38,23 +39,22 @@ class SlotExportMenuState extends State<SlotExportMenu> {
 
   Future<CardSave?> rebuildCardSaveFromSlot(TagFrequency frequency) async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return null;
     }
 
     return appState.rfOperations.runForeground(() async {
-      bool canContinue() =>
-          mounted && appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => mounted && session.isCurrent;
       if (!canContinue()) {
         return null;
       }
-      await communicator.activateSlot(widget.slot);
+      await session.communicator.activateSlot(widget.slot);
       if (!canContinue()) {
         return null;
       }
       return _rebuildCardSaveUnderLease(
-        communicator,
+        session.communicator,
         frequency,
         canContinue,
       );

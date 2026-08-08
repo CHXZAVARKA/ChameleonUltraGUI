@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -206,16 +207,16 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _setReaderDeviceMode(bool readerMode) async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
-      await communicator.setReaderDeviceMode(readerMode);
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      await session.communicator.setReaderDeviceMode(readerMode);
+      if (!mounted || !session.isCurrent) {
         return;
       }
       setState(() {});

@@ -1,7 +1,7 @@
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -35,25 +35,24 @@ class SlotSettingsState extends State<SlotSettings> {
   Future<void> fetchInfo() async {
     final appState = context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
 
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() =>
-          mounted && appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
-      await communicator.activateSlot(widget.slot);
+      await session.communicator.activateSlot(widget.slot);
       if (!canContinue()) {
         return;
       }
 
       var hfName = localizations.empty;
       try {
-        hfName = (await communicator.getSlotTagName(
+        hfName = (await session.communicator.getSlotTagName(
           widget.slot,
           TagFrequency.hf,
         ))
@@ -72,7 +71,7 @@ class SlotSettingsState extends State<SlotSettings> {
 
       var lfName = localizations.empty;
       try {
-        lfName = (await communicator.getSlotTagName(
+        lfName = (await session.communicator.getSlotTagName(
           widget.slot,
           TagFrequency.lf,
         ))
@@ -89,11 +88,11 @@ class SlotSettingsState extends State<SlotSettings> {
         }
       }
 
-      final nextEnabledSlots = await communicator.getEnabledSlots();
+      final nextEnabledSlots = await session.communicator.getEnabledSlots();
       if (!canContinue()) {
         return;
       }
-      final nextSlotTypes = await communicator.getSlotTagTypes();
+      final nextSlotTypes = await session.communicator.getSlotTagTypes();
       if (!canContinue()) {
         return;
       }
@@ -107,43 +106,42 @@ class SlotSettingsState extends State<SlotSettings> {
   }
 
   Future<bool> _runForegroundCommand(
-    Future<void> Function(ChameleonCommunicator communicator) command,
+    Future<void> Function(ConnectedDeviceSession session) command,
   ) async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return false;
     }
     return appState.rfOperations.runForeground(() async {
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return false;
       }
-      await command(communicator);
-      return mounted && appState.hasConnectedCommunicator(communicator);
+      await command(session);
+      return mounted && session.isCurrent;
     });
   }
 
   Future<bool> _deleteSlot(TagFrequency frequency) {
-    final appState = context.read<ChameleonGUIState>();
     final emptyName = AppLocalizations.of(context)!.empty;
-    return _runForegroundCommand((communicator) async {
-      await communicator.activateSlot(widget.slot);
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+    return _runForegroundCommand((session) async {
+      await session.communicator.activateSlot(widget.slot);
+      if (!mounted || !session.isCurrent) {
         return;
       }
-      await communicator.deleteSlotInfo(widget.slot, frequency);
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      await session.communicator.deleteSlotInfo(widget.slot, frequency);
+      if (!mounted || !session.isCurrent) {
         return;
       }
-      await communicator.setSlotTagName(
+      await session.communicator.setSlotTagName(
         widget.slot,
         emptyName,
         frequency,
       );
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
-      await communicator.saveSlotData();
+      await session.communicator.saveSlotData();
     });
   }
 
@@ -263,7 +261,7 @@ class SlotSettingsState extends State<SlotSettings> {
                             value: enabledSlot.hf,
                             onChanged: (bool value) async {
                               if (!await _runForegroundCommand(
-                                  (communicator) => communicator.enableSlot(
+                                  (session) => session.communicator.enableSlot(
                                         widget.slot,
                                         TagFrequency.hf,
                                         value,
@@ -350,7 +348,7 @@ class SlotSettingsState extends State<SlotSettings> {
                             value: enabledSlot.lf,
                             onChanged: (bool value) async {
                               if (!await _runForegroundCommand(
-                                  (communicator) => communicator.enableSlot(
+                                  (session) => session.communicator.enableSlot(
                                         widget.slot,
                                         TagFrequency.lf,
                                         value,

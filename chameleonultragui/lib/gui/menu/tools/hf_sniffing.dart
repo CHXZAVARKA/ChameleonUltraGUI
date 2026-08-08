@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/hex_viewer.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/hf_sniff.dart';
@@ -97,8 +98,8 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
     final timeoutMs = int.parse(_timeoutController.text);
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
 
@@ -112,26 +113,25 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
     try {
       final rawBytes = await appState.rfOperations.runForeground(() async {
-        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        if (!mounted || !session.isCurrent) {
           return null;
         }
 
-        if (await communicator.isReaderDeviceMode()) {
-          if (!appState.hasConnectedCommunicator(communicator)) {
+        if (await session.communicator.isReaderDeviceMode()) {
+          if (!mounted || !session.isCurrent) {
             return null;
           }
-          await communicator.setReaderDeviceMode(false);
+          await session.communicator.setReaderDeviceMode(false);
         }
-        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        if (!mounted || !session.isCurrent) {
           return null;
         }
 
-        final rawBytes = await communicator.hf14aSniff(timeoutMs: timeoutMs);
-        return mounted && appState.hasConnectedCommunicator(communicator)
-            ? rawBytes
-            : null;
+        final rawBytes =
+            await session.communicator.hf14aSniff(timeoutMs: timeoutMs);
+        return mounted && session.isCurrent ? rawBytes : null;
       });
-      if (rawBytes == null || !mounted) {
+      if (rawBytes == null || !mounted || !session.isCurrent) {
         return;
       }
 
@@ -150,7 +150,7 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
             : localizations.hf_sniff_capture_done(capture.frames.length);
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
 

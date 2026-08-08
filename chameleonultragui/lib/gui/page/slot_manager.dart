@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -82,12 +82,12 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   Future<void> onTap(
       CardSave card, dynamic close, AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final communicator = appState.communicator;
-    if (communicator == null) return;
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) return;
     final targetSlot = gridPosition;
 
     await appState.rfOperations.runForeground(() async {
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
 
@@ -96,8 +96,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
           card,
           close,
           localizations,
-          appState,
-          communicator,
+          session,
           targetSlot,
         );
       } finally {
@@ -112,12 +111,12 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     CardSave card,
     dynamic close,
     AppLocalizations localizations,
-    ChameleonGUIState appState,
-    ChameleonCommunicator communicator,
+    ConnectedDeviceSession session,
     int gridPosition,
   ) async {
-    bool canContinue() =>
-        mounted && appState.hasConnectedCommunicator(communicator);
+    final appState = session.appState;
+    final communicator = session.communicator;
+    bool canContinue() => mounted && session.isCurrent;
     Future<bool> waitFor(Future<void> command) async {
       await command;
       return canContinue();

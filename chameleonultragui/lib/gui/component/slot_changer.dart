@@ -1,4 +1,5 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -63,16 +64,16 @@ class SlotChangerState extends State<SlotChanger> {
 
   Future<void> _activateSlot(int slot) async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      if (!mounted || !session.isCurrent) {
         return;
       }
-      await communicator.activateSlot(slot);
-      if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+      await session.communicator.activateSlot(slot);
+      if (!mounted || !session.isCurrent) {
         return;
       }
       setState(() {});

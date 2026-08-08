@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/tools/dictionary_download.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
 import 'package:chameleonultragui/main.dart';
@@ -47,8 +48,8 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     Dictionary? selectedDictionary =
         dictionaries.where((d) => d.id == selectedDictionaryId).firstOrNull;
     if (selectedDictionary == null) return;
-    final communicator = appState.communicator;
-    if (communicator == null) return;
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) return;
     final newKey = hexToBytes(newKeyController.text);
 
     setState(() {
@@ -63,7 +64,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
 
     try {
       await appState.rfOperations.runForeground(() async {
-        if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+        if (!mounted || !session.isCurrent) {
           sessionCancelled = true;
           return;
         }
@@ -79,15 +80,15 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
           });
 
           try {
-            await communicator.writeEM410XtoT55XX(
+            await session.communicator.writeEM410XtoT55XX(
                 hexToBytes(targetUID), newKey, [selectedDictionary.keys[i]]);
-            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+            if (!mounted || !session.isCurrent) {
               sessionCancelled = true;
               return;
             }
 
-            var newCard = await communicator.readEM410X();
-            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+            var newCard = await session.communicator.readEM410X();
+            if (!mounted || !session.isCurrent) {
               sessionCancelled = true;
               return;
             }
@@ -102,7 +103,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
               return;
             }
           } catch (_) {
-            if (!mounted || !appState.hasConnectedCommunicator(communicator)) {
+            if (!mounted || !session.isCurrent) {
               sessionCancelled = true;
               return;
             }
@@ -111,7 +112,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
         }
       });
 
-      if (sessionCancelled || !mounted) {
+      if (sessionCancelled || !mounted || !session.isCurrent) {
         if (mounted) {
           setState(() {
             isProcessing = false;
@@ -130,7 +131,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
         }
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !session.isCurrent) return;
       setState(() {
         isProcessing = false;
       });

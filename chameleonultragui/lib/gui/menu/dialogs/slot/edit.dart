@@ -2,6 +2,7 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/gui/menu/pages/mfkey32.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
@@ -81,45 +82,38 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     }
   }
 
-  bool _canContinue(
-    ChameleonGUIState appState,
-    ChameleonCommunicator communicator,
-  ) =>
-      mounted && appState.hasConnectedCommunicator(communicator);
+  bool _canContinue(ConnectedDeviceSession session) =>
+      mounted && session.isCurrent;
 
   Future<T> _awaitTransport<T>(
-    ChameleonGUIState appState,
-    ChameleonCommunicator communicator,
+    ConnectedDeviceSession session,
     Future<T> Function() operation,
   ) async {
-    if (!_canContinue(appState, communicator)) {
+    if (!_canContinue(session)) {
       throw const _SlotOperationCanceled();
     }
     final result = await operation();
-    if (!_canContinue(appState, communicator)) {
+    if (!_canContinue(session)) {
       throw const _SlotOperationCanceled();
     }
     return result;
   }
 
   Future<bool> _runSlotOperation(
-    Future<void> Function(
-      ChameleonGUIState appState,
-      ChameleonCommunicator communicator,
-    ) operation,
+    Future<void> Function(ConnectedDeviceSession session) operation,
   ) async {
     final appState = context.read<ChameleonGUIState>();
-    final communicator = appState.communicator;
-    if (communicator == null) {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return false;
     }
     return appState.rfOperations.runForeground(() async {
       try {
-        if (!_canContinue(appState, communicator)) {
+        if (!_canContinue(session)) {
           return false;
         }
-        await operation(appState, communicator);
-        return _canContinue(appState, communicator);
+        await operation(session);
+        return _canContinue(session);
       } on _SlotOperationCanceled {
         return false;
       }
@@ -129,11 +123,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   Future<bool> _runCommand(
     Future<void> Function(ChameleonCommunicator communicator) command,
   ) {
-    return _runSlotOperation((appState, communicator) async {
+    return _runSlotOperation((session) async {
       await _awaitTransport(
-        appState,
-        communicator,
-        () => command(communicator),
+        session,
+        () => command(session.communicator),
       );
     });
   }
@@ -144,18 +137,17 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       return;
     }
 
-    await _runSlotOperation((appState, communicator) async {
+    await _runSlotOperation((session) async {
+      final communicator = session.communicator;
       await _awaitTransport(
-        appState,
-        communicator,
+        session,
         () => communicator.activateSlot(widget.slot),
       );
 
       if (isEM410X(selectedType!)) {
         try {
           final uid = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getEM410XEmulatorID,
           );
           uidController.text = bytesToHexSpace(uid);
@@ -165,8 +157,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } else if (selectedType! == TagType.hidProx) {
         try {
           final card = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getHIDProxEmulatorID,
           );
           uidController.text = bytesToHexSpace(card.uid);
@@ -180,8 +171,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } else if (selectedType! == TagType.viking) {
         try {
           final card = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getVikingEmulatorID,
           );
           uidController.text = bytesToHexSpace(card.uid);
@@ -191,8 +181,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } else if (selectedType! == TagType.pac) {
         try {
           final card = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getPacEmulatorID,
           );
           uidController.text = bytesToHexSpace(card.uid);
@@ -202,8 +191,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } else if (selectedType! == TagType.ioProx) {
         try {
           final card = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getIoProxEmulatorID,
           );
           uidController.text = bytesToHexSpace(card.uid);
@@ -213,8 +201,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } else if (selectedType! == TagType.idteck) {
         try {
           final card = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.getIdteckEmulatorID,
           );
           uidController.text = bytesToHexSpace(card.uid);
@@ -225,8 +212,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           isMifareUltralight(selectedType!)) {
         try {
           final data = await _awaitTransport(
-            appState,
-            communicator,
+            session,
             communicator.mf1GetAntiCollData,
           );
           uidController.text = bytesToHexSpace(data.uid);
@@ -236,21 +222,18 @@ class SlotEditMenuState extends State<SlotEditMenu> {
 
           if (isMifareClassic(selectedType!)) {
             emulatorSettings = await _awaitTransport(
-              appState,
-              communicator,
+              session,
               communicator.getMf1EmulatorSettings,
             );
             if (emulatorSettings!.isDetectionEnabled) {
               detectionCount = await _awaitTransport(
-                appState,
-                communicator,
+                session,
                 communicator.getMf1DetectionCount,
               );
             }
             try {
               mf1PrngType = await _awaitTransport(
-                appState,
-                communicator,
+                session,
                 communicator.getMf1PrngType,
               );
             } on _SlotOperationCanceled {
@@ -260,14 +243,12 @@ class SlotEditMenuState extends State<SlotEditMenu> {
             }
           } else {
             final version = await _awaitTransport(
-              appState,
-              communicator,
+              session,
               communicator.mf0EmulatorGetVersionData,
             );
             ultralightVersionController.text = bytesToHexSpace(version);
             final signature = await _awaitTransport(
-              appState,
-              communicator,
+              session,
               communicator.mf0EmulatorGetSignatureData,
             );
             ultralightSignatureController.text = bytesToHexSpace(signature);
@@ -277,8 +258,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
               final counterCount = mfUltralightGetCounterCount(selectedType!);
               for (var i = 0; i < counterCount; i++) {
                 final counterData = await _awaitTransport(
-                  appState,
-                  communicator,
+                  session,
                   () => communicator.mf0EmulatorGetCounterData(i),
                 );
                 ultralightCounterControllers.add(
@@ -288,14 +268,12 @@ class SlotEditMenuState extends State<SlotEditMenu> {
             }
 
             emulatorSettings = await _awaitTransport(
-              appState,
-              communicator,
+              session,
               communicator.mf0NtagGetEmulatorConfig,
             );
             if (emulatorSettings!.isDetectionEnabled) {
               detectionCount = await _awaitTransport(
-                appState,
-                communicator,
+                session,
                 communicator.mf0NtagGetDetectionCount,
               );
             }
@@ -312,9 +290,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   }
 
   Future<bool> save() async {
-    return _runSlotOperation((appState, communicator) async {
+    return _runSlotOperation((session) async {
+      final communicator = session.communicator;
       Future<T> command<T>(Future<T> Function() operation) =>
-          _awaitTransport(appState, communicator, operation);
+          _awaitTransport(session, operation);
 
       await command(() => communicator.activateSlot(widget.slot));
       if (widget.slotType != selectedType) {
@@ -898,14 +877,12 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                                       List<String>?
                                                                           passwords;
                                                                       final completed =
-                                                                          await _runSlotOperation((appState,
-                                                                              communicator) async {
+                                                                          await _runSlotOperation((session) async {
                                                                         passwords =
                                                                             await _awaitTransport(
-                                                                          appState,
-                                                                          communicator,
+                                                                          session,
                                                                           () =>
-                                                                              communicator.mf0NtagGetDetectionLog(0),
+                                                                              session.communicator.mf0NtagGetDetectionLog(0),
                                                                         );
                                                                       });
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/gui/menu/pages/logs_viewer.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -20,16 +21,18 @@ class DebugPage extends StatelessWidget {
   // Home Page
   const DebugPage({super.key});
 
-  Future<void> _runNestedAttack(ChameleonGUIState appState) async {
-    final communicator = appState.communicator;
-    if (communicator == null) {
+  Future<void> _runNestedAttack(
+      BuildContext context, ChameleonGUIState appState) async {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
+      final communicator = session.communicator;
       await communicator.setReaderDeviceMode(true);
       if (!canContinue()) {
         return;
@@ -92,16 +95,18 @@ class DebugPage extends StatelessWidget {
     });
   }
 
-  Future<void> _runStaticNestedAttack(ChameleonGUIState appState) async {
-    final communicator = appState.communicator;
-    if (communicator == null) {
+  Future<void> _runStaticNestedAttack(
+      BuildContext context, ChameleonGUIState appState) async {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
+      final communicator = session.communicator;
       await communicator.setReaderDeviceMode(true);
       if (!canContinue()) {
         return;
@@ -163,16 +168,18 @@ class DebugPage extends StatelessWidget {
     });
   }
 
-  Future<void> _runDarksideAttack(ChameleonGUIState appState) async {
-    final communicator = appState.communicator;
-    if (communicator == null) {
+  Future<void> _runDarksideAttack(
+      BuildContext context, ChameleonGUIState appState) async {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
+      final communicator = session.communicator;
       await communicator.setReaderDeviceMode(true);
       if (!canContinue()) {
         return;
@@ -224,16 +231,18 @@ class DebugPage extends StatelessWidget {
     });
   }
 
-  Future<void> _copyUid(ChameleonGUIState appState) async {
-    final communicator = appState.communicator;
-    if (communicator == null) {
+  Future<void> _copyUid(
+      BuildContext context, ChameleonGUIState appState) async {
+    final session = ConnectedDeviceSession.capture(appState);
+    if (session == null) {
       return;
     }
     await appState.rfOperations.runForeground(() async {
-      bool canContinue() => appState.hasConnectedCommunicator(communicator);
+      bool canContinue() => context.mounted && session.isCurrent;
       if (!canContinue()) {
         return;
       }
+      final communicator = session.communicator;
       await communicator.setReaderDeviceMode(true);
       if (!canContinue()) {
         return;
@@ -385,21 +394,21 @@ class DebugPage extends StatelessWidget {
                   textScaler: const TextScaler.linear(1.5)),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () => _runNestedAttack(appState),
+                onPressed: () => _runNestedAttack(context, appState),
                 child: Column(children: [
                   Text(localizations.nested_attack),
                 ]),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () => _runStaticNestedAttack(appState),
+                onPressed: () => _runStaticNestedAttack(context, appState),
                 child: Column(children: [
                   Text(localizations.static_nested_attack),
                 ]),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () => _runDarksideAttack(appState),
+                onPressed: () => _runDarksideAttack(context, appState),
                 child: Column(children: [
                   Text(localizations.darkside_attack),
                 ]),
@@ -585,7 +594,7 @@ class DebugPage extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () => _copyUid(appState),
+                onPressed: () => _copyUid(context, appState),
                 child: Column(children: [
                   Text(localizations.copy_uid),
                 ]),
