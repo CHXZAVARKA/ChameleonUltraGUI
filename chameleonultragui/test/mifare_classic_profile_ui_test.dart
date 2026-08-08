@@ -1,6 +1,5 @@
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/mifare/classic.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
