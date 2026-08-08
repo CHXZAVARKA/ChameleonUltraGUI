@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/helpers/definitions.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/dump_analyzer.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
@@ -30,7 +29,12 @@ List<Uint8List> _blankCard() {
 Uint8List _image(List<Uint8List> blocks) =>
     Uint8List.fromList(blocks.expand((block) => block).toList());
 
-MifareClassicKeyProfile _profile({String? uid}) => MifareClassicKeyProfile(
+MifareClassicKeyProfile _profile({
+  String? uid,
+  bool sectorZeroHasKeyA = true,
+  bool sectorZeroHasKeyB = true,
+}) =>
+    MifareClassicKeyProfile(
       id: 'maintenance-profile',
       name: 'Maintenance profile',
       cardType: 'm4k',
@@ -40,8 +44,12 @@ MifareClassicKeyProfile _profile({String? uid}) => MifareClassicKeyProfile(
         40,
         (sector) => MifareClassicKeyAssignment(
           sector: sector,
-          keyA: Uint8List.fromList(_defaultKey),
-          keyB: Uint8List.fromList(_defaultKey),
+          keyA: sector == 0 && !sectorZeroHasKeyA
+              ? null
+              : Uint8List.fromList(_defaultKey),
+          keyB: sector == 0 && !sectorZeroHasKeyB
+              ? null
+              : Uint8List.fromList(_defaultKey),
         ),
       ),
     );
@@ -430,25 +438,85 @@ void main() {
     expect(port.writes, isEmpty);
   });
 
-  test('preflight accepts an unchanged readable block without write access',
+  test(
+      'preflight accepts an unchanged Key A-readable block without write access',
       () async {
     final current = _blankCard();
-    final encoded = MifareClassicDumpAnalyzer.encodeAccessConditions(
-      const [0, 2, 0, 0],
-    );
-    current[3].setRange(6, 9, [
-      for (var offset = 0; offset < encoded.length; offset += 2)
-        int.parse(encoded.substring(offset, offset + 2), radix: 16),
-    ]);
+    // Valid access bytes for block 1 C1/C2/C3 = 010: read A/B, write never.
+    current[3].setRange(6, 9, [0xDF, 0x0F, 0x02]);
     final port = _FakePort(current);
 
     final plan = await MifareClassicMaintenance(port).preflight(
       image: _image(current),
-      profile: _profile(),
+      profile: _profile(sectorZeroHasKeyB: false),
     );
 
     expect(plan.changedBlocks, 0);
     expect(plan.unchangedBlocks, 215);
+    expect(port.writes, isEmpty);
+  });
+
+  test('preflight rejects a changed Key A-readable block without write access',
+      () async {
+    final current = _blankCard();
+    // Valid access bytes for block 1 C1/C2/C3 = 010: read A/B, write never.
+    current[3].setRange(6, 9, [0xDF, 0x0F, 0x02]);
+    final target = current.map(Uint8List.fromList).toList();
+    target[1][0] = 0xA1;
+    final port = _FakePort(current);
+
+    final error = await _expectMaintenanceFailure(() async {
+      await MifareClassicMaintenance(port).preflight(
+        image: _image(target),
+        profile: _profile(sectorZeroHasKeyB: false),
+      );
+    });
+
+    expect(error.failure, MifareClassicMaintenanceFailure.writeNotAllowed);
+    expect(error.sector, 0);
+    expect(error.block, 1);
+    expect(port.writes, isEmpty);
+  });
+
+  test(
+      'preflight accepts an unchanged Key B-readable block without write access',
+      () async {
+    final current = _blankCard();
+    // Valid access bytes: block 1 is C1/C2/C3 = 101 (read B, write never),
+    // and the trailer is 001 so its access bits are readable with Key B.
+    current[3].setRange(6, 9, [0xF5, 0xAD, 0x20]);
+    final port = _FakePort(current);
+
+    final plan = await MifareClassicMaintenance(port).preflight(
+      image: _image(current),
+      profile: _profile(sectorZeroHasKeyA: false),
+    );
+
+    expect(plan.changedBlocks, 0);
+    expect(plan.unchangedBlocks, 215);
+    expect(port.writes, isEmpty);
+  });
+
+  test('preflight rejects a changed Key B-readable block without write access',
+      () async {
+    final current = _blankCard();
+    // Valid access bytes: block 1 is C1/C2/C3 = 101 (read B, write never),
+    // and the trailer is 001 so its access bits are readable with Key B.
+    current[3].setRange(6, 9, [0xF5, 0xAD, 0x20]);
+    final target = current.map(Uint8List.fromList).toList();
+    target[1][0] = 0xB1;
+    final port = _FakePort(current);
+
+    final error = await _expectMaintenanceFailure(() async {
+      await MifareClassicMaintenance(port).preflight(
+        image: _image(target),
+        profile: _profile(sectorZeroHasKeyA: false),
+      );
+    });
+
+    expect(error.failure, MifareClassicMaintenanceFailure.writeNotAllowed);
+    expect(error.sector, 0);
+    expect(error.block, 1);
     expect(port.writes, isEmpty);
   });
 
