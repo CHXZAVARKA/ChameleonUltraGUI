@@ -111,29 +111,38 @@ void main() {
     expect(find.byIcon(Icons.link_off), findsOneWidget);
   });
 
-  testWidgets('Home AppBar tooltips use the active localization',
+  testWidgets('Home AppBar actions use localized connection semantics',
       (tester) async {
-    final communicator = _BatteryCommunicator.complete(
-      BatteryCharge(percent: 61, voltage: 3910),
-    );
-    final appState = _connectedState(communicator);
+    final semanticsHandle = tester.ensureSemantics();
+    try {
+      final communicator = _BatteryCommunicator.complete(
+        BatteryCharge(percent: 61, voltage: 3910),
+      );
+      final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState, locale: const Locale('es'));
-    await tester.pump();
+      await _pumpHome(tester, appState, locale: const Locale('es'));
+      await tester.pump();
 
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Tooltip && widget.message == 'Chameleon conectado: USB',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.link_off))
-          .tooltip,
-      'Cerrar',
-    );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Tooltip && widget.message == 'Chameleon conectado: USB',
+        ),
+        findsOneWidget,
+      );
+      final disconnectAction = find.widgetWithIcon(IconButton, Icons.link_off);
+      expect(
+        tester.widget<IconButton>(disconnectAction).tooltip,
+        'Desactivar · Chameleon conectado: USB',
+      );
+
+      expect(
+        find.bySemanticsLabel('Desactivar · Chameleon conectado: USB'),
+        findsOneWidget,
+      );
+    } finally {
+      semanticsHandle.dispose();
+    }
   });
 
   testWidgets('battery failure stays non-fatal and renders unknown state',

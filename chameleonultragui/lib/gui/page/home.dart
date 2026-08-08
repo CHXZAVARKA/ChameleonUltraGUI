@@ -606,6 +606,10 @@ class _ConnectedDeviceAppBar extends StatelessWidget
       builder: (context, _) {
         final snapshot = status.snapshot;
         final identity = snapshot.identity;
+        final connectionLabel =
+            '${localizations.chameleon_connected}: ${identity.connectionType == ConnectionType.ble ? 'Bluetooth' : 'USB'}';
+        final disconnectLabel =
+            '${localizations.deactivate} · $connectionLabel';
         return AppBar(
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -627,8 +631,7 @@ class _ConnectedDeviceAppBar extends StatelessWidget
           ),
           actions: [
             Tooltip(
-              message:
-                  '${localizations.chameleon_connected}: ${identity.connectionType == ConnectionType.ble ? 'Bluetooth' : 'USB'}',
+              message: connectionLabel,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(
@@ -639,10 +642,14 @@ class _ConnectedDeviceAppBar extends StatelessWidget
               ),
             ),
             _BatteryIndicator(battery: snapshot.battery),
-            IconButton(
-              tooltip: localizations.close,
-              onPressed: () => appState.disconnect(manual: true),
-              icon: const Icon(Icons.link_off),
+            Semantics(
+              label: disconnectLabel,
+              button: true,
+              child: IconButton(
+                tooltip: disconnectLabel,
+                onPressed: () => appState.disconnect(manual: true),
+                icon: const Icon(Icons.link_off),
+              ),
             ),
           ],
         );
