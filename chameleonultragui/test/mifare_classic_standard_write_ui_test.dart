@@ -11,12 +11,16 @@ import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show MethodChannel, PlatformException, StandardMethodCodec;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   testWidgets('standard write offers only complete or confirmed legacy dumps',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -361,6 +365,65 @@ void main() {
               ),
         ),
       );
+    },
+  );
+
+  testWidgets(
+    'BIN picker failure hides diagnostics from the user and logs them',
+    (tester) async {
+      const diagnostics = 'PICKER_DIAGNOSTIC_17_8C4F';
+      const filePickerChannel = MethodChannel(
+        'miguelruivo.flutter.plugins.filepicker',
+        StandardMethodCodec(),
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(filePickerChannel, (call) async {
+        throw PlatformException(
+          code: 'picker_failed',
+          message: diagnostics,
+        );
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(filePickerChannel, null));
+
+      SharedPreferences.setMockInitialValues({});
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      final logOutput = MemoryOutput();
+      final logger = Logger(
+        filter: ProductionFilter(),
+        printer: SimplePrinter(colors: false),
+        output: logOutput,
+      );
+      addTearDown(logger.close);
+      final appState = ChameleonGUIState(preferences)..log = logger;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: MaterialApp(
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const Scaffold(body: StandardMifareClassicWritePanel()),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Select .bin dump'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(diagnostics), findsNothing);
+      expect(find.text('Operation stopped: Error'), findsOneWidget);
+      expect(logOutput.buffer, hasLength(1));
+      expect(
+        logOutput.buffer.single.origin.error,
+        isA<PlatformException>()
+            .having((error) => error.code, 'code', 'picker_failed')
+            .having((error) => error.message, 'message', diagnostics),
+      );
+      expect(logOutput.buffer.single.origin.stackTrace, isNotNull);
     },
   );
 }

@@ -133,6 +133,7 @@ class _StandardMifareClassicWritePanelState
   }
 
   Future<void> _pickBinaryDump() async {
+    final appState = context.read<ChameleonGUIState>();
     try {
       final picked = await FilePicker.pickFile(
         type: FileType.custom,
@@ -148,9 +149,10 @@ class _StandardMifareClassicWritePanelState
         return;
       }
       _selectImage(bytes, picked.name);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
-        setState(() => _error = error.toString());
+        setState(() => _error = _safeMaintenanceError(error));
       }
     }
   }
