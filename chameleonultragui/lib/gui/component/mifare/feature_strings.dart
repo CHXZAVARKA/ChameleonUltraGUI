@@ -32,6 +32,9 @@ class MifareClassicFeatureStrings {
   String get useKeyProfile => 'Use profile';
   String get keyProfilePlaintextWarning =>
       'The profile stores sector keys as plain text. Keep exported files private.';
+  String get partialBinExportBlocked =>
+      'BIN export requires a complete MIFARE Classic dump. '
+      'Save this partial recovery in the app instead.';
 
   String get magicCardMode => 'Magic card';
   String get standardCardMode => 'Standard MIFARE Classic';

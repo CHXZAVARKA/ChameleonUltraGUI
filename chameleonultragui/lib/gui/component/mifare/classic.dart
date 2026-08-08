@@ -215,6 +215,12 @@ class CardReaderState extends State<MifareClassicHelper> {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
 
     var localizations = AppLocalizations.of(context)!;
+    if (bin && widget.mfcInfo.recovery?.dumpComplete != true) {
+      _showMessage(
+          MifareClassicFeatureStrings.of(context).partialBinExportBlocked);
+      return;
+    }
+
     Uint8List cardDump = Uint8List(0);
     if (!skipDump) {
       cardDump = mfClassicGetExportBytes(
