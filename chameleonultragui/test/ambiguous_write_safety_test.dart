@@ -205,7 +205,7 @@ void main() {
     expect(communicator.authenticatedWrites, 0);
   });
 
-  test('Gen3 does not retain an ambiguous outcome across full writes',
+  test('Gen3 stops before the next block and resets for a later full write',
       () async {
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
@@ -230,15 +230,19 @@ void main() {
       _classicCardWithData([
         verifiedBlockZero,
         Uint8List(16),
+        Uint8List.fromList(List.filled(16, 0x02)),
       ]),
       (_) {},
     );
+
+    expect(ambiguousResult, isFalse);
+    expect(communicator.authenticatedWrites, 1);
+
     final verifiedResult = await helper.writeData(
       _classicCardWithData([verifiedBlockZero]),
       (_) {},
     );
 
-    expect(ambiguousResult, isFalse);
     expect(verifiedResult, isTrue);
     expect(communicator.authenticatedWrites, 1);
     expect(communicator.gen3Writes, 4);
