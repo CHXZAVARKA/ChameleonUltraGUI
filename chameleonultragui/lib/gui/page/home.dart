@@ -1,4 +1,3 @@
-import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
@@ -201,25 +200,22 @@ class HomePageState extends State<HomePage> {
     if (status == null) {
       return Scaffold(appBar: AppBar(title: Text(localizations.home)));
     }
-    return FutureBuilder(
+    return Scaffold(
+      appBar: _ConnectedDeviceAppBar(
+        appState: appState,
+        status: status,
+      ),
+      body: FutureBuilder(
         future: getFutureData(),
         builder: (BuildContext context, AsyncSnapshot snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Scaffold(
-              appBar: _ConnectedDeviceAppBar(
-                appState: appState,
-                status: status,
-              ),
-              body: const Center(child: CircularProgressIndicator()),
+            return _LegacyHomePlaceholder(
+              device: status.snapshot.identity.device,
             );
           } else if (snapshot.hasError) {
-            return Scaffold(
-              appBar: _ConnectedDeviceAppBar(
-                appState: appState,
-                status: status,
-              ),
-              body: Center(
-                  child: ErrorPage(errorMessage: snapshot.error.toString())),
+            return _LegacyHomePlaceholder(
+              device: status.snapshot.identity.device,
+              errorMessage: snapshot.error.toString(),
             );
           } else {
             final (
@@ -229,103 +225,69 @@ class HomePageState extends State<HomePage> {
               areCapabilitiesSupported,
             ) = snapshot.data;
 
-            return Scaffold(
-              appBar: _ConnectedDeviceAppBar(
-                appState: appState,
-                status: status,
-              ),
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 20),
-                    Text("${localizations.used_slots}: $usedSlots/8",
-                        style: TextStyle(
-                          fontSize: min(
-                            MediaQuery.of(context).size.width / 35,
-                            MediaQuery.of(context).size.height / 20,
-                          ),
-                        )),
-                    const FittedBox(
-                        alignment: Alignment.center,
-                        fit: BoxFit.scaleDown,
-                        child: SlotChanger()),
-                    Expanded(
-                      child: FractionallySizedBox(
-                        widthFactor: 0.4,
-                        child: Image.asset(
-                          appState.connector!.device == ChameleonDevice.ultra
-                              ? 'assets/black-ultra-standing-front.webp'
-                              : 'assets/black-lite-standing-front.webp',
-                          fit: BoxFit.contain,
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(height: 20),
+                  Text("${localizations.used_slots}: $usedSlots/8",
+                      style: TextStyle(
+                        fontSize: min(
+                          MediaQuery.of(context).size.width / 35,
+                          MediaQuery.of(context).size.height / 20,
                         ),
+                      )),
+                  const FittedBox(
+                      alignment: Alignment.center,
+                      fit: BoxFit.scaleDown,
+                      child: SlotChanger()),
+                  Expanded(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.4,
+                      child: Image.asset(
+                        appState.connector!.device == ChameleonDevice.ultra
+                            ? 'assets/black-ultra-standing-front.webp'
+                            : 'assets/black-lite-standing-front.webp',
+                        fit: BoxFit.contain,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (appState.connector!.portName != "Demo")
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text("${localizations.firmware_version}: ",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: min(
-                                  MediaQuery.of(context).size.width / 50,
-                                  MediaQuery.of(context).size.height / 30,
-                                ),
-                              )),
-                          Text(fwVersion[0],
-                              style: TextStyle(
-                                fontSize: min(
-                                  MediaQuery.of(context).size.width / 50,
-                                  MediaQuery.of(context).size.height / 30,
-                                ),
-                              )),
-                          Padding(
-                            padding: const EdgeInsets.all(4.0),
-                            child: IconButton(
-                              onPressed: () async {
-                                SnackBar snackBar;
-                                String latestCommit;
+                  ),
+                  const SizedBox(height: 8),
+                  if (appState.connector!.portName != "Demo")
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("${localizations.firmware_version}: ",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: min(
+                                MediaQuery.of(context).size.width / 50,
+                                MediaQuery.of(context).size.height / 30,
+                              ),
+                            )),
+                        Text(fwVersion[0],
+                            style: TextStyle(
+                              fontSize: min(
+                                MediaQuery.of(context).size.width / 50,
+                                MediaQuery.of(context).size.height / 30,
+                              ),
+                            )),
+                        Padding(
+                          padding: const EdgeInsets.all(4.0),
+                          child: IconButton(
+                            onPressed: () async {
+                              SnackBar snackBar;
+                              String latestCommit;
 
-                                try {
-                                  latestCommit = await latestAvailableCommit(
-                                      appState.connector!.device);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    scaffoldMessenger.hideCurrentSnackBar();
-                                    snackBar = SnackBar(
-                                      content: Text(
-                                          '${localizations.update_error}: ${e.toString()}'),
-                                      action: SnackBarAction(
-                                        label: localizations.close,
-                                        onPressed: () {},
-                                      ),
-                                    );
-
-                                    scaffoldMessenger.showSnackBar(snackBar);
-                                  }
-                                  return;
-                                }
-
-                                try {
-                                  fwVersion[1] =
-                                      await resolveCommit(fwVersion[1]);
-                                } catch (_) {}
-
-                                appState.log!.i(
-                                    "Latest commit: $latestCommit, current commit ${fwVersion[1]}");
-
-                                if (latestCommit.isEmpty) {
-                                  return;
-                                }
-
-                                if (latestCommit.startsWith(fwVersion[1]) &&
-                                    context.mounted) {
+                              try {
+                                latestCommit = await latestAvailableCommit(
+                                    appState.connector!.device);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  scaffoldMessenger.hideCurrentSnackBar();
                                   snackBar = SnackBar(
-                                    content: Text(localizations.up_to_date(
-                                        chameleonDeviceName(
-                                            appState.connector!.device))),
+                                    content: Text(
+                                        '${localizations.update_error}: ${e.toString()}'),
                                     action: SnackBarAction(
                                       label: localizations.close,
                                       onPressed: () {},
@@ -333,110 +295,37 @@ class HomePageState extends State<HomePage> {
                                   );
 
                                   scaffoldMessenger.showSnackBar(snackBar);
-                                } else if (context.mounted) {
-                                  snackBar = SnackBar(
-                                    content: Text(localizations.downloading_fw(
-                                        chameleonDeviceName(
-                                            appState.connector!.device))),
-                                    action: SnackBarAction(
-                                      label: localizations.close,
-                                      onPressed: () {
-                                        scaffoldMessenger.hideCurrentSnackBar();
-                                      },
-                                    ),
-                                  );
-
-                                  scaffoldMessenger.showSnackBar(snackBar);
-                                  try {
-                                    await flashFirmware(appState,
-                                        scaffoldMessenger: scaffoldMessenger);
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      scaffoldMessenger.hideCurrentSnackBar();
-                                      snackBar = SnackBar(
-                                        content: Text(
-                                            '${localizations.update_error}: ${e.toString()}'),
-                                        action: SnackBarAction(
-                                          label: localizations.close,
-                                          onPressed: () {
-                                            scaffoldMessenger
-                                                .hideCurrentSnackBar();
-                                          },
-                                        ),
-                                      );
-
-                                      scaffoldMessenger.showSnackBar(snackBar);
-                                    }
-                                  }
                                 }
-                              },
-                              tooltip: localizations.check_updates,
-                              icon: const Icon(Icons.update),
-                            ),
-                          ),
-                        ],
-                      ),
-                    if (appState.connector!.portName == "Demo")
-                      Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: appState.sharedPreferencesProvider
-                              .getThemeComplementaryColor(),
-                          borderRadius:
-                              const BorderRadius.all(Radius.circular(8.0)),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                            ),
-                            const SizedBox(width: 16.0),
-                            Expanded(
-                              child: Text(
-                                localizations.demo_firmware,
-                                style: const TextStyle(
-                                  fontSize: 16.0,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (!areCapabilitiesSupported &&
-                        appState.connector!.portName != "Demo")
-                      Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: appState.sharedPreferencesProvider
-                              .getThemeComplementaryColor(),
-                          borderRadius:
-                              const BorderRadius.all(Radius.circular(8.0)),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                            ),
-                            const SizedBox(width: 16.0),
-                            Expanded(
-                              child: Text(
-                                localizations.please_update_firmware,
-                                style: const TextStyle(
-                                  fontSize: 16.0,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () async {
-                                var localizations =
-                                    AppLocalizations.of(context)!;
-                                var scaffoldMessenger =
-                                    ScaffoldMessenger.of(context);
-                                var snackBar = SnackBar(
+                                return;
+                              }
+
+                              try {
+                                fwVersion[1] =
+                                    await resolveCommit(fwVersion[1]);
+                              } catch (_) {}
+
+                              appState.log!.i(
+                                  "Latest commit: $latestCommit, current commit ${fwVersion[1]}");
+
+                              if (latestCommit.isEmpty) {
+                                return;
+                              }
+
+                              if (latestCommit.startsWith(fwVersion[1]) &&
+                                  context.mounted) {
+                                snackBar = SnackBar(
+                                  content: Text(localizations.up_to_date(
+                                      chameleonDeviceName(
+                                          appState.connector!.device))),
+                                  action: SnackBarAction(
+                                    label: localizations.close,
+                                    onPressed: () {},
+                                  ),
+                                );
+
+                                scaffoldMessenger.showSnackBar(snackBar);
+                              } else if (context.mounted) {
+                                snackBar = SnackBar(
                                   content: Text(localizations.downloading_fw(
                                       chameleonDeviceName(
                                           appState.connector!.device))),
@@ -449,65 +338,250 @@ class HomePageState extends State<HomePage> {
                                 );
 
                                 scaffoldMessenger.showSnackBar(snackBar);
-                                await flashFirmware(appState,
-                                    scaffoldMessenger: scaffoldMessenger);
-                              },
-                              child: Text(localizations.update),
-                            ),
-                          ],
+                                try {
+                                  await flashFirmware(appState,
+                                      scaffoldMessenger: scaffoldMessenger);
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    scaffoldMessenger.hideCurrentSnackBar();
+                                    snackBar = SnackBar(
+                                      content: Text(
+                                          '${localizations.update_error}: ${e.toString()}'),
+                                      action: SnackBarAction(
+                                        label: localizations.close,
+                                        onPressed: () {
+                                          scaffoldMessenger
+                                              .hideCurrentSnackBar();
+                                        },
+                                      ),
+                                    );
+
+                                    scaffoldMessenger.showSnackBar(snackBar);
+                                  }
+                                }
+                              }
+                            },
+                            tooltip: localizations.check_updates,
+                            icon: const Icon(Icons.update),
+                          ),
                         ),
+                      ],
+                    ),
+                  if (appState.connector!.portName == "Demo")
+                    Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: appState.sharedPreferencesProvider
+                            .getThemeComplementaryColor(),
+                        borderRadius:
+                            const BorderRadius.all(Radius.circular(8.0)),
                       ),
-                    Align(
-                      alignment: Alignment.bottomRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Spacer(),
-                          (isReaderDeviceMode)
-                              ? Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: IconButton(
-                                    onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(false);
-                                      setState(() {});
-                                      appState.changesMade();
-                                    },
-                                    tooltip: localizations.emulator_mode,
-                                    icon: const Icon(Icons.nfc_sharp),
-                                  ),
-                                )
-                              : Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: IconButton(
-                                    onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(true);
-                                      setState(() {});
-                                      appState.changesMade();
-                                    },
-                                    tooltip: localizations.reader_mode,
-                                    icon: const Icon(Icons.barcode_reader),
-                                  ),
-                                ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: IconButton(
-                              onPressed: () => showDialog<String>(
-                                  context: context,
-                                  builder: (BuildContext dialogContext) =>
-                                      const ChameleonSettings()),
-                              icon: const Icon(Icons.settings),
+                          Icon(
+                            Icons.error_outline,
+                          ),
+                          const SizedBox(width: 16.0),
+                          Expanded(
+                            child: Text(
+                              localizations.demo_firmware,
+                              style: const TextStyle(
+                                fontSize: 16.0,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  if (!areCapabilitiesSupported &&
+                      appState.connector!.portName != "Demo")
+                    Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: appState.sharedPreferencesProvider
+                            .getThemeComplementaryColor(),
+                        borderRadius:
+                            const BorderRadius.all(Radius.circular(8.0)),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                          ),
+                          const SizedBox(width: 16.0),
+                          Expanded(
+                            child: Text(
+                              localizations.please_update_firmware,
+                              style: const TextStyle(
+                                fontSize: 16.0,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              var localizations = AppLocalizations.of(context)!;
+                              var scaffoldMessenger =
+                                  ScaffoldMessenger.of(context);
+                              var snackBar = SnackBar(
+                                content: Text(localizations.downloading_fw(
+                                    chameleonDeviceName(
+                                        appState.connector!.device))),
+                                action: SnackBarAction(
+                                  label: localizations.close,
+                                  onPressed: () {
+                                    scaffoldMessenger.hideCurrentSnackBar();
+                                  },
+                                ),
+                              );
+
+                              scaffoldMessenger.showSnackBar(snackBar);
+                              await flashFirmware(appState,
+                                  scaffoldMessenger: scaffoldMessenger);
+                            },
+                            child: Text(localizations.update),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        (isReaderDeviceMode)
+                            ? Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: IconButton(
+                                  onPressed: () async {
+                                    await appState.communicator!
+                                        .setReaderDeviceMode(false);
+                                    setState(() {});
+                                    appState.changesMade();
+                                  },
+                                  tooltip: localizations.emulator_mode,
+                                  icon: const Icon(Icons.nfc_sharp),
+                                ),
+                              )
+                            : Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: IconButton(
+                                  onPressed: () async {
+                                    await appState.communicator!
+                                        .setReaderDeviceMode(true);
+                                    setState(() {});
+                                    appState.changesMade();
+                                  },
+                                  tooltip: localizations.reader_mode,
+                                  icon: const Icon(Icons.barcode_reader),
+                                ),
+                              ),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: IconButton(
+                            onPressed: () => showDialog<String>(
+                                context: context,
+                                builder: (BuildContext dialogContext) =>
+                                    const ChameleonSettings()),
+                            icon: const Icon(Icons.settings),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
           }
-        });
+        },
+      ),
+    );
+  }
+}
+
+class _LegacyHomePlaceholder extends StatelessWidget {
+  const _LegacyHomePlaceholder({
+    required this.device,
+    this.errorMessage,
+  });
+
+  final ChameleonDevice device;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (errorMessage case final message?)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                '${localizations.error}: $message',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 20),
+          Text('${localizations.used_slots}: ${localizations.unknown}/8'),
+          const FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              children: [
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+                Icon(Icons.circle_outlined),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FractionallySizedBox(
+              widthFactor: 0.4,
+              child: Image.asset(
+                device == ChameleonDevice.ultra
+                    ? 'assets/black-ultra-standing-front.webp'
+                    : 'assets/black-lite-standing-front.webp',
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          Text('${localizations.firmware_version}: ${localizations.unknown}'),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Row(
+              children: [
+                const Spacer(),
+                IconButton(
+                  onPressed: null,
+                  tooltip: localizations.reader_mode,
+                  icon: const Icon(Icons.barcode_reader),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: IconButton(
+                    onPressed: () => showDialog<String>(
+                      context: context,
+                      builder: (_) => const ChameleonSettings(),
+                    ),
+                    icon: const Icon(Icons.settings),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -526,6 +600,7 @@ class _ConnectedDeviceAppBar extends StatelessWidget
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
     return ListenableBuilder(
       listenable: status,
       builder: (context, _) {
@@ -552,9 +627,8 @@ class _ConnectedDeviceAppBar extends StatelessWidget
           ),
           actions: [
             Tooltip(
-              message: identity.connectionType == ConnectionType.ble
-                  ? 'Bluetooth'
-                  : 'USB',
+              message:
+                  '${localizations.chameleon_connected}: ${identity.connectionType == ConnectionType.ble ? 'Bluetooth' : 'USB'}',
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(
@@ -566,7 +640,7 @@ class _ConnectedDeviceAppBar extends StatelessWidget
             ),
             _BatteryIndicator(battery: snapshot.battery),
             IconButton(
-              tooltip: 'Disconnect',
+              tooltip: localizations.close,
               onPressed: () => appState.disconnect(manual: true),
               icon: const Icon(Icons.link_off),
             ),

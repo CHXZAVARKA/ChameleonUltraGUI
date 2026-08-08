@@ -30,6 +30,38 @@ void main() {
     expect(find.byIcon(Icons.link_off), findsOneWidget);
   });
 
+  testWidgets('Home renders status placeholders while legacy reads are pending',
+      (tester) async {
+    final communicator = _BatteryCommunicator.pending();
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Used Slots: Unknown/8'), findsOneWidget);
+    expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
+    expect(find.byIcon(Icons.settings), findsOneWidget);
+  });
+
+  testWidgets('legacy status failure keeps the Home shell usable',
+      (tester) async {
+    final communicator = _BatteryCommunicator.failingLegacyStatus();
+    final appState = _connectedState(communicator);
+    final serial = appState.connector! as _TestSerial;
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chameleon Ultra'), findsOneWidget);
+    expect(find.text('Used Slots: Unknown/8'), findsOneWidget);
+    expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
+    expect(find.byIcon(Icons.settings), findsOneWidget);
+    expect(find.textContaining('legacy status unavailable'), findsOneWidget);
+    expect(serial.connected, isTrue);
+    expect(serial.disconnects, 0);
+  });
+
   testWidgets('Home polls only battery and formats live battery details',
       (tester) async {
     final communicator = _BatteryCommunicator.withValues([
@@ -77,6 +109,31 @@ void main() {
     expect(find.byIcon(Icons.usb), findsOneWidget);
     expect(find.byIcon(Icons.close), findsNothing);
     expect(find.byIcon(Icons.link_off), findsOneWidget);
+  });
+
+  testWidgets('Home AppBar tooltips use the active localization',
+      (tester) async {
+    final communicator = _BatteryCommunicator.complete(
+      BatteryCharge(percent: 61, voltage: 3910),
+    );
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState, locale: const Locale('es'));
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip && widget.message == 'Chameleon conectado: USB',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.link_off))
+          .tooltip,
+      'Cerrar',
+    );
   });
 
   testWidgets('battery failure stays non-fatal and renders unknown state',
@@ -153,6 +210,74 @@ void main() {
     expect(appState.connectedDeviceStatus!.snapshot.battery.percent, 77);
   });
 
+  testWidgets('disconnect rejects battery results before transport closes',
+      (tester) async {
+    final communicator = _BatteryCommunicator.pending();
+    final appState = _connectedState(communicator);
+    final serial = appState.connector! as _TestSerial;
+    final disconnectGate = Completer<void>();
+    serial.disconnectGate = disconnectGate;
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    final disposedStatus = appState.connectedDeviceStatus!;
+
+    final disconnect = appState.disconnect(manual: true);
+    communicator.completePending(
+      BatteryCharge(percent: 4, voltage: 3500),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(disposedStatus.snapshot.battery.percent, isNull);
+
+    disconnectGate.complete();
+    await disconnect;
+    expect(appState.connectedDeviceStatus, isNull);
+  });
+
+  testWidgets('DFU rejects late battery results and cancels polling',
+      (tester) async {
+    final communicator = _BatteryCommunicator.pending();
+    final appState = _connectedState(communicator);
+    final serial = appState.connector! as _TestSerial;
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    final disposedStatus = appState.connectedDeviceStatus!;
+    expect(communicator.batteryReads, 1);
+
+    serial.isDFU = true;
+    appState.onConnectorStateChanged();
+    communicator.completePending(
+      BatteryCharge(percent: 4, voltage: 3500),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 30));
+
+    expect(appState.connectedDeviceStatus, isNull);
+    expect(disposedStatus.snapshot.battery.percent, isNull);
+    expect(communicator.batteryReads, 1);
+  });
+
+  testWidgets('disposing application state cancels Home battery polling',
+      (tester) async {
+    final communicator = _BatteryCommunicator.withValues([
+      BatteryCharge(percent: 61, voltage: 3910),
+      BatteryCharge(percent: 60, voltage: 3900),
+    ]);
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    expect(communicator.batteryReads, 1);
+
+    appState.dispose();
+    await tester.pump(const Duration(seconds: 30));
+
+    expect(communicator.batteryReads, 1);
+  });
+
   testWidgets('battery colors follow normal warning and error thresholds',
       (tester) async {
     final theme = ThemeData(
@@ -183,13 +308,14 @@ Future<void> _pumpHome(
   WidgetTester tester,
   ChameleonGUIState appState, {
   ThemeData? theme,
+  Locale locale = const Locale('en'),
 }) {
   return tester.pumpWidget(
     ChangeNotifierProvider<ChameleonGUIState>.value(
       value: appState,
       child: MaterialApp(
         theme: theme,
-        locale: const Locale('en'),
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: const HomePage(),
@@ -231,12 +357,14 @@ class _BatteryCommunicator extends ChameleonCommunicator {
         _batteryValues = const [],
         _completeLegacyStatus = false,
         _batteryError = null,
+        _modeError = null,
         super(Logger());
 
   _BatteryCommunicator.withValues(this._batteryValues)
       : _pendingBattery = null,
         _completeLegacyStatus = false,
         _batteryError = null,
+        _modeError = null,
         super(Logger());
 
   _BatteryCommunicator.complete(BatteryCharge battery)
@@ -244,6 +372,7 @@ class _BatteryCommunicator extends ChameleonCommunicator {
         _batteryValues = [battery],
         _completeLegacyStatus = true,
         _batteryError = null,
+        _modeError = null,
         super(Logger());
 
   _BatteryCommunicator.failing()
@@ -251,6 +380,15 @@ class _BatteryCommunicator extends ChameleonCommunicator {
         _batteryValues = const [],
         _completeLegacyStatus = false,
         _batteryError = StateError('battery unavailable'),
+        _modeError = null,
+        super(Logger());
+
+  _BatteryCommunicator.failingLegacyStatus()
+      : _pendingBattery = null,
+        _batteryValues = [BatteryCharge(percent: 61, voltage: 3910)],
+        _completeLegacyStatus = true,
+        _batteryError = null,
+        _modeError = StateError('legacy status unavailable'),
         super(Logger());
 
   final Completer<BatteryCharge>? _pendingBattery;
@@ -258,6 +396,7 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   final Completer<FirmwareVersion> _firmware = Completer<FirmwareVersion>();
   final bool _completeLegacyStatus;
   final Object? _batteryError;
+  final Object? _modeError;
   int batteryReads = 0;
   int slotTypeReads = 0;
 
@@ -294,7 +433,13 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   Future<String> getGitCommitHash() async => 'abcdef0';
 
   @override
-  Future<bool> isReaderDeviceMode() async => false;
+  Future<bool> isReaderDeviceMode() async {
+    final modeError = _modeError;
+    if (modeError != null) {
+      throw modeError;
+    }
+    return false;
+  }
 
   @override
   Future<List<int>> getDeviceCapabilities() async =>
@@ -308,10 +453,12 @@ class _TestSerial extends AbstractSerial {
   _TestSerial({required super.log});
 
   int disconnects = 0;
+  Completer<void>? disconnectGate;
 
   @override
   Future<bool> performDisconnect() async {
     disconnects++;
+    await disconnectGate?.future;
     resetConnectionState();
     return true;
   }

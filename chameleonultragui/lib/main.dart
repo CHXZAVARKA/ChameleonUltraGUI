@@ -155,6 +155,7 @@ class ChameleonGUIState extends ChangeNotifier {
 
   Future<void> disconnect({bool manual = false}) async {
     final suppressedPort = manual ? connector?.activeDevicePort : null;
+    _disposeConnectedDeviceStatus();
     await connector?.performDisconnect();
     if (manual && suppressedPort != null) {
       _suppressedAutoReconnectPort = suppressedPort;
