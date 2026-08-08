@@ -90,13 +90,16 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
             }
 
             var newCard = await session.communicator.readEM410X();
-            writeIssued = false;
             if (!mounted || !session.isCurrent) {
               sessionCancelled = true;
               return;
             }
+            if (newCard == null) {
+              throw StateError('Password reset write outcome is unknown');
+            }
+            writeIssued = false;
 
-            if (newCard != null && newCard.toString() == targetUID) {
+            if (newCard.toString() == targetUID) {
               setState(() {
                 foundPassword = bytesToHexSpace(selectedDictionary.keys[i]);
                 isProcessing = false;

@@ -197,6 +197,19 @@ void main() {
     expect(communicator.writes, 1);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'T55 password cleaner stops when read-back is null after an issued write',
+      (tester) async {
+    final communicator = await _runPasswordCleaner(
+      tester,
+      (logger) => _CompletedT55WriteCommunicator(logger),
+    );
+
+    expect(communicator.writes, 1);
+    expect(communicator.reads, 1);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<T> _runPasswordCleaner<T extends ChameleonCommunicator>(
