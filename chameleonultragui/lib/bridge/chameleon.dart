@@ -11,6 +11,24 @@ import 'package:logger/logger.dart';
 // Nobody knows how it works
 
 class ChameleonCommunicator {
+  static final Set<ChameleonCommand> _commandsWithSecretData = {
+    ChameleonCommand.bleSetConnectKey,
+    ChameleonCommand.bleGetConnectKey,
+    ChameleonCommand.getDeviceSettings,
+    ChameleonCommand.mf1StaticNestedAcquire,
+    ChameleonCommand.mf1NTDistanceDetect,
+    ChameleonCommand.mf1NestedAcquire,
+    ChameleonCommand.mf1CheckKey,
+    ChameleonCommand.mf1ReadBlock,
+    ChameleonCommand.mf1WriteBlock,
+    ChameleonCommand.mf1HardNestedAcquire,
+    ChameleonCommand.mf1StaticEncryptedNestedAcquire,
+    ChameleonCommand.mf1CheckKeysOnBlock,
+    ChameleonCommand.mf1LoadBlockData,
+    ChameleonCommand.mf1GetBlockData,
+    ChameleonCommand.mf1ManipulateValueBlock,
+  };
+
   int baudrate = 115200;
   int dataFrameSof = 0x11;
   int dataMaxLength = 4096;
@@ -65,7 +83,7 @@ class ChameleonCommunicator {
   }
 
   Future<void> onSerialMessage(List<int> message) async {
-    log.t("Received: ${bytesToHex(Uint8List.fromList(message))}");
+    log.t("Received ${message.length} raw byte(s)");
 
     for (var byte in message) {
       dataBuffer.add(byte);
@@ -101,8 +119,20 @@ class ChameleonCommunicator {
               command: dataCmd,
               status: dataStatus,
               data: Uint8List.fromList(dataResponse));
+          ChameleonCommand? command;
+          for (final candidate in ChameleonCommand.values) {
+            if (candidate.value == message.command) {
+              command = candidate;
+              break;
+            }
+          }
+          final responseData = command != null &&
+                  _commandsWithSecretData.contains(command) &&
+                  message.data.isNotEmpty
+              ? "<redacted ${message.data.length} byte(s)>"
+              : bytesToHex(message.data);
           log.d(
-              "Received message: command = ${message.command}, status = ${message.status}, data = ${bytesToHex(message.data)}");
+              "Received message: command = ${message.command}, status = ${message.status}, data = $responseData");
           dataPosition = 0;
           dataBuffer = [];
           messageQueue.add(message);
@@ -141,9 +171,16 @@ class ChameleonCommunicator {
 
     commandQueue.add(cmd.value);
 
-    log.t("Sending: ${bytesToHex(dataFrame)}");
-    log.d(
-        "Sending message: command = ${cmd.value}, data = ${bytesToHex(data ?? Uint8List(0))}");
+    final hasSecretData = _commandsWithSecretData.contains(cmd);
+    final logData = hasSecretData && data != null && data.isNotEmpty
+        ? "<redacted ${data.length} byte(s)>"
+        : bytesToHex(data ?? Uint8List(0));
+    if (hasSecretData) {
+      log.t("Sending command ${cmd.value} with redacted payload");
+    } else {
+      log.t("Sending: ${bytesToHex(dataFrame)}");
+    }
+    log.d("Sending message: command = ${cmd.value}, data = $logData");
 
     if (skipReceive) {
       try {
@@ -403,11 +440,13 @@ class ChameleonCommunicator {
   Future<bool> mf1Auth(int block, int keyType, Uint8List key) async {
     // Check if key is valid for block
     // keyType 0x60 if A key, 0x61 B key
-    int status = (await sendCmd(ChameleonCommand.mf1CheckKey,
-            data: Uint8List.fromList([keyType, block, ...key])))!
-        .status;
+    return (await mf1AuthResult(block, keyType, key)).status == 0;
+  }
 
-    return status == 0;
+  Future<ChameleonMessage> mf1AuthResult(
+      int block, int keyType, Uint8List key) async {
+    return (await sendCmd(ChameleonCommand.mf1CheckKey,
+        data: Uint8List.fromList([keyType, block, ...key])))!;
   }
 
   Future<Uint8List?> mf1AuthMultipleKeys(
@@ -422,19 +461,26 @@ class ChameleonCommunicator {
   Future<Uint8List> mf1ReadBlock(int block, int keyType, Uint8List key) async {
     // Read block
     // keyType 0x60 if A key, 0x61 B key
+    return (await mf1ReadBlockResult(block, keyType, key)).data;
+  }
+
+  Future<ChameleonMessage> mf1ReadBlockResult(
+      int block, int keyType, Uint8List key) async {
     return (await sendCmd(ChameleonCommand.mf1ReadBlock,
-            data: Uint8List.fromList([keyType, block, ...key])))!
-        .data;
+        data: Uint8List.fromList([keyType, block, ...key])))!;
   }
 
   Future<bool> mf1WriteBlock(
       int block, int keyType, Uint8List key, Uint8List data) async {
     // Write block
     // keyType 0x60 if A key, 0x61 B key
+    return (await mf1WriteBlockResult(block, keyType, key, data)).status == 0;
+  }
+
+  Future<ChameleonMessage> mf1WriteBlockResult(
+      int block, int keyType, Uint8List key, Uint8List data) async {
     return (await sendCmd(ChameleonCommand.mf1WriteBlock,
-                data: Uint8List.fromList([keyType, block, ...key, ...data])))!
-            .status ==
-        0;
+        data: Uint8List.fromList([keyType, block, ...key, ...data])))!;
   }
 
   Future<void> activateSlot(int slot) async {

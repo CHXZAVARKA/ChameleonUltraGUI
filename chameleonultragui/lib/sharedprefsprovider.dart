@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:chameleonultragui/helpers/colors.dart' as colors;
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -347,6 +348,9 @@ class CardSaveExtra {
   Uint8List ultralightSignature;
   Uint8List ultralightVersion;
   List<int> ultralightCounters;
+  /// `null` for legacy saves, `false` for a known partial dump and `true` for
+  /// a complete dump.
+  bool? mifareClassicDumpComplete;
 
   factory CardSaveExtra.import(Map<String, dynamic> data) {
     List<int> readBytes(Map<String, dynamic> data, String key) {
@@ -359,11 +363,16 @@ class CardSaveExtra {
     final ultralightCounters = data['ultralightCounters'] != null
         ? List<int>.from(data['ultralightCounters'] as List<dynamic>)
         : <int>[];
+    final bool? mifareClassicDumpComplete =
+        data.containsKey('mifareClassicDumpComplete')
+            ? data['mifareClassicDumpComplete'] == true
+            : null;
 
     return CardSaveExtra(
         ultralightSignature: Uint8List.fromList(ultralightSignature),
         ultralightVersion: Uint8List.fromList(ultralightVersion),
-        ultralightCounters: ultralightCounters);
+        ultralightCounters: ultralightCounters,
+        mifareClassicDumpComplete: mifareClassicDumpComplete);
   }
 
   Map<String, dynamic> export() {
@@ -381,13 +390,18 @@ class CardSaveExtra {
       json['ultralightCounters'] = ultralightCounters;
     }
 
+    if (mifareClassicDumpComplete != null) {
+      json['mifareClassicDumpComplete'] = mifareClassicDumpComplete;
+    }
+
     return json;
   }
 
   CardSaveExtra(
       {Uint8List? ultralightSignature,
       Uint8List? ultralightVersion,
-      List<int>? ultralightCounters})
+      List<int>? ultralightCounters,
+      this.mifareClassicDumpComplete})
       : ultralightSignature = ultralightSignature ?? Uint8List(0),
         ultralightVersion = ultralightVersion ?? Uint8List(0),
         ultralightCounters = ultralightCounters ?? <int>[];
@@ -496,6 +510,43 @@ class SharedPreferencesProvider extends ChangeNotifier {
       }
     }
     _sharedPreferences.setStringList('dictionaries', output);
+  }
+
+  List<MifareClassicKeyProfile> getMifareClassicKeyProfiles() {
+    final data =
+        _sharedPreferences.getStringList('mifare_classic_key_profiles') ?? [];
+    final profiles = <MifareClassicKeyProfile>[];
+    for (final source in data) {
+      try {
+        profiles.add(MifareClassicKeyProfile.fromJson(source));
+      } catch (_) {
+        // A damaged local entry must not make the card-reading page unusable.
+      }
+    }
+    return profiles;
+  }
+
+  void setMifareClassicKeyProfiles(List<MifareClassicKeyProfile> profiles) {
+    _sharedPreferences.setStringList(
+      'mifare_classic_key_profiles',
+      profiles.map((profile) => profile.toJson()).toList(),
+    );
+  }
+
+  /// Saves [profile] alongside the existing profiles, replacing any prior
+  /// version with the same id, and returns the resulting list.
+  List<MifareClassicKeyProfile> upsertMifareClassicKeyProfile(
+      MifareClassicKeyProfile profile) {
+    final profiles = getMifareClassicKeyProfiles();
+    final existingIndex =
+        profiles.indexWhere((existing) => existing.id == profile.id);
+    if (existingIndex == -1) {
+      profiles.add(profile);
+    } else {
+      profiles[existingIndex] = profile;
+    }
+    setMifareClassicKeyProfiles(profiles);
+    return profiles;
   }
 
   List<DictionaryFolder> getDictionaryFolders() {
@@ -607,7 +658,8 @@ class SharedPreferencesProvider extends ChangeNotifier {
     Map<String, dynamic> settingsMap = {};
 
     for (var key in _sharedPreferences.getKeys()) {
-      if (key == "debug_logging_value") {
+      if (key == "debug_logging_value" ||
+          key == "mifare_classic_key_profiles") {
         continue;
       }
       var value = _sharedPreferences.get(key) as dynamic;
@@ -628,6 +680,9 @@ class SharedPreferencesProvider extends ChangeNotifier {
     Map<String, dynamic> settingsMap = jsonDecode(jsonSettings);
 
     for (var key in settingsMap.keys) {
+      if (key == 'mifare_classic_key_profiles') {
+        continue;
+      }
       dynamic value = settingsMap[key];
 
       if (value == null) {

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -17,6 +18,22 @@ void main() {
     final decoded = CardSave.fromJson(card.toJson());
 
     expect(decoded.folderId, isNull);
+  });
+
+  test('legacy card JSON keeps unknown MIFARE Classic dump completeness', () {
+    final source = CardSave(
+      id: 'legacy-mifare-card',
+      uid: '01 02 03 04',
+      name: 'Legacy MIFARE Classic card',
+      tag: TagType.mifare1K,
+    ).toJson();
+    final json = jsonDecode(source) as Map<String, dynamic>;
+    (json['extra'] as Map<String, dynamic>)
+        .remove('mifareClassicDumpComplete');
+
+    final decoded = CardSave.fromJson(jsonEncode(json));
+
+    expect(decoded.extraData.mifareClassicDumpComplete, isNull);
   });
 
   test('folder bundle round-trips nested folders and cards', () {

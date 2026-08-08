@@ -79,6 +79,108 @@ enum MifareClassicType {
   m4k
 } // can't start with number...
 
+class MifareClassicGeometry {
+  final MifareClassicType type;
+  final bool isEV1;
+  final int blockCount;
+  final int sectorCount;
+
+  const MifareClassicGeometry._({
+    required this.type,
+    required this.isEV1,
+    required this.blockCount,
+    required this.sectorCount,
+  });
+
+  int get imageSize => blockCount * 16;
+  int get dataBlockCount => blockCount - sectorCount - 1;
+  String get cardType => type.name;
+
+  String get label {
+    if (type == MifareClassicType.mini) {
+      return 'MIFARE Classic Mini';
+    }
+    if (type == MifareClassicType.m1k && isEV1) {
+      return 'MIFARE Classic 1K EV1';
+    }
+    if (type == MifareClassicType.m1k) {
+      return 'MIFARE Classic 1K';
+    }
+    if (type == MifareClassicType.m2k) {
+      return 'MIFARE Classic 2K';
+    }
+    if (type == MifareClassicType.m4k) {
+      return 'MIFARE Classic 4K';
+    }
+    return 'MIFARE Classic';
+  }
+
+  static MifareClassicGeometry? fromImageSize(int imageSize) {
+    switch (imageSize) {
+      case 320:
+        return fromType(MifareClassicType.mini);
+      case 1024:
+        return fromType(MifareClassicType.m1k);
+      case 1152:
+        return fromType(MifareClassicType.m1k, isEV1: true);
+      case 2048:
+        return fromType(MifareClassicType.m2k);
+      case 4096:
+        return fromType(MifareClassicType.m4k);
+      default:
+        return null;
+    }
+  }
+
+  static MifareClassicGeometry? fromType(MifareClassicType type,
+      {bool isEV1 = false}) {
+    final blockCount = mfClassicGetBlockCount(type, isEV1: isEV1);
+    final sectorCount = mfClassicGetSectorCount(type, isEV1: isEV1);
+    if (blockCount == 0 || sectorCount == 0) {
+      return null;
+    }
+    return MifareClassicGeometry._(
+      type: type,
+      isEV1: isEV1,
+      blockCount: blockCount,
+      sectorCount: sectorCount,
+    );
+  }
+
+  static MifareClassicGeometry? fromSavedCard(CardSave card) {
+    if (!isMifareClassic(card.tag) ||
+        card.extraData.mifareClassicDumpComplete != true) {
+      return null;
+    }
+    return fromSavedCardData(card);
+  }
+
+  /// Returns the geometry when all expected MIFARE Classic blocks are present.
+  ///
+  /// Legacy saved cards do not have the completeness flag. Their structure can
+  /// still be validated, but callers must ask the user to confirm them before
+  /// treating the dump as complete.
+  static MifareClassicGeometry? fromSavedCardData(CardSave card) {
+    if (!isMifareClassic(card.tag)) {
+      return null;
+    }
+    final type = chameleonTagTypeGetMfClassicType(card.tag);
+    final geometry = fromType(
+      type,
+      isEV1: chameleonTagSaveCheckForMifareClassicEV1(card),
+    );
+    if (geometry == null || card.data.length < geometry.blockCount) {
+      return null;
+    }
+    for (var block = 0; block < geometry.blockCount; block++) {
+      if (card.data[block].length != 16) {
+        return null;
+      }
+    }
+    return geometry;
+  }
+}
+
 final gMifareClassicKeys = gMifareClassicKeysList
     .map((key) => Uint8List.fromList([
           (key >> 40) & 0xFF,
@@ -616,6 +718,9 @@ Future<(TagType, MifareClassicInfo)> performMifareClassicScan(
       mifareClassicType: mifareClassicType,
       localizations: localizations,
       isMifareClassicEV1: isMifareClassicEV1);
+  if (isMifareClassicEV1) {
+    recovery.setKeyAsFound(17, 1, gMifareClassicKeys[3]);
+  }
 
   try {
     ntLevel = await communicator.getMf1NTLevel();

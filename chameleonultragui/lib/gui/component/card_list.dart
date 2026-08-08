@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -8,9 +10,15 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 enum SearchFilter { all, hf, lf }
 
+typedef CardSearchSelection = FutureOr<void> Function(
+  CardSave card,
+  void Function(BuildContext context, String result) closeSearch,
+  AppLocalizations localizations,
+);
+
 class CardSearchDelegate extends SearchDelegate<String> {
   final List<CardSave> cards;
-  final dynamic onTap;
+  final CardSearchSelection onTap;
   SearchFilter filter;
 
   CardSearchDelegate(
@@ -84,58 +92,16 @@ class CardSearchDelegate extends SearchDelegate<String> {
 
   @override
   Widget buildResults(BuildContext context) {
-    var localizations = AppLocalizations.of(context)!;
-
-    final results = cards.where((card) =>
-        (((card.name.toLowerCase().contains(query.toLowerCase())) ||
-                (chameleonTagToString(card.tag, localizations)
-                    .toLowerCase()
-                    .contains(query.toLowerCase()))) &&
-            ((filter == SearchFilter.all) ||
-                (filter == SearchFilter.hf &&
-                    chameleonTagToFrequency(card.tag) == TagFrequency.hf) ||
-                (filter == SearchFilter.lf &&
-                    chameleonTagToFrequency(card.tag) == TagFrequency.lf))));
-
-    return ListView.builder(
-      itemCount: results.length,
-      itemBuilder: (BuildContext context, int index) {
-        final card = results.elementAt(index);
-        return Column(
-          children: [
-            ElevatedButton(
-              onPressed: () {
-                // Set card here
-                Navigator.pop(context);
-              },
-              child: ListTile(
-                leading: Icon(
-                    (chameleonTagToFrequency(card.tag) == TagFrequency.hf)
-                        ? Icons.credit_card
-                        : Icons.wifi,
-                    color: card.color),
-                title: Text(
-                  card.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  chameleonTagToString(card.tag, localizations),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-        );
-      },
-    );
+    return _buildCardList(context);
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    var localizations = AppLocalizations.of(context)!;
+    return _buildCardList(context);
+  }
+
+  Widget _buildCardList(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
 
     final results = cards.where((card) =>
         (((card.name.toLowerCase().contains(query.toLowerCase())) ||
@@ -165,7 +131,7 @@ class CardSearchDelegate extends SearchDelegate<String> {
             overflow: TextOverflow.ellipsis,
           ),
           onTap: () async {
-            onTap(card, close, localizations);
+            await onTap(card, close, localizations);
           },
         );
       },

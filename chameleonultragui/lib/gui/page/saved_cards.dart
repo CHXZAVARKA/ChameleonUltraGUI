@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/element_button.dart';
+import 'package:chameleonultragui/gui/component/mifare/saved_key_profiles.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/card/view.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/view.dart';
@@ -1146,7 +1147,17 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                         uid:
                                                             uid4Controller.text,
                                                         tag: selectedType,
-                                                        data: blocks);
+                                                        data: blocks,
+                                                        extraData:
+                                                            CardSaveExtra(
+                                                          mifareClassicDumpComplete: isMifareClassic(
+                                                                  selectedType) &&
+                                                              MifareClassicGeometry
+                                                                      .fromImageSize(
+                                                                          contents
+                                                                              .length) !=
+                                                                  null,
+                                                        ));
                                                     tag.folderId =
                                                         currentFolderId;
                                                     tags.add(tag);
@@ -1221,7 +1232,16 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                           atqa7Controller.text),
                                                       uid: uid7Controller.text,
                                                       tag: selectedType,
-                                                      data: blocks);
+                                                      data: blocks,
+                                                      extraData: CardSaveExtra(
+                                                        mifareClassicDumpComplete: isMifareClassic(
+                                                                selectedType) &&
+                                                            MifareClassicGeometry
+                                                                    .fromImageSize(
+                                                                        contents
+                                                                            .length) !=
+                                                                null,
+                                                      ));
                                                   tag.folderId =
                                                       currentFolderId;
                                                   tags.add(tag);
@@ -1692,6 +1712,7 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                           }))),
             ])),
           ),
+          const Expanded(child: MifareClassicKeyProfilesCard()),
         ],
       ),
     );

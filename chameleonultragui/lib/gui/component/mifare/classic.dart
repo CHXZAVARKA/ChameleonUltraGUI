@@ -3,11 +3,13 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/key_check_marks.dart';
+import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
 import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -37,6 +39,168 @@ class MifareClassicHelper extends StatefulWidget {
 class CardReaderState extends State<MifareClassicHelper> {
   String dumpName = "";
   bool skipDefaultDictionary = false;
+  bool _profileSelectionInitialized = false;
+  MifareClassicRecovery? _profileSelectionRecovery;
+
+  @override
+  void didUpdateWidget(covariant MifareClassicHelper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.mfcInfo.recovery, widget.mfcInfo.recovery) ||
+        oldWidget.hfInfo.uid != widget.hfInfo.uid ||
+        oldWidget.mfcInfo.type != widget.mfcInfo.type ||
+        oldWidget.mfcInfo.isEV1 != widget.mfcInfo.isEV1) {
+      if (oldWidget.hfInfo.uid != widget.hfInfo.uid ||
+          oldWidget.mfcInfo.type != widget.mfcInfo.type ||
+          oldWidget.mfcInfo.isEV1 != widget.mfcInfo.isEV1) {
+        widget.mfcInfo.recovery?.selectedKeyProfile = null;
+      }
+      _profileSelectionInitialized = false;
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<String?> _getKeyProfileName() async {
+    final localizations = AppLocalizations.of(context)!;
+    final featureStrings = MifareClassicFeatureStrings.of(context);
+    final controller = TextEditingController(
+        text: widget.hfInfo.uid.replaceAll(RegExp(r'[^0-9a-fA-F]'), ''));
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(featureStrings.enterKeyProfileName),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: controller, autofocus: true),
+            const SizedBox(height: 12),
+            Text(
+              featureStrings.keyProfilePlaintextWarning,
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.pop(dialogContext, name);
+              }
+            },
+            child: Text(localizations.ok),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  void _storeKeyProfile(MifareClassicKeyProfile profile) {
+    final appState = context.read<ChameleonGUIState>();
+    final profiles = appState.sharedPreferencesProvider
+        .upsertMifareClassicKeyProfile(profile);
+    widget.mfcInfo.recovery!
+      ..keyProfiles = profiles
+      ..selectedKeyProfile = profile;
+  }
+
+  Future<void> saveKeyProfile() async {
+    final localizations = AppLocalizations.of(context)!;
+    final featureStrings = MifareClassicFeatureStrings.of(context);
+    final name = await _getKeyProfileName();
+    if (name == null || !mounted) {
+      return;
+    }
+
+    final profile = widget.mfcInfo.recovery!.createKeyProfile(
+      name: name,
+      uid: widget.hfInfo.uid,
+    );
+
+    final exportToFile = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(featureStrings.saveKeyProfile),
+        content: Text(featureStrings.keyProfilePlaintextWarning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(featureStrings.saveKeyProfileInApp),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(featureStrings.exportKeyProfileToFile),
+          ),
+        ],
+      ),
+    );
+    if (exportToFile == null || !mounted) {
+      return;
+    }
+
+    if (exportToFile) {
+      final safeName = name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]+'), '_');
+      final outputPath = await FilePicker.saveFile(
+        dialogTitle: '${localizations.output_file}:',
+        fileName: '$safeName.mf1keys.json',
+        bytes: profile.toFile(),
+      );
+      if (outputPath == null) {
+        return;
+      }
+    } else {
+      _storeKeyProfile(profile);
+      setState(() {});
+    }
+    _showMessage(featureStrings.keyProfileSaved);
+  }
+
+  Future<bool> _confirmSelectedProfileUid() async {
+    final profile = widget.mfcInfo.recovery?.selectedKeyProfile;
+    if (profile == null ||
+        profile.uid == null ||
+        profile.matchesUid(widget.hfInfo.uid)) {
+      return true;
+    }
+
+    final localizations = AppLocalizations.of(context)!;
+    final featureStrings = MifareClassicFeatureStrings.of(context);
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(featureStrings.keyProfileUidMismatch),
+            content: Text(featureStrings.keyProfileUidMismatchDescription),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(localizations.cancel),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(featureStrings.useKeyProfile),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
 
   Future<void> exportFoundKeys() async {
     await showDialog(
@@ -75,6 +239,10 @@ class CardReaderState extends State<MifareClassicHelper> {
               ? TagType.mifare1K
               : mfClassicGetChameleonTagType(widget.mfcInfo.type),
           data: widget.mfcInfo.recovery!.cardData,
+          extraData: CardSaveExtra(
+            mifareClassicDumpComplete:
+                !skipDump && widget.mfcInfo.recovery!.dumpComplete,
+          ),
           ats: (widget.hfInfo.ats != localizations.no)
               ? hexToBytes(widget.hfInfo.ats)
               : Uint8List(0)));
@@ -86,6 +254,7 @@ class CardReaderState extends State<MifareClassicHelper> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     var localizations = AppLocalizations.of(context)!;
+    final featureStrings = MifareClassicFeatureStrings.of(context);
     final isSmallScreen = screenSize.width < 800;
 
     double checkmarkFontSize = isSmallScreen ? 12 : 16;
@@ -93,12 +262,40 @@ class CardReaderState extends State<MifareClassicHelper> {
     int checkmarkPerRow = (screenSize.width < 600) ? 8 : 16;
 
     var appState = context.watch<ChameleonGUIState>();
+    if (!identical(_profileSelectionRecovery, widget.mfcInfo.recovery)) {
+      _profileSelectionRecovery = widget.mfcInfo.recovery;
+      _profileSelectionInitialized = false;
+    }
     widget.mfcInfo.recovery?.dictionaries =
         appState.sharedPreferencesProvider.getDictionaries(keyLength: 12);
     widget.mfcInfo.recovery?.dictionaries
         .insert(0, Dictionary(id: "", name: localizations.empty, keys: []));
     widget.mfcInfo.recovery?.selectedDictionary ??=
         widget.mfcInfo.recovery?.dictionaries[0];
+    final sectorCount = mfClassicGetSectorCount(widget.mfcInfo.type,
+        isEV1: widget.mfcInfo.isEV1);
+    widget.mfcInfo.recovery?.keyProfiles = appState.sharedPreferencesProvider
+        .getMifareClassicKeyProfiles()
+        .where((profile) => profile.isCompatible(
+            cardType: widget.mfcInfo.type.name, sectorCount: sectorCount))
+        .toList();
+    final selectedProfile = widget.mfcInfo.recovery?.selectedKeyProfile;
+    if (selectedProfile != null &&
+        !(widget.mfcInfo.recovery?.keyProfiles
+                .any((profile) => profile.id == selectedProfile.id) ??
+            false)) {
+      widget.mfcInfo.recovery?.selectedKeyProfile = null;
+    }
+    if (!_profileSelectionInitialized) {
+      for (final profile in widget.mfcInfo.recovery?.keyProfiles ??
+          <MifareClassicKeyProfile>[]) {
+        if (profile.matchesUid(widget.hfInfo.uid)) {
+          widget.mfcInfo.recovery?.selectedKeyProfile = profile;
+          break;
+        }
+      }
+      _profileSelectionInitialized = true;
+    }
 
     WakelockPlus.toggle(
         enable: [
@@ -136,6 +333,19 @@ class CardReaderState extends State<MifareClassicHelper> {
             const Spacer(),
           ],
         ),
+        if (widget.mfcInfo.recovery!.hasVerifiedKeys &&
+            ![
+              MifareClassicState.checkKeysOngoing,
+              MifareClassicState.recoveryOngoing,
+              MifareClassicState.dumpOngoing,
+            ].contains(widget.mfcInfo.state)) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: saveKeyProfile,
+            icon: const Icon(Icons.key),
+            label: Text(featureStrings.saveKeyProfile),
+          ),
+        ],
         if (widget.mfcInfo.recovery?.error != "") ...[
           const SizedBox(height: 16),
           ErrorMessage(errorMessage: widget.mfcInfo.recovery!.error),
@@ -163,75 +373,68 @@ class CardReaderState extends State<MifareClassicHelper> {
         if (widget.mfcInfo.state == MifareClassicState.recovery ||
             widget.mfcInfo.state == MifareClassicState.recoveryOngoing)
           _ResponsiveButtonGroup(children: [
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: (widget.mfcInfo.state ==
-                              MifareClassicState.recovery)
-                          ? () async {
-                              setState(() {
-                                widget.mfcInfo.state =
-                                    MifareClassicState.recoveryOngoing;
-                              });
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
+                  ? () async {
+                      setState(() {
+                        widget.mfcInfo.state =
+                            MifareClassicState.recoveryOngoing;
+                      });
 
-                              await widget.mfcInfo.recovery?.recoverKeys();
+                      await widget.mfcInfo.recovery?.recoverKeys();
 
-                              if (widget.mfcInfo.recovery!.error.isNotEmpty) {
-                                setState(() {
-                                  widget.mfcInfo.state =
-                                      MifareClassicState.recovery;
-                                });
-                              } else {
-                                setState(() {
-                                  widget.mfcInfo.state =
-                                      MifareClassicState.dump;
-                                });
-                              }
-                            }
-                          : null,
-                      style: customCardButtonStyle(appState),
-                      child: Text(localizations.recover_keys),
-                    ),
-                    if (widget.allowSave) ...[
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: (widget.mfcInfo.state ==
-                                MifareClassicState.recovery)
-                            ? () async {
-                                setState(() {
-                                  widget.mfcInfo.state =
-                                      MifareClassicState.dumpOngoing;
-                                });
+                      if (widget.mfcInfo.recovery!.error.isNotEmpty) {
+                        setState(() {
+                          widget.mfcInfo.state = MifareClassicState.recovery;
+                        });
+                      } else {
+                        setState(() {
+                          widget.mfcInfo.state = MifareClassicState.dump;
+                        });
+                      }
+                    }
+                  : null,
+              style: customCardButtonStyle(appState),
+              child: Text(localizations.recover_keys),
+            ),
+            if (widget.allowSave) ...[
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
+                    ? () async {
+                        setState(() {
+                          widget.mfcInfo.state = MifareClassicState.dumpOngoing;
+                        });
 
-                                try {
-                                  await widget.mfcInfo.recovery?.dumpData();
+                        try {
+                          await widget.mfcInfo.recovery?.dumpData();
 
-                                  setState(() {
-                                    widget.mfcInfo.recovery?.dumpProgress = 0;
-                                    widget.mfcInfo.state =
-                                        MifareClassicState.save;
-                                  });
-                                } catch (_) {
-                                  setState(() {
-                                    widget.mfcInfo.recovery?.error =
-                                        localizations.recovery_error_dump_data;
-                                    widget.mfcInfo.state =
-                                        MifareClassicState.dump;
-                                  });
-                                }
-                              }
-                            : null,
-                        style: customCardButtonStyle(appState),
-                        child: Text(localizations.dump_partial_data),
-                      )
-                    ],
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await exportFoundKeys();
-                      },
-                      style: customCardButtonStyle(appState),
-                      child: Text(localizations.export_to_dictionary),
-                    ),
+                          setState(() {
+                            widget.mfcInfo.recovery?.dumpProgress = 0;
+                            widget.mfcInfo.state = MifareClassicState.save;
+                          });
+                        } catch (_) {
+                          setState(() {
+                            widget.mfcInfo.recovery?.error =
+                                localizations.recovery_error_dump_data;
+                            widget.mfcInfo.state = MifareClassicState.dump;
+                          });
+                        }
+                      }
+                    : null,
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.dump_partial_data),
+              )
+            ],
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: () async {
+                await exportFoundKeys();
+              },
+              style: customCardButtonStyle(appState),
+              child: Text(localizations.export_to_dictionary),
+            ),
           ]),
         if (widget.mfcInfo.state == MifareClassicState.checkKeys ||
             widget.mfcInfo.state == MifareClassicState.checkKeysOngoing)
@@ -252,6 +455,52 @@ class CardReaderState extends State<MifareClassicHelper> {
                           },
                           controlAffinity: ListTileControlAffinity.leading,
                         ))),
+                const SizedBox(height: 8),
+                Text(featureStrings.assignedKeyProfile),
+                const SizedBox(height: 4),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 340,
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value:
+                            widget.mfcInfo.recovery?.selectedKeyProfile?.id ??
+                                '',
+                        items: [
+                          DropdownMenuItem<String>(
+                            value: '',
+                            child: Text(localizations.empty),
+                          ),
+                          ...widget.mfcInfo.recovery!.keyProfiles.map(
+                            (profile) => DropdownMenuItem<String>(
+                              value: profile.id,
+                              child: Text(
+                                '${profile.name} (${profile.keyCount} ${localizations.keys.toLowerCase()})'
+                                '${profile.uid == null ? '' : ' · UID ${profile.uid}'}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (profileId) {
+                          setState(() {
+                            if (profileId == null || profileId.isEmpty) {
+                              widget.mfcInfo.recovery?.selectedKeyProfile =
+                                  null;
+                              return;
+                            }
+                            widget.mfcInfo.recovery?.selectedKeyProfile =
+                                widget.mfcInfo.recovery!.keyProfiles.firstWhere(
+                                    (profile) => profile.id == profileId);
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Text(localizations.additional_key_dict),
                 const SizedBox(height: 4),
@@ -289,6 +538,12 @@ class CardReaderState extends State<MifareClassicHelper> {
                       });
 
                       try {
+                        if (!await _confirmSelectedProfileUid()) {
+                          setState(() {
+                            widget.mfcInfo.state = MifareClassicState.checkKeys;
+                          });
+                          return;
+                        }
                         await widget.mfcInfo.recovery!.checkKeys(
                             skipDefaultDictionary: skipDefaultDictionary);
 
@@ -331,95 +586,92 @@ class CardReaderState extends State<MifareClassicHelper> {
                 widget.mfcInfo.state == MifareClassicState.dumpOngoing) &&
             widget.allowSave)
           _ResponsiveButtonGroup(children: [
-                ElevatedButton(
-                  onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
-                      ? () async {
-                          setState(() {
-                            widget.mfcInfo.state =
-                                MifareClassicState.dumpOngoing;
-                          });
+            ElevatedButton(
+              onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
+                  ? () async {
+                      setState(() {
+                        widget.mfcInfo.state = MifareClassicState.dumpOngoing;
+                      });
 
-                          try {
-                            await widget.mfcInfo.recovery?.dumpData();
+                      try {
+                        await widget.mfcInfo.recovery?.dumpData();
 
-                            setState(() {
-                              widget.mfcInfo.recovery?.dumpProgress = 0;
-                              widget.mfcInfo.state = MifareClassicState.save;
-                            });
-                          } catch (_) {
-                            setState(() {
-                              widget.mfcInfo.recovery?.error =
-                                  localizations.recovery_error_dump_data;
-                              widget.mfcInfo.state = MifareClassicState.dump;
-                            });
-                          }
-                        }
-                      : null,
-                  style: customCardButtonStyle(appState),
-                  child: Text(localizations.dump_card),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    await exportFoundKeys();
-                  },
-                  style: customCardButtonStyle(appState),
-                  child: Text(localizations.export_to_dictionary),
-                ),
+                        setState(() {
+                          widget.mfcInfo.recovery?.dumpProgress = 0;
+                          widget.mfcInfo.state = MifareClassicState.save;
+                        });
+                      } catch (_) {
+                        setState(() {
+                          widget.mfcInfo.recovery?.error =
+                              localizations.recovery_error_dump_data;
+                          widget.mfcInfo.state = MifareClassicState.dump;
+                        });
+                      }
+                    }
+                  : null,
+              style: customCardButtonStyle(appState),
+              child: Text(localizations.dump_card),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: () async {
+                await exportFoundKeys();
+              },
+              style: customCardButtonStyle(appState),
+              child: Text(localizations.export_to_dictionary),
+            ),
           ]),
       ],
       if (widget.mfcInfo.state == MifareClassicState.save && widget.allowSave)
-        _ResponsiveButtonGroup(
-            centerOnly: true,
-            children: [
-              ElevatedButton(
-                onPressed: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text(localizations.enter_name_of_card),
-                        content: TextField(
-                          onChanged: (value) {
-                            setState(() {
-                              dumpName = value;
-                            });
-                          },
-                        ),
-                        actions: [
-                          ElevatedButton(
-                            onPressed: () async {
-                              await saveCard();
-                              if (context.mounted) {
-                                Navigator.pop(context);
-                              }
-                            },
-                            child: Text(localizations.ok),
-                          ),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(
-                                  context); // Close the modal without saving
-                            },
-                            child: Text(localizations.cancel),
-                          ),
-                        ],
-                      );
-                    },
+        _ResponsiveButtonGroup(centerOnly: true, children: [
+          ElevatedButton(
+            onPressed: () async {
+              await showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: Text(localizations.enter_name_of_card),
+                    content: TextField(
+                      onChanged: (value) {
+                        setState(() {
+                          dumpName = value;
+                        });
+                      },
+                    ),
+                    actions: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          await saveCard();
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                          }
+                        },
+                        child: Text(localizations.ok),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(
+                              context); // Close the modal without saving
+                        },
+                        child: Text(localizations.cancel),
+                      ),
+                    ],
                   );
                 },
-                style: customCardButtonStyle(appState),
-                child: Text(localizations.save),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: () async {
-                  await saveCard(bin: true);
-                },
-                style: customCardButtonStyle(appState),
-                child: Text(localizations.save_as(".bin")),
-              ),
-            ]),
+              );
+            },
+            style: customCardButtonStyle(appState),
+            child: Text(localizations.save),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () async {
+              await saveCard(bin: true);
+            },
+            style: customCardButtonStyle(appState),
+            child: Text(localizations.save_as(".bin")),
+          ),
+        ]),
     ]);
   }
 }
