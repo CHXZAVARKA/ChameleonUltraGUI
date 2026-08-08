@@ -11,29 +11,52 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+class _BinExportTestHarness {
+  _BinExportTestHarness._({
+    required this.tester,
+    required this.preferences,
+    required this.appState,
+    required this.localizations,
+    required this.filePickerCalls,
+  });
 
-  testWidgets('partial MIFARE Classic recovery cannot be exported as BIN',
-      (tester) async {
-    const filePickerChannel = MethodChannel(
-      'miguelruivo.flutter.plugins.filepicker',
-      StandardMethodCodec(),
-    );
+  static const _filePickerChannel = MethodChannel(
+    'miguelruivo.flutter.plugins.filepicker',
+    StandardMethodCodec(),
+  );
+  static const _wakelockChannel =
+      MethodChannel('dev.fluttercommunity.plus/wakelock');
+
+  final WidgetTester tester;
+  final SharedPreferencesProvider preferences;
+  final ChameleonGUIState appState;
+  final AppLocalizations localizations;
+  final List<MethodCall> filePickerCalls;
+
+  static Future<_BinExportTestHarness> create(
+    WidgetTester tester, {
+    String? filePickerResult,
+  }) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     final filePickerCalls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(filePickerChannel, (call) async {
-      filePickerCalls.add(call);
-      return '/tmp/partial.bin';
-    });
-    addTearDown(() => TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(filePickerChannel, null));
 
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/wakelock'),
+    if (filePickerResult != null) {
+      messenger.setMockMethodCallHandler(_filePickerChannel, (call) async {
+        filePickerCalls.add(call);
+        return filePickerResult;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(_filePickerChannel, null),
+      );
+    }
+
+    messenger.setMockMethodCallHandler(
+      _wakelockChannel,
       (call) async => null,
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(_wakelockChannel, null),
     );
 
     SharedPreferences.setMockInitialValues({});
@@ -42,21 +65,34 @@ void main() {
     final appState = ChameleonGUIState(preferences);
     final localizations =
         await AppLocalizations.delegate.load(const Locale('en'));
+
+    return _BinExportTestHarness._(
+      tester: tester,
+      preferences: preferences,
+      appState: appState,
+      localizations: localizations,
+      filePickerCalls: filePickerCalls,
+    );
+  }
+
+  Future<MifareClassicRecovery> pumpRecovery({
+    required MifareClassicType type,
+    required bool dumpComplete,
+    required List<Uint8List> cardData,
+    bool isEV1 = false,
+  }) async {
     final recovery = MifareClassicRecovery(
       appState: appState,
       update: () {},
       localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
-      dumpComplete: false,
-      cardData: List.generate(
-        256,
-        (block) => block < 64
-            ? Uint8List.fromList(List.filled(16, block))
-            : Uint8List(0),
-      ),
+      mifareClassicType: type,
+      isMifareClassicEV1: isEV1,
+      dumpComplete: dumpComplete,
+      cardData: cardData,
     );
     final info = MifareClassicInfo(
-      type: MifareClassicType.m1k,
+      type: type,
+      isEV1: isEV1,
       state: MifareClassicState.save,
     )..recovery = recovery;
 
@@ -85,10 +121,34 @@ void main() {
     );
     await tester.pump();
 
+    return recovery;
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('partial MIFARE Classic recovery cannot be exported as BIN',
+      (tester) async {
+    final harness = await _BinExportTestHarness.create(
+      tester,
+      filePickerResult: '/tmp/partial.bin',
+    );
+    await harness.pumpRecovery(
+      type: MifareClassicType.m1k,
+      dumpComplete: false,
+      cardData: List.generate(
+        256,
+        (block) => block < 64
+            ? Uint8List.fromList(List.filled(16, block))
+            : Uint8List(0),
+      ),
+    );
+
     await tester.tap(find.text('Save as .bin'));
     await tester.pump();
 
-    expect(filePickerCalls, isEmpty);
+    expect(harness.filePickerCalls, isEmpty);
     expect(
       find.text(
         'BIN export requires a complete MIFARE Classic dump. '
@@ -123,74 +183,20 @@ void main() {
     testWidgets(
         'complete MIFARE Classic recovery with $malformation cannot be exported as BIN',
         (tester) async {
-      const filePickerChannel = MethodChannel(
-        'miguelruivo.flutter.plugins.filepicker',
-        StandardMethodCodec(),
+      final harness = await _BinExportTestHarness.create(
+        tester,
+        filePickerResult: '/tmp/invalid.bin',
       );
-      final filePickerCalls = <MethodCall>[];
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(filePickerChannel, (call) async {
-        filePickerCalls.add(call);
-        return '/tmp/invalid.bin';
-      });
-      addTearDown(() => TestDefaultBinaryMessengerBinding
-          .instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(filePickerChannel, null));
-
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('dev.fluttercommunity.plus/wakelock'),
-        (call) async => null,
-      );
-
-      SharedPreferences.setMockInitialValues({});
-      final preferences = SharedPreferencesProvider();
-      await preferences.load();
-      final appState = ChameleonGUIState(preferences);
-      final localizations =
-          await AppLocalizations.delegate.load(const Locale('en'));
-      final recovery = MifareClassicRecovery(
-        appState: appState,
-        update: () {},
-        localizations: localizations,
-        mifareClassicType: MifareClassicType.m1k,
+      await harness.pumpRecovery(
+        type: MifareClassicType.m1k,
         dumpComplete: true,
         cardData: cardData,
       );
-      final info = MifareClassicInfo(
-        type: MifareClassicType.m1k,
-        state: MifareClassicState.save,
-      )..recovery = recovery;
-
-      await tester.pumpWidget(
-        ChangeNotifierProvider<ChameleonGUIState>.value(
-          value: appState,
-          child: MaterialApp(
-            locale: const Locale('en'),
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Scaffold(
-              body: SingleChildScrollView(
-                child: MifareClassicHelper(
-                  hfInfo: HFCardInfo(
-                    uid: '01 02 03 04',
-                    sak: '08',
-                    atqa: '00 04',
-                    ats: localizations.no,
-                  ),
-                  mfcInfo: info,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
 
       await tester.tap(find.text('Save as .bin'));
       await tester.pump();
 
-      expect(filePickerCalls, isEmpty);
+      expect(harness.filePickerCalls, isEmpty);
       expect(
         find.text(
           'BIN export requires a complete MIFARE Classic dump. '
@@ -203,23 +209,9 @@ void main() {
 
   testWidgets('partial MIFARE Classic recovery can be saved in the app',
       (tester) async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/wakelock'),
-      (call) async => null,
-    );
-
-    SharedPreferences.setMockInitialValues({});
-    final preferences = SharedPreferencesProvider();
-    await preferences.load();
-    final appState = ChameleonGUIState(preferences);
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final recovery = MifareClassicRecovery(
-      appState: appState,
-      update: () {},
-      localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
+    final harness = await _BinExportTestHarness.create(tester);
+    final recovery = await harness.pumpRecovery(
+      type: MifareClassicType.m1k,
       dumpComplete: false,
       cardData: List.generate(
         256,
@@ -228,35 +220,6 @@ void main() {
             : Uint8List(0),
       ),
     );
-    final info = MifareClassicInfo(
-      type: MifareClassicType.m1k,
-      state: MifareClassicState.save,
-    )..recovery = recovery;
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<ChameleonGUIState>.value(
-        value: appState,
-        child: MaterialApp(
-          locale: const Locale('en'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: MifareClassicHelper(
-                hfInfo: HFCardInfo(
-                  uid: '01 02 03 04',
-                  sak: '08',
-                  atqa: '00 04',
-                  ats: localizations.no,
-                ),
-                mfcInfo: info,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
 
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
@@ -264,7 +227,7 @@ void main() {
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
 
-    final savedCard = preferences.getCards().single;
+    final savedCard = harness.preferences.getCards().single;
     expect(savedCard.name, 'Partial recovery');
     expect(savedCard.data, recovery.cardData);
     expect(savedCard.extraData.mifareClassicDumpComplete, isFalse);
@@ -273,32 +236,10 @@ void main() {
   testWidgets(
       'complete MIFARE Classic recovery exports unchanged BIN bytes for every geometry',
       (tester) async {
-    const filePickerChannel = MethodChannel(
-      'miguelruivo.flutter.plugins.filepicker',
-      StandardMethodCodec(),
+    final harness = await _BinExportTestHarness.create(
+      tester,
+      filePickerResult: '/tmp/complete.bin',
     );
-    final filePickerCalls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(filePickerChannel, (call) async {
-      filePickerCalls.add(call);
-      return '/tmp/complete.bin';
-    });
-    addTearDown(() => TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(filePickerChannel, null));
-
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/wakelock'),
-      (call) async => null,
-    );
-
-    SharedPreferences.setMockInitialValues({});
-    final preferences = SharedPreferencesProvider();
-    await preferences.load();
-    final appState = ChameleonGUIState(preferences);
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
     const cases = [
       (
         name: 'Mini',
@@ -337,12 +278,9 @@ void main() {
         geometryCase.blockCount * 16,
         (index) => (index % 251) + 1,
       ));
-      final recovery = MifareClassicRecovery(
-        appState: appState,
-        update: () {},
-        localizations: localizations,
-        mifareClassicType: geometryCase.type,
-        isMifareClassicEV1: geometryCase.isEV1,
+      await harness.pumpRecovery(
+        type: geometryCase.type,
+        isEV1: geometryCase.isEV1,
         dumpComplete: true,
         cardData: List.generate(
           256,
@@ -355,46 +293,17 @@ void main() {
               : Uint8List(0),
         ),
       );
-      final info = MifareClassicInfo(
-        type: geometryCase.type,
-        isEV1: geometryCase.isEV1,
-        state: MifareClassicState.save,
-      )..recovery = recovery;
-
-      await tester.pumpWidget(
-        ChangeNotifierProvider<ChameleonGUIState>.value(
-          value: appState,
-          child: MaterialApp(
-            locale: const Locale('en'),
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Scaffold(
-              body: SingleChildScrollView(
-                child: MifareClassicHelper(
-                  hfInfo: HFCardInfo(
-                    uid: '01 02 03 04',
-                    sak: '08',
-                    atqa: '00 04',
-                    ats: localizations.no,
-                  ),
-                  mfcInfo: info,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
 
       await tester.tap(find.text('Save as .bin'));
       await tester.pump();
 
-      final arguments = filePickerCalls.last.arguments as Map;
-      expect(filePickerCalls.last.method, 'save', reason: geometryCase.name);
+      final arguments = harness.filePickerCalls.last.arguments as Map;
+      expect(harness.filePickerCalls.last.method, 'save',
+          reason: geometryCase.name);
       expect(arguments['fileName'], '01020304.bin', reason: geometryCase.name);
       expect(arguments['bytes'], expectedBin, reason: geometryCase.name);
     }
 
-    expect(filePickerCalls, hasLength(cases.length));
+    expect(harness.filePickerCalls, hasLength(cases.length));
   });
 }
