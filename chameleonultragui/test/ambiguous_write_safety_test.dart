@@ -111,6 +111,55 @@ void main() {
     expect(communicator.authenticatedWrites, 1);
   });
 
+  test('Gen2 full write stops after an ambiguous trailer write', () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _AmbiguousWriteCommunicator(
+      logger,
+      returnScannedCard: true,
+    );
+    final helper = MifareClassicGen2WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+    );
+
+    final result = await helper.writeData(
+      _classicCardWithData([
+        Uint8List(16),
+        Uint8List(16),
+        Uint8List(16),
+        Uint8List.fromList(List.filled(16, 0xFF)),
+      ]),
+      (_) {},
+    );
+
+    expect(result, isFalse);
+    expect(communicator.authenticatedWrites, 1);
+  });
+
+  test('Gen2 full write may try another key after an explicit rejection',
+      () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _AmbiguousWriteCommunicator(
+      logger,
+      returnScannedCard: true,
+      rejectFirstAuthenticatedWrite: true,
+    );
+    final helper = MifareClassicGen2WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+    );
+
+    final result = await helper.writeData(
+      _classicCardWithData([Uint8List(16)]),
+      (_) {},
+    );
+
+    expect(result, isTrue);
+    expect(communicator.authenticatedWrites, 2);
+  });
+
   test('Gen3 does not retry block 0 after an issued write loses its response',
       () async {
     final logger = Logger(output: MemoryOutput());
@@ -129,6 +178,31 @@ void main() {
 
     expect(result, isFalse);
     expect(communicator.gen3Writes, 1);
+  });
+
+  test('Gen3 full write stops after an ambiguous block-zero write', () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _AmbiguousWriteCommunicator(
+      logger,
+      returnScannedCard: true,
+    );
+    final helper = MifareClassicGen3WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+    );
+
+    final result = await helper.writeData(
+      _classicCardWithData([
+        Uint8List(16),
+        Uint8List.fromList(List.filled(16, 0x01)),
+      ]),
+      (_) {},
+    );
+
+    expect(result, isFalse);
+    expect(communicator.gen3Writes, 1);
+    expect(communicator.authenticatedWrites, 0);
   });
 
   test('Gen3 skips read-back after its captured session becomes stale',
@@ -266,6 +340,13 @@ CardSave _classicCard() => CardSave(
       tag: TagType.mifare1K,
     );
 
+CardSave _classicCardWithData(List<Uint8List> data) => CardSave(
+      uid: '01020304',
+      name: 'Classic',
+      tag: TagType.mifare1K,
+      data: data,
+    );
+
 CardSave _em410xCard() => CardSave(
       uid: '0102030405',
       name: 'EM410X',
@@ -279,12 +360,16 @@ class _AmbiguousWriteCommunicator extends ChameleonCommunicator {
     this.rejectFirstClassicWrite = false,
     this.completeGen3Write = false,
     this.afterGen3Write,
+    this.returnScannedCard = false,
+    this.rejectFirstAuthenticatedWrite = false,
   });
 
   final bool emptyClassicWriteResponse;
   final bool rejectFirstClassicWrite;
   final bool completeGen3Write;
   final void Function()? afterGen3Write;
+  final bool returnScannedCard;
+  final bool rejectFirstAuthenticatedWrite;
   int classicRawWrites = 0;
   int authenticatedWrites = 0;
   int gen3Writes = 0;
@@ -334,12 +419,23 @@ class _AmbiguousWriteCommunicator extends ChameleonCommunicator {
     Uint8List data,
   ) async {
     authenticatedWrites++;
+    if (rejectFirstAuthenticatedWrite) {
+      return authenticatedWrites > 1;
+    }
     throw StateError('write response lost');
   }
 
   @override
   Future<CardData?> scan14443aTag() async {
     scans++;
+    if (returnScannedCard) {
+      return CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x08,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+        ats: Uint8List(0),
+      );
+    }
     return null;
   }
 }

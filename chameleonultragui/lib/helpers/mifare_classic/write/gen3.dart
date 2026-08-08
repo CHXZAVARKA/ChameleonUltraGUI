@@ -10,6 +10,10 @@ import 'package:chameleonultragui/sharedprefsprovider.dart';
 class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
   bool _gen3WriteWasAmbiguous = false;
 
+  @override
+  bool get lastWriteWasAmbiguous =>
+      _gen3WriteWasAmbiguous || super.lastWriteWasAmbiguous;
+
   MifareClassicGen3WriteHelper(super.communicator, {required super.recovery});
 
   @override

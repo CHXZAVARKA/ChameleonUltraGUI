@@ -174,6 +174,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
         cleanSectors[sector] = await writeBlockModifier(
             card, block, data[block],
             tryBothKeys: true);
+        if (lastWriteWasAmbiguous) return false;
         if (!operationCanContinue) return false;
         if (cleanSectors[sector]) {
           // Update keys to match the newly written trailer,
@@ -197,10 +198,11 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
 
         if (data.length > blockToWrite && data[blockToWrite].isNotEmpty) {
           if (!operationCanContinue) return false;
-          if (!(await writeBlockModifier(card, blockToWrite, data[blockToWrite],
-                      useGenericKey: cleanSectors[sector], tryBothKeys: true) &&
-                  cleanSectors[sector]) &&
-              blockToWrite != 0) {
+          final writeSucceeded = await writeBlockModifier(
+              card, blockToWrite, data[blockToWrite],
+              useGenericKey: cleanSectors[sector], tryBothKeys: true);
+          if (lastWriteWasAmbiguous) return false;
+          if (!(writeSucceeded && cleanSectors[sector]) && blockToWrite != 0) {
             failedBlocks.add(blockToWrite);
           }
 
