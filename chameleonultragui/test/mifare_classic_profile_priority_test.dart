@@ -295,6 +295,7 @@ class _RecordingCommunicator extends ChameleonCommunicator {
 class _TestSerial extends AbstractSerial {
   _TestSerial({required super.log}) {
     connectionType = ConnectionType.usb;
+    connected = true;
   }
 
   @override
