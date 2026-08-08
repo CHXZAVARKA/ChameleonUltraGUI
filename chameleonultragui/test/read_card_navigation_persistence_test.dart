@@ -18,7 +18,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('Read Card state survives switching tabs', (tester) async {
+  testWidgets('Read Card keeps running while another tab is visible', (
+    tester,
+  ) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/wakelock'),
@@ -92,9 +94,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.auto_awesome_motion));
     await tester.pumpAndSettle();
     expect(find.byType(ReadCardPage), findsNothing);
-    expect(initialState.mounted, isFalse);
-    expect(hfScanTimer.isActive, isFalse);
-    expect(lfScanTimer.isActive, isFalse);
+    expect(find.byType(ReadCardPage, skipOffstage: false), findsOneWidget);
+    expect(initialState.mounted, isTrue);
+    expect(hfScanTimer.isActive, isTrue);
+    expect(lfScanTimer.isActive, isTrue);
 
     recovery.update();
     await tester.pump();
@@ -106,18 +109,22 @@ void main() {
     final restoredState = tester.state<ReadCardPageState>(
       find.byType(ReadCardPage),
     );
+    expect(restoredState, same(initialState));
     expect(restoredState.hfInfo.uid, '01 02 03 04');
     expect(restoredState.mfcInfo.recovery, same(recovery));
     expect(recovery.update, restoredState.updateMifareClassicRecovery);
-    expect(restoredState.isContinuousHFScan, isFalse);
-    expect(restoredState.isContinuousLFScan, isFalse);
-    expect(restoredState.scanInProgress, isFalse);
-    expect(restoredState.hfScanTimer, isNull);
-    expect(restoredState.lfScanTimer, isNull);
+    expect(restoredState.isContinuousHFScan, isTrue);
+    expect(restoredState.isContinuousLFScan, isTrue);
+    expect(restoredState.scanInProgress, isTrue);
+    expect(restoredState.hfScanTimer, same(hfScanTimer));
+    expect(restoredState.lfScanTimer, same(lfScanTimer));
+    expect(hfScanTimer.isActive, isTrue);
+    expect(lfScanTimer.isActive, isTrue);
   });
 
-  testWidgets('pending HF read cannot update the session after navigation',
-      (tester) async {
+  testWidgets('pending HF read updates the session while Read Card is hidden', (
+    tester,
+  ) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/wakelock'),
@@ -153,6 +160,9 @@ void main() {
     await tester.pump();
     await tester.tap(find.byIcon(Icons.sensors));
     await tester.pumpAndSettle();
+    final initialState = tester.state<ReadCardPageState>(
+      find.byType(ReadCardPage),
+    );
 
     final originalInfo = HFCardInfo(uid: 'persisted');
     appState.readCardSession.hfInfo = originalInfo;
@@ -162,22 +172,35 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.auto_awesome_motion));
     await tester.pumpAndSettle();
-    communicator.completeScan(CardData(
-      uid: Uint8List.fromList([1, 2, 3, 4]),
-      sak: 0x08,
-      atqa: Uint8List.fromList([0x00, 0x04]),
-      ats: Uint8List(0),
-    ));
+    expect(find.byType(ReadCardPage), findsNothing);
+    expect(initialState.mounted, isTrue);
+    communicator.completeScan(
+      CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x08,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+        ats: Uint8List(0),
+      ),
+    );
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(communicator.detectCalls, 0);
-    expect(appState.readCardSession.hfInfo, same(originalInfo));
-    expect(appState.readCardSession.hfInfo.uid, 'persisted');
+    expect(communicator.detectCalls, 1);
+    expect(appState.readCardSession.hfInfo, isNot(same(originalInfo)));
+    expect(appState.readCardSession.hfInfo.uid, '01 02 03 04');
+
+    await tester.tap(find.byIcon(Icons.sensors));
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<ReadCardPageState>(find.byType(ReadCardPage)),
+      same(initialState),
+    );
+    expect(find.textContaining('01 02 03 04'), findsOneWidget);
   });
 
-  testWidgets('pending LF read cannot update the session after navigation',
-      (tester) async {
+  testWidgets('pending LF read updates the session while Read Card is hidden', (
+    tester,
+  ) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/wakelock'),
@@ -213,6 +236,9 @@ void main() {
     await tester.pump();
     await tester.tap(find.byIcon(Icons.sensors));
     await tester.pumpAndSettle();
+    final initialState = tester.state<ReadCardPageState>(
+      find.byType(ReadCardPage),
+    );
 
     await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
     await tester.pump();
@@ -221,14 +247,89 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.auto_awesome_motion));
     await tester.pumpAndSettle();
-    communicator.completeRead(null);
+    expect(find.byType(ReadCardPage), findsNothing);
+    expect(initialState.mounted, isTrue);
+    final card = EM410XCard.fromUID('0102030405');
+    communicator.completeRead(card);
     await tester.pump();
 
     expect(tester.takeException(), isNull);
     expect(communicator.followUpCalls, 0);
     expect(appState.readCardSession.lfInfo, same(pendingInfo));
-    expect(appState.readCardSession.lfInfo.card, isNull);
+    expect(appState.readCardSession.lfInfo.card, same(card));
     expect(appState.readCardSession.lfInfo.cardExist, isTrue);
+
+    await tester.tap(find.byIcon(Icons.sensors));
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<ReadCardPageState>(find.byType(ReadCardPage)),
+      same(initialState),
+    );
+    expect(find.textContaining('01 02 03 04 05'), findsOneWidget);
+  });
+
+  testWidgets('disconnect disposes hidden Read Card and cancels its timers', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/wakelock'),
+      (call) async => null,
+    );
+
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+
+    final logger = Logger(output: MemoryOutput());
+    final connector = EmulatorSerial(log: logger)
+      ..connected = true
+      ..device = ChameleonDevice.ultra
+      ..connectionType = ConnectionType.usb;
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = connector
+      ..communicator = ChameleonCommunicator(logger, port: connector);
+
+    tester.view.physicalSize = const Size(3000, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MainPage(sharedPreferencesProvider: preferences),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.sensors));
+    await tester.pumpAndSettle();
+
+    final readCardState = tester.state<ReadCardPageState>(
+      find.byType(ReadCardPage),
+    );
+    final hfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
+    final lfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
+    addTearDown(hfScanTimer.cancel);
+    addTearDown(lfScanTimer.cancel);
+    readCardState
+      ..isContinuousHFScan = true
+      ..isContinuousLFScan = true
+      ..hfScanTimer = hfScanTimer
+      ..lfScanTimer = lfScanTimer;
+
+    await tester.tap(find.byIcon(Icons.auto_awesome_motion));
+    await tester.pumpAndSettle();
+    expect(readCardState.mounted, isTrue);
+
+    await appState.disconnect(manual: true);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ReadCardPage, skipOffstage: false), findsNothing);
+    expect(readCardState.mounted, isFalse);
+    expect(hfScanTimer.isActive, isFalse);
+    expect(lfScanTimer.isActive, isFalse);
   });
 }
 
@@ -251,7 +352,28 @@ class _PendingHFCommunicator extends ChameleonCommunicator {
   @override
   Future<bool> detectMf1Support() async {
     detectCalls++;
-    return true;
+    return false;
+  }
+
+  @override
+  Future<Uint8List> send14ARaw(
+    Uint8List data, {
+    int respTimeoutMs = 100,
+    int? bitLen,
+    bool activateRfField = true,
+    bool waitResponse = true,
+    bool appendCrc = true,
+    bool autoSelect = true,
+    bool keepRfField = false,
+    bool checkResponseCrc = true,
+  }) async {
+    if (data.first == 0x60) {
+      return Uint8List.fromList([0, 0, 4, 2, 1, 0, 0x0F, 3]);
+    }
+    if (data.first == 0x3C) {
+      return Uint8List(32);
+    }
+    return Uint8List(0);
   }
 
   void completeScan(CardData? card) => _scanResult.complete(card);

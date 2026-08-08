@@ -206,6 +206,9 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
+    const readCardPage = ReadCardPage(
+      key: ValueKey('read-card-page'),
+    );
     appState._sharedPreferencesProvider = widget.sharedPreferencesProvider;
     appState.log ??= getLogger(appState);
     appState.connector ??= getConnector(appState);
@@ -258,7 +261,7 @@ class _MainPageState extends State<MainPage> {
         page = const SavedCardsPage();
         break;
       case 3:
-        page = const ReadCardPage();
+        page = readCardPage;
         break;
       case 4:
         page = const WriteCardPage();
@@ -279,6 +282,19 @@ class _MainPageState extends State<MainPage> {
     try {
       WakelockPlus.toggle(enable: page is FlashingPage);
     } catch (_) {}
+
+    final pageContent = appState.connector!.connected
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              Offstage(
+                offstage: selectedIndex != 3,
+                child: readCardPage,
+              ),
+              if (selectedIndex != 3) page,
+            ],
+          )
+        : page;
 
     return MaterialApp(
       title: 'Chameleon Ultra GUI', // App Name
@@ -393,7 +409,7 @@ class _MainPageState extends State<MainPage> {
                   Expanded(
                     child: Container(
                       color: Theme.of(context).colorScheme.primaryContainer,
-                      child: page,
+                      child: pageContent,
                     ),
                   ),
                 ],
