@@ -26,6 +26,12 @@ class ReadCardPage extends StatefulWidget {
   ReadCardPageState createState() => ReadCardPageState();
 }
 
+class _ContinuousScanToken {
+  const _ContinuousScanToken(this.session);
+
+  final ConnectedDeviceSession session;
+}
+
 class ReadCardPageState extends State<ReadCardPage> {
   late ChameleonGUIState _appState;
   late ReadCardSession _session;
@@ -49,6 +55,8 @@ class ReadCardPageState extends State<ReadCardPage> {
   bool isContinuousLFScan = false;
   bool scanInProgress = false;
   ConnectedDeviceSession? _manualReadSession;
+  _ContinuousScanToken? _continuousHFScan;
+  _ContinuousScanToken? _continuousLFScan;
   Timer? hfScanTimer;
   Timer? lfScanTimer;
 
@@ -102,15 +110,21 @@ class ReadCardPageState extends State<ReadCardPage> {
 
   Future<bool> _readAndCommitHFInfoUnderLease({
     required ConnectedDeviceSession session,
+    bool Function()? canContinue,
   }) async {
-    if (!mounted || !session.isCurrent) {
+    bool mayContinue() =>
+        mounted && session.isCurrent && (canContinue?.call() ?? true);
+    if (!mayContinue()) {
       return false;
     }
     final info = await readHFInfo(
       context,
       updateMifareClassicRecovery,
-      canContinue: () => mounted && session.isCurrent,
+      canContinue: mayContinue,
     );
+    if (!mayContinue()) {
+      return false;
+    }
     return _commitHFInfo(
       info,
       session,
@@ -151,8 +165,13 @@ class ReadCardPageState extends State<ReadCardPage> {
     }
   }
 
-  Future<bool> _readLFInfoUnderLease(ConnectedDeviceSession session) async {
-    if (!mounted || !session.isCurrent) {
+  Future<bool> _readLFInfoUnderLease(
+    ConnectedDeviceSession session, {
+    bool Function()? canContinue,
+  }) async {
+    bool mayContinue() =>
+        mounted && session.isCurrent && (canContinue?.call() ?? true);
+    if (!mayContinue()) {
       return false;
     }
     final communicator = session.communicator;
@@ -162,45 +181,45 @@ class ReadCardPageState extends State<ReadCardPage> {
     });
 
     if (!await communicator.isReaderDeviceMode()) {
-      if (!mounted || !session.isCurrent) {
+      if (!mayContinue()) {
         return false;
       }
       await communicator.setReaderDeviceMode(true);
     }
-    if (!mounted || !session.isCurrent) {
+    if (!mayContinue()) {
       return false;
     }
 
     LFCard? card = await communicator.readEM410X();
-    if (!mounted || !session.isCurrent) {
+    if (!mayContinue()) {
       return false;
     }
     if (card == null) {
       card = await communicator.readHIDProx();
-      if (!mounted || !session.isCurrent) {
+      if (!mayContinue()) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readViking();
-      if (!mounted || !session.isCurrent) {
+      if (!mayContinue()) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readPac();
-      if (!mounted || !session.isCurrent) {
+      if (!mayContinue()) {
         return false;
       }
     }
     if (card == null) {
       card = await communicator.readIoProx();
-      if (!mounted || !session.isCurrent) {
+      if (!mayContinue()) {
         return false;
       }
     }
 
-    if (!mounted || !session.isCurrent) {
+    if (!mayContinue()) {
       return false;
     }
     if (card != null) {
@@ -222,68 +241,132 @@ class ReadCardPageState extends State<ReadCardPage> {
     return result.executed && result.value == true;
   }
 
-  Future<void> _runContinuousHFScanTick() async {
-    final session = ConnectedDeviceSession.capture(_appState);
-    if (session == null) {
-      stopContinuousHFScan();
+  bool _ownsContinuousScan(
+    _ContinuousScanToken token,
+    _ContinuousScanToken? currentToken,
+    bool active,
+  ) =>
+      active && identical(token, currentToken);
+
+  bool _canContinueContinuousScan(
+    _ContinuousScanToken token,
+    _ContinuousScanToken? currentToken,
+    bool active,
+  ) =>
+      mounted &&
+      _ownsContinuousScan(token, currentToken, active) &&
+      identical(token.session.appState, _appState) &&
+      token.session.isCurrent;
+
+  bool _ownsContinuousHFScan(_ContinuousScanToken token) =>
+      _ownsContinuousScan(token, _continuousHFScan, isContinuousHFScan);
+
+  bool _canContinueHFScan(_ContinuousScanToken token) =>
+      _canContinueContinuousScan(
+        token,
+        _continuousHFScan,
+        isContinuousHFScan,
+      );
+
+  Future<void> _runContinuousHFScanTick(_ContinuousScanToken token) async {
+    if (!_canContinueHFScan(token)) {
+      _stopContinuousHFScan(token);
       return;
     }
+    final session = token.session;
     try {
       final result = await _appState.rfOperations.tryRunBackground(
-        () => _readAndCommitHFInfoUnderLease(session: session),
+        () => _readAndCommitHFInfoUnderLease(
+          session: session,
+          canContinue: () => _canContinueHFScan(token),
+        ),
       );
+      if (!_ownsContinuousHFScan(token)) {
+        return;
+      }
+      if (!_canContinueHFScan(token)) {
+        _stopContinuousHFScan(token);
+        return;
+      }
       if (!result.acquired) {
         return;
       }
       if (result.value != true) {
-        stopContinuousHFScan();
+        _stopContinuousHFScan(token);
         return;
       }
       if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
-        stopContinuousHFScan();
+        _stopContinuousHFScan(token);
       }
     } catch (error, stackTrace) {
-      (_appState.log ?? _appState.communicator?.log)?.e(
+      (_appState.log ?? session.communicator.log).e(
         'Continuous HF scan failed',
         error: error,
         stackTrace: stackTrace,
       );
-      stopContinuousHFScan();
+      _stopContinuousHFScan(token);
     }
   }
 
-  Future<void> _runContinuousLFScanTick() async {
-    final session = ConnectedDeviceSession.capture(_appState);
-    if (session == null) {
-      stopContinuousLFScan();
+  bool _ownsContinuousLFScan(_ContinuousScanToken token) =>
+      _ownsContinuousScan(token, _continuousLFScan, isContinuousLFScan);
+
+  bool _canContinueLFScan(_ContinuousScanToken token) =>
+      _canContinueContinuousScan(
+        token,
+        _continuousLFScan,
+        isContinuousLFScan,
+      );
+
+  Future<void> _runContinuousLFScanTick(_ContinuousScanToken token) async {
+    if (!_canContinueLFScan(token)) {
+      _stopContinuousLFScan(token);
       return;
     }
+    final session = token.session;
     try {
       final result = await _appState.rfOperations.tryRunBackground(
-        () => _readLFInfoUnderLease(session),
+        () => _readLFInfoUnderLease(
+          session,
+          canContinue: () => _canContinueLFScan(token),
+        ),
       );
+      if (!_ownsContinuousLFScan(token)) {
+        return;
+      }
+      if (!_canContinueLFScan(token)) {
+        _stopContinuousLFScan(token);
+        return;
+      }
       if (!result.acquired) {
         return;
       }
       if (result.value != true) {
-        stopContinuousLFScan();
+        _stopContinuousLFScan(token);
         return;
       }
       if (lfInfo.cardExist && lfInfo.card != null) {
-        stopContinuousLFScan();
+        _stopContinuousLFScan(token);
       }
     } catch (error, stackTrace) {
-      (_appState.log ?? _appState.communicator?.log)?.e(
+      (_appState.log ?? session.communicator.log).e(
         'Continuous LF scan failed',
         error: error,
         stackTrace: stackTrace,
       );
-      stopContinuousLFScan();
+      _stopContinuousLFScan(token);
     }
   }
 
   Future<void> startContinuousHFScan() async {
     if (isContinuousHFScan) return;
+
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      return;
+    }
+    final token = _ContinuousScanToken(session);
+    _continuousHFScan = token;
 
     setState(() {
       isContinuousHFScan = true;
@@ -295,32 +378,51 @@ class ReadCardPageState extends State<ReadCardPage> {
     DateTime startTime = DateTime.now();
 
     hfScanTimer = Timer.periodic(scanInterval, (timer) {
-      if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
-        stopContinuousHFScan();
+      if (!_canContinueHFScan(token) ||
+          DateTime.now().difference(startTime) > maxDuration) {
+        _stopContinuousHFScan(token);
         return;
       }
 
-      unawaited(_runContinuousHFScanTick());
+      unawaited(_runContinuousHFScanTick(token));
     });
 
-    await _runContinuousHFScanTick();
+    await _runContinuousHFScanTick(token);
   }
 
   void stopContinuousHFScan() {
-    if (hfScanTimer != null) {
-      hfScanTimer?.cancel();
-      hfScanTimer = null;
+    final token = _continuousHFScan;
+    if (token != null) {
+      _stopContinuousHFScan(token);
+    }
+  }
 
-      if (mounted) {
-        setState(() {
-          isContinuousHFScan = false;
-        });
-      }
+  void _stopContinuousHFScan(_ContinuousScanToken token) {
+    if (!_ownsContinuousHFScan(token)) {
+      return;
+    }
+
+    hfScanTimer?.cancel();
+    hfScanTimer = null;
+    _continuousHFScan = null;
+    if (mounted) {
+      setState(() {
+        isContinuousHFScan = false;
+      });
+    } else {
+      isContinuousHFScan = false;
     }
   }
 
   Future<void> startContinuousLFScan() async {
     if (isContinuousLFScan) return;
+
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (session == null) {
+      return;
+    }
+    final token = _ContinuousScanToken(session);
+    _continuousLFScan = token;
 
     setState(() {
       isContinuousLFScan = true;
@@ -332,35 +434,51 @@ class ReadCardPageState extends State<ReadCardPage> {
     DateTime startTime = DateTime.now();
 
     lfScanTimer = Timer.periodic(scanInterval, (timer) {
-      if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
-        stopContinuousLFScan();
+      if (!_canContinueLFScan(token) ||
+          DateTime.now().difference(startTime) > maxDuration) {
+        _stopContinuousLFScan(token);
         return;
       }
 
-      unawaited(_runContinuousLFScanTick());
+      unawaited(_runContinuousLFScanTick(token));
     });
 
-    await _runContinuousLFScanTick();
+    await _runContinuousLFScanTick(token);
   }
 
   void stopContinuousLFScan() {
-    if (lfScanTimer != null) {
-      lfScanTimer?.cancel();
-      lfScanTimer = null;
+    final token = _continuousLFScan;
+    if (token != null) {
+      _stopContinuousLFScan(token);
+    }
+  }
 
-      if (mounted) {
-        setState(() {
-          isContinuousLFScan = false;
-        });
-      }
+  void _stopContinuousLFScan(_ContinuousScanToken token) {
+    if (!_ownsContinuousLFScan(token)) {
+      return;
+    }
+
+    lfScanTimer?.cancel();
+    lfScanTimer = null;
+    _continuousLFScan = null;
+    if (mounted) {
+      setState(() {
+        isContinuousLFScan = false;
+      });
+    } else {
+      isContinuousLFScan = false;
     }
   }
 
   @override
   void dispose() {
     _manualReadSession = null;
+    _continuousHFScan = null;
+    isContinuousHFScan = false;
     hfScanTimer?.cancel();
     hfScanTimer = null;
+    _continuousLFScan = null;
+    isContinuousLFScan = false;
     lfScanTimer?.cancel();
     lfScanTimer = null;
     super.dispose();

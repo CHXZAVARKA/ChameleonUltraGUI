@@ -586,6 +586,148 @@ void main() {
   });
 
   testWidgets(
+    'late HF result from a canceled scan cannot stop its replacement',
+    (tester) async {
+      final fixture = await _ReadCardFixture.mount(
+        tester,
+        communicatorFactory: (logger, connector) =>
+            _SlowContinuousHFCommunicator(logger, port: connector),
+      );
+      final communicator =
+          fixture.communicator as _SlowContinuousHFCommunicator;
+      final readCardState = await fixture.openReadCard();
+
+      final canceledScan = readCardState.startContinuousHFScan();
+      await tester.pump();
+      expect(communicator.scanCalls, 1);
+
+      readCardState.stopContinuousHFScan();
+      final replacementScan = readCardState.startContinuousHFScan();
+      await tester.pump();
+      await replacementScan;
+      final replacementInfo = HFCardInfo(uid: 'replacement');
+      readCardState.hfInfo = replacementInfo;
+
+      communicator.completeFirstScan(
+        CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 0x00,
+          atqa: Uint8List.fromList([0x00, 0x44]),
+          ats: Uint8List(0),
+        ),
+      );
+      await canceledScan;
+      await tester.pump();
+
+      expect(readCardState.hfInfo, same(replacementInfo));
+      expect(readCardState.isContinuousHFScan, isTrue);
+      expect(readCardState.hfScanTimer?.isActive, isTrue);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.idle();
+      expect(communicator.scanCalls, 2);
+      expect(readCardState.isContinuousHFScan, isTrue);
+      readCardState.stopContinuousHFScan();
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'late LF result from a canceled scan cannot stop its replacement',
+    (tester) async {
+      final fixture = await _ReadCardFixture.mount(
+        tester,
+        communicatorFactory: (logger, connector) =>
+            _SlowContinuousLFCommunicator(logger, port: connector),
+      );
+      final communicator =
+          fixture.communicator as _SlowContinuousLFCommunicator;
+      final readCardState = await fixture.openReadCard();
+
+      final canceledScan = readCardState.startContinuousLFScan();
+      await tester.pump();
+      expect(communicator.readCalls, 1);
+
+      readCardState.stopContinuousLFScan();
+      final replacementScan = readCardState.startContinuousLFScan();
+      await tester.pump();
+      await replacementScan;
+      final replacementInfo = LFCardInfo()
+        ..card = EM410XCard.fromUID('AABBCCDDEE');
+      readCardState.lfInfo = replacementInfo;
+
+      communicator.completeFirstRead(EM410XCard.fromUID('0102030405'));
+      await canceledScan;
+      await tester.pump();
+
+      expect(readCardState.lfInfo, same(replacementInfo));
+      expect(readCardState.isContinuousLFScan, isTrue);
+      expect(readCardState.lfScanTimer?.isActive, isTrue);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.idle();
+      expect(communicator.readCalls, 2);
+      expect(readCardState.isContinuousLFScan, isTrue);
+      readCardState.stopContinuousLFScan();
+      await tester.pump();
+    },
+  );
+
+  testWidgets('continuous HF scan ends on reconnect between ticks', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousHFCommunicator(logger, port: connector),
+    );
+    final original = fixture.communicator as _ContinuousHFCommunicator;
+    final readCardState = await fixture.openReadCard();
+
+    await readCardState.startContinuousHFScan();
+    expect(original.scanCalls, 1);
+
+    final replacement =
+        _ContinuousHFCommunicator(fixture.logger, port: fixture.connector);
+    fixture.appState
+      ..communicator = replacement
+      ..changesMade();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.idle();
+
+    expect(replacement.scanCalls, 0);
+    expect(readCardState.isContinuousHFScan, isFalse);
+    expect(readCardState.hfScanTimer, isNull);
+  });
+
+  testWidgets('continuous LF scan ends on reconnect between ticks', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousLFCommunicator(logger, port: connector),
+    );
+    final original = fixture.communicator as _ContinuousLFCommunicator;
+    final readCardState = await fixture.openReadCard();
+
+    await readCardState.startContinuousLFScan();
+    expect(original.readCalls, 1);
+
+    final replacement =
+        _ContinuousLFCommunicator(fixture.logger, port: fixture.connector);
+    fixture.appState
+      ..communicator = replacement
+      ..changesMade();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.idle();
+
+    expect(replacement.readCalls, 0);
+    expect(readCardState.isContinuousLFScan, isFalse);
+    expect(readCardState.lfScanTimer, isNull);
+  });
+
+  testWidgets(
     'slow continuous scan skips overlapping ticks and resumes later',
     (tester) async {
       final fixture = await _ReadCardFixture.mount(
@@ -1035,14 +1177,11 @@ class _ContinuousHFCommunicator extends ChameleonCommunicator {
   }
 }
 
-class _SlowContinuousHFCommunicator extends ChameleonCommunicator {
+class _SlowContinuousHFCommunicator extends _PendingHFCommunicator {
   _SlowContinuousHFCommunicator(super.logger, {super.port});
 
   final Completer<CardData?> _firstScan = Completer<CardData?>();
   int scanCalls = 0;
-
-  @override
-  Future<bool> isReaderDeviceMode() async => true;
 
   @override
   Future<CardData?> scan14443aTag() {
@@ -1053,7 +1192,7 @@ class _SlowContinuousHFCommunicator extends ChameleonCommunicator {
     return Future.value(null);
   }
 
-  void completeFirstScan() => _firstScan.complete(null);
+  void completeFirstScan([CardData? card]) => _firstScan.complete(card);
 }
 
 class _ThrowingContinuousHFCommunicator extends ChameleonCommunicator {
@@ -1104,7 +1243,7 @@ class _SlowContinuousLFCommunicator extends ChameleonCommunicator {
   @override
   Future<IoProxCard?> readIoProx() async => null;
 
-  void completeFirstRead() => _firstRead.complete(null);
+  void completeFirstRead([EM410XCard? card]) => _firstRead.complete(card);
 }
 
 class _CrossTabMaintenanceCommunicator extends ChameleonCommunicator {
