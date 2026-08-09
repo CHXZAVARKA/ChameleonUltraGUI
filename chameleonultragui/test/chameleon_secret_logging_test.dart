@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/connector/serial_emulator.dart';
+import 'package:chameleonultragui/gui/page/debug.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -127,6 +129,112 @@ void main() {
     harness.expectRedacted([request, response]);
     harness.expectDiagnostics(ChameleonCommand.setAnimationMode, status: 0);
   });
+
+  test('unknown emulator commands keep only safe frame metadata', () async {
+    final logging = await _PersistentLogging.create();
+    final command = Uint8List.fromList([0xCA, 0xFE, 0xBA, 0xBE]);
+    final serial = EmulatorSerial(log: logging.logger);
+
+    await serial.write(command);
+
+    logging.expectRedacted(command);
+    logging.expectMetadata(
+      direction: 'send',
+      length: command.length,
+      outcome: 'unsupported-emulator-command',
+    );
+  });
+
+  test('BLE, mobile and native parser failures share redacted receive logging',
+      () async {
+    final logging = await _PersistentLogging.create();
+    final frame = Uint8List.fromList([0xDE, 0xC0, 0xAD, 0xDE]);
+    final serial = _ParserFailureSerial(log: logging.logger);
+
+    serial.report(frame);
+
+    logging.expectRedacted(frame);
+    logging.expectMetadata(
+      direction: 'receive',
+      length: frame.length,
+      outcome: 'parser-error',
+    );
+  });
+
+  test('Debug recovery summaries persist counts without recovered key arrays',
+      () async {
+    final logging = await _PersistentLogging.create();
+    final recoveredKeys = [0xA1B2C3D4E5F6, 0x102030405060];
+
+    logging.logger.d(mifareClassicRecoveryLogSummary(
+      'Darkside self-test',
+      recoveredKeys.length,
+    ));
+
+    final logs = logging.logs.toUpperCase();
+    for (final key in recoveredKeys) {
+      expect(logs, isNot(contains(key.toRadixString(16).toUpperCase())));
+    }
+    expect(logs, contains('COUNT = 2'));
+    expect(logs, contains('OUTCOME = CANDIDATES-RECOVERED'));
+  });
+}
+
+class _PersistentLogging {
+  _PersistentLogging({required this.preferences, required this.logger});
+
+  final SharedPreferencesProvider preferences;
+  final Logger logger;
+
+  static Future<_PersistentLogging> create() async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final logger = Logger(
+      filter: ChameleonLogFilter(),
+      printer: PrettyPrinter(noBoxingByDefault: true),
+      output: SharedPreferencesLogger(preferences),
+    );
+    addTearDown(logger.close);
+    return _PersistentLogging(preferences: preferences, logger: logger);
+  }
+
+  String get logs => preferences.getLogLines().join('\n');
+
+  void expectRedacted(Uint8List sentinel) {
+    expect(logs.toUpperCase(),
+        isNot(contains(bytesToHex(sentinel).toUpperCase())));
+    expect(logs, contains('<redacted ${sentinel.length} byte(s)>'));
+  }
+
+  void expectMetadata({
+    required String direction,
+    required int length,
+    required String outcome,
+  }) {
+    expect(logs, contains('direction = $direction'));
+    expect(logs, contains('status = unavailable'));
+    expect(logs, contains('length = $length'));
+    expect(logs, contains('outcome = $outcome'));
+  }
+}
+
+class _ParserFailureSerial extends AbstractSerial {
+  _ParserFailureSerial({required super.log});
+
+  void report(Uint8List data) => logUnexpectedSerialData(data);
+
+  @override
+  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => [];
+
+  @override
+  Future<bool> connectSpecificDevice(dynamic devicePort) async => false;
+
+  @override
+  bool isManualConnectionSupported() => false;
+
+  @override
+  Future<bool> write(Uint8List command, {bool firmware = false}) async => false;
 }
 
 class _LoggingHarness {

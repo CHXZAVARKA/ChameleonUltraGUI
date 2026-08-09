@@ -386,55 +386,62 @@ class CardReaderState extends State<MifareClassicHelper> {
         if (widget.mfcInfo.state == MifareClassicState.recovery ||
             widget.mfcInfo.state == MifareClassicState.recoveryOngoing)
           _ResponsiveButtonGroup(children: [
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
-                  ? () async {
-                      setState(() {
-                        widget.mfcInfo.state =
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: (widget.mfcInfo.state ==
+                              MifareClassicState.recovery)
+                          ? () async {
+                              setState(() {
+                                widget.mfcInfo.state =
                                     MifareClassicState.recoveryOngoing;
                               });
 
                               await widget.mfcInfo.recovery?.recoverKeys();
 
-                      if (widget.mfcInfo.recovery!.error.isNotEmpty) {
-                        setState(() {
-                          widget.mfcInfo.state = MifareClassicState.recovery;
-                        });
-                      } else {
-                        setState(() {
-                          widget.mfcInfo.state = MifareClassicState.dump;
-                        });
-                      }
-                    }
+                              if (widget.mfcInfo.recovery!.error.isNotEmpty) {
+                                setState(() {
+                                  widget.mfcInfo.state =
+                                      MifareClassicState.recovery;
+                                });
+                              } else {
+                                setState(() {
+                                  widget.mfcInfo.state =
+                                      MifareClassicState.dump;
+                                });
+                              }
+                            }
                           : null,
                       style: customCardButtonStyle(appState),
                       child: Text(localizations.recover_keys),
                     ),
-            if (widget.allowSave) ...[
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
-                    ? () async {
-                        setState(() {
-                          widget.mfcInfo.state = MifareClassicState.dumpOngoing;
-                        });
+                    if (widget.allowSave) ...[
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: (widget.mfcInfo.state ==
+                                MifareClassicState.recovery)
+                            ? () async {
+                                setState(() {
+                                  widget.mfcInfo.state =
+                                      MifareClassicState.dumpOngoing;
+                                });
 
-                        try {
+                                try {
                                   await widget.mfcInfo.recovery?.dumpData();
 
-                          setState(() {
-                            widget.mfcInfo.recovery?.dumpProgress = 0;
-                            widget.mfcInfo.state = MifareClassicState.save;
-                          });
-                        } catch (_) {
-                          setState(() {
-                            widget.mfcInfo.recovery?.error =
-                                localizations.recovery_error_dump_data;
-                            widget.mfcInfo.state = MifareClassicState.dump;
-                          });
-                        }
-                      }
+                                  setState(() {
+                                    widget.mfcInfo.recovery?.dumpProgress = 0;
+                                    widget.mfcInfo.state =
+                                        MifareClassicState.save;
+                                  });
+                                } catch (_) {
+                                  setState(() {
+                                    widget.mfcInfo.recovery?.error =
+                                        localizations.recovery_error_dump_data;
+                                    widget.mfcInfo.state =
+                                        MifareClassicState.dump;
+                                  });
+                                }
+                              }
                             : null,
                         style: customCardButtonStyle(appState),
                         child: Text(localizations.dump_partial_data),
@@ -610,13 +617,14 @@ class CardReaderState extends State<MifareClassicHelper> {
             widget.allowSave)
           _ResponsiveButtonGroup(children: [
                 ElevatedButton(
-              onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
-                  ? () async {
-                      setState(() {
-                        widget.mfcInfo.state = MifareClassicState.dumpOngoing;
-                      });
+                  onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
+                      ? () async {
+                          setState(() {
+                            widget.mfcInfo.state =
+                                MifareClassicState.dumpOngoing;
+                          });
 
-                      try {
+                          try {
                             await widget.mfcInfo.recovery?.dumpData();
 
                             setState(() {

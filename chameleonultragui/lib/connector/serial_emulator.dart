@@ -46,7 +46,7 @@ class EmulatorSerial extends AbstractSerial {
     if (emulatedCommands.containsKey(bytesToHex(command))) {
       await messageCallback(hexToBytes(emulatedCommands[bytesToHex(command)]!));
     } else {
-      log.e('Missing response for ${bytesToHex(command)}');
+      logMissingEmulatorResponse(command);
     }
 
     return true;

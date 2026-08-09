@@ -119,7 +119,7 @@ class MobileSerial extends AbstractSerial {
           try {
             await messageCallback(data);
           } catch (_) {
-            log.w("Received unexpected data: ${bytesToHex(data)}");
+            logUnexpectedSerialData(data);
           }
         }
       }, onDone: () async {

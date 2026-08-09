@@ -109,7 +109,7 @@ class NativeSerial extends AbstractSerial {
       log.d("Connected to $address");
       log.d("Manufacturer: ${checkPort!.manufacturer}");
       log.d("Product: ${checkPort!.productName}");
-      
+
       bool isChameleon = false;
       if (checkPort!.manufacturer == "Proxgrind" ||
           (checkPort!.description != null &&
@@ -165,7 +165,7 @@ class NativeSerial extends AbstractSerial {
       try {
         await messageCallback(data);
       } catch (_) {
-        log.w("Received unexpected data: ${bytesToHex(data)}");
+        logUnexpectedSerialData(data);
       }
     }, onDone: () async {
       await performDisconnect();
