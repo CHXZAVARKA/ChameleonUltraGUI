@@ -590,7 +590,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         }
         return ModeActionOutcome.failed;
       }
-      _publish(_snapshot.copyWith(mode: previous));
+      final latestConfirmed =
+          _snapshot.mode.confirmedMode ?? previous.confirmedMode!;
+      _publish(
+        _snapshot.copyWith(mode: ModeStatus.available(latestConfirmed)),
+      );
       return ModeActionOutcome.failed;
     });
   }

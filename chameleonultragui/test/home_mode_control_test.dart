@@ -124,6 +124,53 @@ void main() {
     expect(communicator.modeSets, [true]);
   });
 
+  testWidgets(
+      'failed confirmation keeps the latest mode confirmed by a racing Home refresh',
+      (tester) async {
+    final entryRefreshGate = Completer<void>();
+    addTearDown(() {
+      if (!entryRefreshGate.isCompleted) {
+        entryRefreshGate.complete();
+      }
+    });
+    final communicator = _ModeCommunicator(initialReaderMode: false);
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    communicator
+      ..events.clear()
+      ..nextModeReadGate = entryRefreshGate
+      ..modeReadResults.addAll([
+        true,
+        StateError('confirmation unavailable'),
+      ]);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    await tester.tap(find.text('Reader'));
+    await tester.pump();
+
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+    expect(_modeControl(tester).onSelectionChanged, isNull);
+    expect(communicator.modeSets, isEmpty);
+
+    entryRefreshGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+    expect(appState.connectedDeviceStatus!.snapshot.mode.pendingMode, isNull);
+    expect(communicator.events, [
+      'mode:read',
+      'mode:set:reader',
+      'mode:read',
+    ]);
+    expect(find.text('Error: Unavailable'), findsOneWidget);
+    expect(find.byType(SnackBar), findsOneWidget);
+  });
+
   testWidgets('first mode read failure disables selection and offers retry',
       (tester) async {
     final communicator = _ModeCommunicator(initialReaderMode: false)
