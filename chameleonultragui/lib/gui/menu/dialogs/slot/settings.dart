@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
@@ -119,7 +120,10 @@ class SlotSettingsState extends State<SlotSettings> {
       return AlertDialog(
         title: Text(localizations.slot_settings),
         content: _loadError == null
-            ? const CircularProgressIndicator()
+            ? ChameleonLoadingIndicator(
+                size: 48,
+                semanticLabel: localizations.loading,
+              )
             : Text(localizations.unavailable),
       );
     }

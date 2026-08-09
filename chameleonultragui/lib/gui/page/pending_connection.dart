@@ -1,3 +1,4 @@
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:flutter/material.dart';
 
@@ -20,7 +21,10 @@ class PendingConnectionPage extends StatelessWidget {
         body: Center(
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const CircularProgressIndicator(),
+          ChameleonLoadingIndicator(
+            size: 64,
+            semanticLabel: localizations.loading,
+          ),
           const SizedBox(height: 25),
           Text(
             localizations.connecting_to_ble,

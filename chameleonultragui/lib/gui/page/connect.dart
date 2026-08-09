@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_android.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/manual_connect.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
@@ -17,7 +18,7 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 class ConnectPage extends StatefulWidget {
   const ConnectPage({
     super.key,
-    this.autoScanInterval = const Duration(seconds: 3),
+    this.autoScanInterval = const Duration(milliseconds: 500),
   });
 
   final Duration autoScanInterval;
@@ -28,7 +29,9 @@ class ConnectPage extends StatefulWidget {
 
 class _ConnectPageState extends State<ConnectPage> {
   List<Chameleon> _devices = [];
+  final Map<String, _DiscoveredChameleon> _deviceCache = {};
   Timer? _scanTimer;
+  int _scanGeneration = 0;
   Object? _error;
   bool _isLoading = true;
   bool _initialScanCompleted = false;
@@ -59,18 +62,22 @@ class _ConnectPageState extends State<ConnectPage> {
         !appState.connector!.pendingConnection;
   }
 
-  List<Chameleon> _normalizeDevices(List<Chameleon> devices) {
-    final output = <Chameleon>[];
-    final seen = <String>{};
-
+  List<Chameleon> _mergeDevices(List<Chameleon> devices) {
+    _scanGeneration++;
     for (final device in devices) {
-      final key = '${device.port}|${device.type.name}|${device.dfu}';
-      if (seen.add(key)) {
-        output.add(device);
-      }
+      final key = '${device.type.name}|${device.port}';
+      _deviceCache[key] = _DiscoveredChameleon(
+        device: device,
+        lastSeenGeneration: _scanGeneration,
+      );
     }
 
-    return output;
+    _deviceCache.removeWhere(
+      (_, discovered) => _scanGeneration - discovered.lastSeenGeneration > 2,
+    );
+    return _deviceCache.values
+        .map((discovered) => discovered.device)
+        .toList(growable: false);
   }
 
   dynamic _firstConnectablePort(List<Chameleon> devices) {
@@ -149,8 +156,8 @@ class _ConnectPageState extends State<ConnectPage> {
     });
 
     try {
-      final devices = _normalizeDevices(
-          await appState.connector!.availableChameleons(false));
+      final devices =
+          _mergeDevices(await appState.connector!.availableChameleons(false));
       if (!mounted) {
         return;
       }
@@ -449,7 +456,11 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
             Expanded(
               child: (_isLoading && !_initialScanCompleted)
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Center(
+                      child: ChameleonLoadingIndicator(
+                        semanticLabel: localizations.loading,
+                      ),
+                    )
                   : _buildDeviceGrid(localizations),
             ),
             if (appState.connector!.isManualConnectionSupported())
@@ -477,4 +488,14 @@ class _ConnectPageState extends State<ConnectPage> {
       ),
     );
   }
+}
+
+class _DiscoveredChameleon {
+  const _DiscoveredChameleon({
+    required this.device,
+    required this.lastSeenGeneration,
+  });
+
+  final Chameleon device;
+  final int lastSeenGeneration;
 }

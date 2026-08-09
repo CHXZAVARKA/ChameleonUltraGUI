@@ -1,4 +1,5 @@
 import 'package:chameleonultragui/gui/component/developer_list.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/qr/settings.dart';
@@ -456,8 +457,11 @@ class SettingsMainPageState extends State<SettingsMainPage> {
                             (BuildContext context, AsyncSnapshot snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
+                            return Center(
+                              child: ChameleonLoadingIndicator(
+                                semanticLabel: localizations.loading,
+                              ),
+                            );
                           } else if (snapshot.hasError) {
                             appState.connector!.performDisconnect();
                             return ErrorPage(

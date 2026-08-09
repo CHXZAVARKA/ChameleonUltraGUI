@@ -1,4 +1,5 @@
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -51,7 +52,14 @@ class ChameleonSettingsState extends State<ChameleonSettings> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return AlertDialog(
                 title: Text(localizations.device_settings),
-                content: const Column(children: [CircularProgressIndicator()]));
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ChameleonLoadingIndicator(
+                      semanticLabel: localizations.loading,
+                    ),
+                  ],
+                ));
           } else if (snapshot.hasError) {
             appState.connector!.performDisconnect();
             return AlertDialog(

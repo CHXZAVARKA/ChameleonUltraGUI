@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -550,12 +551,9 @@ class _SlotColumn extends StatelessWidget {
                           key: Key('home-slot-${index + 1}-progress'),
                           height: markRowHeight * 2 + 8,
                           child: Center(
-                            child: SizedBox.square(
-                              dimension: math.max(24, markSize),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: theme.colorScheme.primary,
-                              ),
+                            child: ChameleonLoadingIndicator(
+                              size: math.max(30, markSize),
+                              semanticLabel: localizations.activating,
                             ),
                           ),
                         )
