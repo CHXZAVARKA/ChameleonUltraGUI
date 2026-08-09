@@ -19,10 +19,8 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
   String? source;
   dynamic decodedJson;
   var isJson = false;
-  var hasDuplicateProxmark3BlockKey = false;
   try {
     source = const Utf8Decoder().convert(contents);
-    hasDuplicateProxmark3BlockKey = _hasDuplicateProxmark3BlockKey(source);
     try {
       decodedJson = jsonDecode(source);
       isJson = true;
@@ -39,7 +37,7 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
         throw const FormatException('Card folders are not single-card dumps');
       }
       if (decodedJson is Map && decodedJson['Created'] == 'proxmark3') {
-        if (hasDuplicateProxmark3BlockKey) {
+        if (_hasDuplicateProxmark3Blocks(source)) {
           throw const FormatException('Duplicate Proxmark3 block');
         }
         return _importProxmark3(source, decodedJson);
@@ -76,58 +74,146 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
   return MifareClassicImportedImage(bytes: contents, geometry: geometry);
 }
 
-bool _hasDuplicateProxmark3BlockKey(String source) {
-  final blocksObject = RegExp(r'"blocks"\s*:\s*\{').firstMatch(source);
-  if (blocksObject == null) {
+bool _hasDuplicateProxmark3Blocks(String source) {
+  var index = _skipJsonWhitespace(source, 0);
+  if (index >= source.length || source[index] != '{') {
     return false;
   }
 
-  final keys = <String>{};
-  var depth = 1;
-  var index = blocksObject.end;
-  while (index < source.length && depth > 0) {
-    final character = source[index];
-    if (character == '"') {
-      final stringStart = index;
-      var escaped = false;
-      index++;
-      while (index < source.length) {
-        final stringCharacter = source[index];
-        if (!escaped && stringCharacter == '"') {
-          break;
-        }
-        escaped = !escaped && stringCharacter == '\\';
-        if (stringCharacter != '\\') {
-          escaped = false;
-        }
-        index++;
-      }
-      if (index >= source.length) {
-        return false;
-      }
-
-      if (depth == 1) {
-        var following = index + 1;
-        while (following < source.length &&
-            RegExp(r'\s').hasMatch(source[following])) {
-          following++;
-        }
-        if (following < source.length && source[following] == ':') {
-          final key = jsonDecode(source.substring(stringStart, index + 1));
-          if (key is String && !keys.add(key)) {
-            return true;
-          }
-        }
-      }
-    } else if (character == '{' || character == '[') {
-      depth++;
-    } else if (character == '}' || character == ']') {
-      depth--;
+  var hasBlocksMember = false;
+  int? blocksObjectStart;
+  index++;
+  while (index < source.length) {
+    index = _skipJsonWhitespace(source, index);
+    if (index >= source.length || source[index] == '}') {
+      break;
     }
-    index++;
+
+    final keyStart = index;
+    final keyEnd = _skipJsonString(source, keyStart);
+    final key = jsonDecode(source.substring(keyStart, keyEnd));
+    index = _skipJsonWhitespace(source, keyEnd);
+    index = _skipJsonWhitespace(source, index + 1);
+    final valueStart = index;
+    index = _skipJsonValue(source, valueStart);
+
+    if (key == 'blocks') {
+      if (hasBlocksMember) {
+        return true;
+      }
+      hasBlocksMember = true;
+      if (valueStart < source.length && source[valueStart] == '{') {
+        blocksObjectStart = valueStart;
+      }
+    }
+
+    index = _skipJsonWhitespace(source, index);
+    if (index < source.length && source[index] == ',') {
+      index++;
+    }
+  }
+
+  return blocksObjectStart != null &&
+      _hasDuplicateImmediateJsonKey(source, blocksObjectStart);
+}
+
+bool _hasDuplicateImmediateJsonKey(String source, int objectStart) {
+  final keys = <String>{};
+  var index = objectStart + 1;
+  while (index < source.length) {
+    index = _skipJsonWhitespace(source, index);
+    if (index >= source.length || source[index] == '}') {
+      return false;
+    }
+
+    final keyStart = index;
+    final keyEnd = _skipJsonString(source, keyStart);
+    final key = jsonDecode(source.substring(keyStart, keyEnd));
+    if (key is String && !keys.add(key)) {
+      return true;
+    }
+
+    index = _skipJsonWhitespace(source, keyEnd);
+    index = _skipJsonWhitespace(source, index + 1);
+    index = _skipJsonValue(source, index);
+    index = _skipJsonWhitespace(source, index);
+    if (index < source.length && source[index] == ',') {
+      index++;
+    }
   }
   return false;
 }
+
+int _skipJsonWhitespace(String source, int index) {
+  while (index < source.length) {
+    final codeUnit = source.codeUnitAt(index);
+    if (codeUnit != 0x20 &&
+        codeUnit != 0x09 &&
+        codeUnit != 0x0A &&
+        codeUnit != 0x0D) {
+      break;
+    }
+    index++;
+  }
+  return index;
+}
+
+int _skipJsonString(String source, int start) {
+  var index = start + 1;
+  while (index < source.length) {
+    if (source[index] == '\\') {
+      index += 2;
+    } else if (source[index] == '"') {
+      return index + 1;
+    } else {
+      index++;
+    }
+  }
+  return source.length;
+}
+
+int _skipJsonValue(String source, int start) {
+  if (start >= source.length) {
+    return start;
+  }
+  if (source[start] == '"') {
+    return _skipJsonString(source, start);
+  }
+  if (source[start] != '{' && source[start] != '[') {
+    var index = start;
+    while (index < source.length &&
+        source[index] != ',' &&
+        source[index] != '}' &&
+        source[index] != ']' &&
+        !_isJsonWhitespace(source.codeUnitAt(index))) {
+      index++;
+    }
+    return index;
+  }
+
+  final delimiters = <String>[source[start]];
+  var index = start + 1;
+  while (index < source.length && delimiters.isNotEmpty) {
+    final character = source[index];
+    if (character == '"') {
+      index = _skipJsonString(source, index);
+      continue;
+    }
+    if (character == '{' || character == '[') {
+      delimiters.add(character);
+    } else if (character == '}' || character == ']') {
+      delimiters.removeLast();
+    }
+    index++;
+  }
+  return index;
+}
+
+bool _isJsonWhitespace(int codeUnit) =>
+    codeUnit == 0x20 ||
+    codeUnit == 0x09 ||
+    codeUnit == 0x0A ||
+    codeUnit == 0x0D;
 
 MifareClassicImportedImage _importNative(
   String source,

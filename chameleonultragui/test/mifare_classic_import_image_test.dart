@@ -177,6 +177,47 @@ void main() {
     );
   });
 
+  test('locates the root Proxmark3 blocks object structurally', () {
+    final valid = proxmark(cardSize: 'Mini');
+    final nestedBlocks = valid.replaceFirst(
+      r'"Card":{',
+      r'"Card":{"blocks":{"7":"nested","7":"duplicate"},',
+    );
+    final escapedRootKey = valid.replaceFirst(
+      r'"blocks"',
+      r'"bl\u006fcks"',
+    );
+
+    for (final source in [valid, nestedBlocks, escapedRootKey]) {
+      final imported = importMifareClassicImage(text(source));
+      expect(imported.bytes, hasLength(320));
+      expect(imported.geometry.blockCount, 20);
+    }
+  });
+
+  test('rejects duplicate root blocks members and escaped block keys', () {
+    final valid = proxmark(cardSize: 'Mini');
+    final encodedBlocks = jsonEncode({
+      for (var block = 0; block < blocks.length; block++)
+        '$block': blockHex[block],
+    });
+    final duplicateRoot = valid.replaceFirst(
+      r'"blocks":',
+      '"blocks":$encodedBlocks,"blocks":',
+    );
+    final escapedDuplicate = valid.replaceFirst(
+      r'"blocks":{"0":',
+      '"bl\\u006fcks":{"\\u0037":"${blockHex[7]}","0":',
+    );
+
+    for (final source in [duplicateRoot, escapedDuplicate]) {
+      expect(
+        () => importMifareClassicImage(text(source)),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('rejects malformed, partial, and contradictory Flipper NFC', () {
     final validLines = [
       for (var block = 0; block < blocks.length; block++)
