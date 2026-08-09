@@ -54,6 +54,43 @@ final _writerLocalizationsDelegates =
     mifareClassicTestLocalizationsDelegates(_WriterLocalizations());
 
 void main() {
+  test('Standard writer count messages use independent English plurals', () {
+    final localizations = AppLocalizationsEn();
+
+    expect(
+      localizations.mifare_classic_standard_preflight_ready(1, 2),
+      'Preflight passed: 1 block will change and 2 blocks already match.',
+    );
+    expect(
+      localizations.mifare_classic_standard_preflight_ready(2, 1),
+      'Preflight passed: 2 blocks will change and 1 block already matches.',
+    );
+    expect(
+      localizations.mifare_classic_standard_preflight_ready(1, 1),
+      'Preflight passed: 1 block will change and 1 block already matches.',
+    );
+    expect(
+      localizations.mifare_classic_standard_preflight_ready(2, 2),
+      'Preflight passed: 2 blocks will change and 2 blocks already match.',
+    );
+    expect(
+      localizations.mifare_classic_standard_write_complete(1),
+      'Complete: 1 block written and verified.',
+    );
+    expect(
+      localizations.mifare_classic_standard_write_complete(2),
+      'Complete: 2 blocks written and verified.',
+    );
+    expect(
+      localizations.mifare_classic_standard_unsupported_dump_size(1),
+      'Unsupported dump size: 1 byte. Expected 320, 1024, 1152, 2048, or 4096 bytes.',
+    );
+    expect(
+      localizations.mifare_classic_standard_unsupported_dump_size(2),
+      'Unsupported dump size: 2 bytes. Expected 320, 1024, 1152, 2048, or 4096 bytes.',
+    );
+  });
+
   testWidgets('Standard writer renders through canonical localizations',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

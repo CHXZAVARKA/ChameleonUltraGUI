@@ -378,7 +378,7 @@
   "@mifare_classic_standard_preflight_running": {
     "description": "Progress message shown while the Standard writer checks the card without writing"
   },
-  "mifare_classic_standard_preflight_ready": "Preflight passed: {changedBlocks} blocks will change and {unchangedBlocks} already match.",
+  "mifare_classic_standard_preflight_ready": "Preflight passed: {changedBlocks, plural, one {{changedBlocks} block will change} other {{changedBlocks} blocks will change}} and {unchangedBlocks, plural, one {{unchangedBlocks} block already matches} other {{unchangedBlocks} blocks already match}}.",
   "@mifare_classic_standard_preflight_ready": {
     "description": "Summary shown after Standard writer preflight passes",
     "placeholders": {
@@ -404,7 +404,7 @@
   "@mifare_classic_standard_keep_card_stable": {
     "description": "Progress message shown while the Standard writer changes and verifies card data"
   },
-  "mifare_classic_standard_write_complete": "Complete: {count} blocks written and verified.",
+  "mifare_classic_standard_write_complete": "Complete: {count, plural, one {{count} block written and verified} other {{count} blocks written and verified}}.",
   "@mifare_classic_standard_write_complete": {
     "description": "Completion message for a successful Standard MIFARE Classic write",
     "placeholders": {
@@ -424,7 +424,7 @@
       }
     }
   },
-  "mifare_classic_standard_unsupported_dump_size": "Unsupported dump size: {byteCount} bytes. Expected 320, 1024, 1152, 2048, or 4096 bytes.",
+  "mifare_classic_standard_unsupported_dump_size": "Unsupported dump size: {byteCount, plural, one {{byteCount} byte} other {{byteCount} bytes}}. Expected 320, 1024, 1152, 2048, or 4096 bytes.",
   "@mifare_classic_standard_unsupported_dump_size": {
     "description": "Error shown when a selected MIFARE Classic BIN dump has an unsupported byte count",
     "placeholders": {
