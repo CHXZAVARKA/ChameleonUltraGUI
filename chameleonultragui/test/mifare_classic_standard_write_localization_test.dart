@@ -82,6 +82,22 @@ void main() {
       'Complete: 2 blocks written and verified.',
     );
     expect(
+      localizations.mifare_classic_standard_write_complete_summary(1, 2),
+      'Complete: 1 block written and verified; 2 blocks already matched.',
+    );
+    expect(
+      localizations.mifare_classic_standard_write_complete_summary(2, 1),
+      'Complete: 2 blocks written and verified; 1 block already matched.',
+    );
+    expect(
+      localizations.mifare_classic_standard_verified_before_stop(0),
+      'Progress retained: 0 blocks were written and verified before the operation stopped.',
+    );
+    expect(
+      localizations.mifare_classic_standard_verified_before_stop(1),
+      'Progress retained: 1 block was written and verified before the operation stopped.',
+    );
+    expect(
       localizations.mifare_classic_standard_unsupported_dump_size(1),
       'Unsupported dump size: 1 byte. Expected 320, 1024, 1152, 2048, or 4096 bytes.',
     );

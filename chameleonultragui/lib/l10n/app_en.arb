@@ -414,6 +414,34 @@
       }
     }
   },
+  "mifare_classic_standard_write_complete_summary": "Complete: {verifiedBlocks, plural, one {{verifiedBlocks} block written and verified} other {{verifiedBlocks} blocks written and verified}}; {unchangedBlocks, plural, one {{unchangedBlocks} block already matched} other {{unchangedBlocks} blocks already matched}}.",
+  "@mifare_classic_standard_write_complete_summary": {
+    "description": "Completion message with written, verified, and unchanged Standard MIFARE Classic block counts",
+    "placeholders": {
+      "verifiedBlocks": {
+        "type": "int",
+        "example": "3"
+      },
+      "unchangedBlocks": {
+        "type": "int",
+        "example": "44"
+      }
+    }
+  },
+  "mifare_classic_standard_verified_before_stop": "Progress retained: {verifiedBlocks, plural, one {{verifiedBlocks} block was written and verified} other {{verifiedBlocks} blocks were written and verified}} before the operation stopped.",
+  "@mifare_classic_standard_verified_before_stop": {
+    "description": "Partial Standard writer result retained when an operation stops",
+    "placeholders": {
+      "verifiedBlocks": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "mifare_classic_standard_unknown_write_outcome": "The outcome of the last write is unknown. Run preflight again before writing.",
+  "@mifare_classic_standard_unknown_write_outcome": {
+    "description": "Warning shown when Standard writer cannot determine whether the last block write changed the card"
+  },
   "mifare_classic_standard_operation_failed": "Operation stopped: {reason}",
   "@mifare_classic_standard_operation_failed": {
     "description": "Safe user-facing Standard writer error with a localized reason",

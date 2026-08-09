@@ -53,13 +53,17 @@ class _StandardMifareClassicWritePanelState
         .toList();
   }
 
-  void _invalidatePlan() {
+  void _discardPlan() {
     _plan = null;
     _maintenance = null;
     _maintenanceSession = null;
-    _report = null;
     _progress = null;
     _authorized = false;
+  }
+
+  void _invalidatePlan() {
+    _discardPlan();
+    _report = null;
     _error = null;
   }
 
@@ -74,7 +78,7 @@ class _StandardMifareClassicWritePanelState
   String _safeMaintenanceError(Object error) {
     final localizations = AppLocalizations.of(context)!;
     if (error is MifareClassicMaintenanceException) {
-      return switch (error.failure) {
+      final reason = switch (error.failure) {
         MifareClassicMaintenanceFailure.invalidImage =>
           localizations.mifare_classic_maintenance_invalid_image,
         MifareClassicMaintenanceFailure.incompatibleProfile =>
@@ -101,6 +105,16 @@ class _StandardMifareClassicWritePanelState
         MifareClassicMaintenanceFailure.cancelled =>
           localizations.mifare_classic_maintenance_cancelled,
       };
+      return [
+        reason,
+        if (error.verifiedBlocks > 0 ||
+            error.writeOutcome == MifareClassicWriteOutcome.unknown)
+          localizations.mifare_classic_standard_verified_before_stop(
+            error.verifiedBlocks,
+          ),
+        if (error.writeOutcome == MifareClassicWriteOutcome.unknown)
+          localizations.mifare_classic_standard_unknown_write_outcome,
+      ].join(' ');
     }
     return localizations.error;
   }
@@ -365,16 +379,23 @@ class _StandardMifareClassicWritePanelState
       });
       final report = result.value;
       if (!result.executed || report == null) {
+        if (mounted) {
+          setState(() {
+            _discardPlan();
+            _error = _safeMaintenanceError(
+              const MifareClassicMaintenanceException(
+                MifareClassicMaintenanceFailure.stalePlan,
+                'The connected device session changed before execution',
+              ),
+            );
+          });
+        }
         return;
       }
       if (mounted) {
         setState(() {
           _report = report;
-          _plan = null;
-          _maintenance = null;
-          _maintenanceSession = null;
-          _progress = null;
-          _authorized = false;
+          _discardPlan();
         });
       }
     } catch (error, stackTrace) {
@@ -382,11 +403,7 @@ class _StandardMifareClassicWritePanelState
       if (mounted) {
         setState(() {
           _error = _safeMaintenanceError(error);
-          _plan = null;
-          _maintenance = null;
-          _maintenanceSession = null;
-          _progress = null;
-          _authorized = false;
+          _discardPlan();
         });
       }
     } finally {
@@ -565,8 +582,10 @@ class _StandardMifareClassicWritePanelState
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      localizations.mifare_classic_standard_write_complete(
+                      localizations
+                          .mifare_classic_standard_write_complete_summary(
                         _report!.verifiedBlocks,
+                        _report!.unchangedBlocks,
                       ),
                     ),
                   ),

@@ -607,6 +607,100 @@ void main() {
 
     expect(communicator.readerModeCalls, readerModeBaseline);
     expect(communicator.writeCalls, 0);
+    expect(find.text('Write and verify'), findsNothing);
+    expect(find.byType(CheckboxListTile), findsNothing);
+    expect(
+      find.text(
+        'Operation stopped: The card check expired. Run preflight again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Run preflight'),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('successful Standard write reports verified and unchanged blocks',
+      (tester) async {
+    final targetBlocks = _miniTargetBlocks();
+    final preferences = await _standardMiniPreferences(targetBlocks);
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _MiniMaintenanceCommunicator(
+      logger,
+      [
+        for (var block = 0; block < 20; block++)
+          Uint8List.fromList(targetBlocks[block]),
+      ]..[1] = Uint8List(16),
+    );
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = (_TestSerial(log: logger)..connected = true)
+      ..communicator = communicator;
+    await _prepareStandardMiniPanel(tester, appState);
+
+    final writeAndVerify = find.text('Write and verify');
+    await tester.ensureVisible(writeAndVerify);
+    await tester.tap(writeAndVerify);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Complete: 1 block written and verified; 13 blocks already matched.',
+      ),
+      findsOneWidget,
+    );
+    expect(communicator.writeCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ambiguous Standard write retains verified partial progress',
+      (tester) async {
+    final targetBlocks = _miniTargetBlocks()..[2][0] = 2;
+    final preferences = await _standardMiniPreferences(targetBlocks);
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _MiniMaintenanceCommunicator(
+      logger,
+      [
+        for (var block = 0; block < 20; block++)
+          Uint8List.fromList(targetBlocks[block]),
+      ]
+        ..[1] = Uint8List(16)
+        ..[2] = Uint8List(16),
+      ambiguousWriteBlock: 2,
+    );
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = (_TestSerial(log: logger)..connected = true)
+      ..communicator = communicator;
+    await _prepareStandardMiniPanel(tester, appState);
+
+    final writeAndVerify = find.text('Write and verify');
+    await tester.ensureVisible(writeAndVerify);
+    await tester.tap(writeAndVerify);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(
+        'Progress retained: 1 block was written and verified before the operation stopped.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'The outcome of the last write is unknown. Run preflight again before writing.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Write and verify'), findsNothing);
+    expect(communicator.writeCalls, 2);
     expect(tester.takeException(), isNull);
   });
 
@@ -699,7 +793,6 @@ void main() {
     expect(communicator.postWriteReads, 0);
     expect(tester.takeException(), isNull);
   });
-
 }
 
 List<Uint8List> _miniTargetBlocks() {
@@ -820,9 +913,14 @@ class _QueuedPreflightCommunicator extends ChameleonCommunicator {
 }
 
 class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
-  _MiniMaintenanceCommunicator(super.logger, this.blocks);
+  _MiniMaintenanceCommunicator(
+    super.logger,
+    this.blocks, {
+    this.ambiguousWriteBlock,
+  });
 
   final List<Uint8List> blocks;
+  final int? ambiguousWriteBlock;
   int readerModeCalls = 0;
   int writeCalls = 0;
   int postWriteScans = 0;
@@ -898,7 +996,9 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
     Uint8List data,
   ) async {
     writeCalls++;
-    blocks[block] = Uint8List.fromList(data);
+    if (block != ambiguousWriteBlock) {
+      blocks[block] = Uint8List.fromList(data);
+    }
     if (writeStarted != null && !writeStarted!.isCompleted) {
       writeStarted!.complete();
     }
