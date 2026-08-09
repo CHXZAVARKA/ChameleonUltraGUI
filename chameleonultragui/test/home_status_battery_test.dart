@@ -93,6 +93,38 @@ void main() {
         identical(appState.connectedDeviceStatus!.snapshot, snapshot), isTrue);
   });
 
+  testWidgets('pending slot refresh does not block Home battery polling',
+      (tester) async {
+    final slotGate = Completer<void>();
+    addTearDown(() {
+      if (!slotGate.isCompleted) {
+        slotGate.complete();
+      }
+    });
+    final communicator = _BatteryCommunicator.withValues([
+      BatteryCharge(percent: 61, voltage: 3910),
+      BatteryCharge(percent: 60, voltage: 3900),
+    ])
+      ..nextSlotTypesGate = slotGate;
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+
+    expect(communicator.slotTypeReads, 1);
+    expect(communicator.batteryReads, 1);
+    expect(find.text('61%'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
+
+    expect(communicator.batteryReads, 2);
+    expect(find.text('60%'), findsOneWidget);
+
+    slotGate.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('device identity and disconnect action live only in the AppBar',
       (tester) async {
     final communicator = _BatteryCommunicator.complete(
@@ -408,6 +440,7 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   final Object? _modeError;
   int batteryReads = 0;
   int slotTypeReads = 0;
+  Completer<void>? nextSlotTypesGate;
 
   @override
   Future<BatteryCharge> getBatteryCharge() async {
@@ -430,6 +463,9 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   @override
   Future<List<SlotTypes>> getSlotTagTypes() async {
     slotTypeReads++;
+    final gate = nextSlotTypesGate;
+    nextSlotTypesGate = null;
+    await gate?.future;
     return List.generate(8, (_) => SlotTypes());
   }
 

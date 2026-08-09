@@ -130,6 +130,64 @@ void main() {
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
+  testWidgets('slot facets keep independent unavailable and stale certainty',
+      (tester) async {
+    final communicator = _SlotCommunicator()..failNames = true;
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.unavailableFacets,
+      {SlotFacet.names},
+    );
+
+    communicator.failTypes = true;
+    await appState.connectedDeviceStatus!.refreshSlots();
+    await tester.pump();
+
+    final slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, {SlotFacet.types});
+    expect(slots.unavailableFacets, {SlotFacet.names});
+    expect(slots.slots.first.hf.type.value, TagType.mifare1K);
+    expect(slots.slots.first.hf.name.isConfirmed, isFalse);
+  });
+
+  testWidgets('active slot alone is confirmed then becomes independently stale',
+      (tester) async {
+    final communicator = _SlotCommunicator()
+      ..failTypes = true
+      ..failEnabled = true
+      ..failNames = true;
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    var slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.partial);
+    expect(slots.activeSlot.value, 0);
+    expect(slots.unavailableFacets, {
+      SlotFacet.types,
+      SlotFacet.enabledStates,
+      SlotFacet.names,
+    });
+
+    communicator.failActive = true;
+    await appState.connectedDeviceStatus!.refreshSlots();
+    await tester.pump();
+
+    slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.activeSlot.value, 0);
+    expect(slots.staleFacets, {SlotFacet.activeSlot});
+    expect(slots.unavailableFacets, {
+      SlotFacet.types,
+      SlotFacet.enabledStates,
+      SlotFacet.names,
+    });
+  });
+
   testWidgets('Slot Manager shows cache immediately while entry refreshes',
       (tester) async {
     final communicator = _SlotCommunicator();
@@ -154,6 +212,62 @@ void main() {
     expect(find.textContaining('Lab'), findsOneWidget);
   });
 
+  testWidgets('Slot Manager entry refresh waits for busy foreground RF work',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final foregroundGate = Completer<void>();
+    final foregroundStarted = Completer<void>();
+    final foreground = appState.rfOperations.runForeground(() async {
+      foregroundStarted.complete();
+      await foregroundGate.future;
+    });
+    await foregroundStarted.future;
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pump();
+    expect(communicator.slotTypeReads, 0);
+
+    foregroundGate.complete();
+    await foreground;
+    await tester.pumpAndSettle();
+
+    expect(communicator.slotTypeReads, 1);
+    expect(communicator.enabledSlotReads, 1);
+    expect(communicator.slotNameReads, 1);
+    expect(communicator.activeSlotReads, 1);
+    await tester.pump(const Duration(seconds: 1));
+    expect(communicator.slotTypeReads, 1);
+  });
+
+  testWidgets('Slot Manager entry refresh waits for busy background RF work',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final backgroundGate = Completer<void>();
+    final backgroundStarted = Completer<void>();
+    final background = appState.rfOperations.tryRunBackground(() async {
+      backgroundStarted.complete();
+      await backgroundGate.future;
+    });
+    await backgroundStarted.future;
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pump();
+    expect(communicator.slotTypeReads, 0);
+
+    backgroundGate.complete();
+    await background;
+    await tester.pumpAndSettle();
+
+    expect(communicator.slotTypeReads, 1);
+    expect(communicator.enabledSlotReads, 1);
+    expect(communicator.slotNameReads, 1);
+    expect(communicator.activeSlotReads, 1);
+    await tester.pump(const Duration(seconds: 1));
+    expect(communicator.slotTypeReads, 1);
+  });
+
   testWidgets('late slot result from a replaced communicator is discarded',
       (tester) async {
     final gate = Completer<void>();
@@ -172,6 +286,9 @@ void main() {
 
     gate.complete();
     await tester.pumpAndSettle();
+    expect(oldCommunicator.enabledSlotReads, 0);
+    expect(oldCommunicator.slotNameReads, 0);
+    expect(oldCommunicator.activeSlotReads, 0);
     expect(find.textContaining('Office'), findsNothing);
     expect(
       appState.connectedDeviceStatus!.snapshot.slots.slots.first.hf.name.value,
@@ -193,6 +310,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(appState.connectedDeviceStatus, isNull);
+    expect(communicator.enabledSlotReads, 0);
+    expect(communicator.slotNameReads, 0);
+    expect(communicator.activeSlotReads, 0);
     expect(
         disposedStatus.snapshot.slots.availability, SlotsAvailability.loading);
   });
@@ -211,6 +331,30 @@ void main() {
 
     expect(communicator.activations, [1]);
     expect(appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value, 1);
+  });
+
+  testWidgets('confirmed activation repairs the only stale slot facet',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    communicator.failActive = true;
+    await appState.connectedDeviceStatus!.refreshSlots();
+    var slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, {SlotFacet.activeSlot});
+
+    communicator.failActive = false;
+    expect(await appState.connectedDeviceStatus!.activateSlot(1), isTrue);
+
+    slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.activeSlot.value, 1);
+    expect(slots.staleFacets, isEmpty);
+    expect(slots.unavailableFacets, isEmpty);
+    expect(slots.availability, SlotsAvailability.available);
   });
 }
 

@@ -45,4 +45,36 @@ void main() {
     expect(order, ['first', 'second']);
     expect(background.value, 'released');
   });
+
+  test('one status group can overlap without bypassing queued foreground work',
+      () async {
+    final coordinator = RfOperationCoordinator();
+    final group = Object();
+    final slotGate = Completer<void>();
+    final order = <String>[];
+
+    final slots = coordinator.tryRunBackground(() async {
+      order.add('slots');
+      await slotGate.future;
+    }, group: group);
+    final battery = await coordinator.tryRunBackground(() async {
+      order.add('battery');
+      return 61;
+    }, group: group);
+    expect(battery.value, 61);
+
+    final foreground = coordinator.runForeground(() async {
+      order.add('foreground');
+    });
+    final laterPoll = await coordinator.tryRunBackground(
+      () async => 60,
+      group: group,
+    );
+    expect(laterPoll.acquired, isFalse);
+
+    slotGate.complete();
+    await slots;
+    await foreground;
+    expect(order, ['slots', 'battery', 'foreground']);
+  });
 }

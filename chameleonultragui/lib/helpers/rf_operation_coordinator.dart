@@ -16,6 +16,9 @@ class RfBackgroundResult<T> {
 class RfOperationCoordinator {
   final Queue<Future<void> Function()> _foregroundQueue = Queue();
   bool _active = false;
+  Object? _activeBackgroundGroup;
+  int _activeBackgroundOperations = 0;
+  Completer<void>? _idleWaiter;
 
   Future<T> runForeground<T>(Future<T> Function() operation) {
     final result = Completer<T>();
@@ -33,18 +36,32 @@ class RfOperationCoordinator {
   }
 
   Future<RfBackgroundResult<T>> tryRunBackground<T>(
-    Future<T> Function() operation,
-  ) async {
-    if (_active || _foregroundQueue.isNotEmpty) {
+    Future<T> Function() operation, {
+    Object? group,
+  }) async {
+    if (_foregroundQueue.isNotEmpty ||
+        (_active &&
+            (group == null || !identical(_activeBackgroundGroup, group)))) {
       return const RfBackgroundResult.skipped();
     }
 
-    _active = true;
+    if (!_active) {
+      _active = true;
+      _activeBackgroundGroup = group;
+    }
+    _activeBackgroundOperations++;
     try {
       return RfBackgroundResult.completed(await operation());
     } finally {
-      _release();
+      _releaseBackground();
     }
+  }
+
+  Future<void> waitUntilIdle() {
+    if (!_active && _foregroundQueue.isEmpty) {
+      return Future.value();
+    }
+    return (_idleWaiter ??= Completer<void>()).future;
   }
 
   void _startNextForeground() {
@@ -59,5 +76,19 @@ class RfOperationCoordinator {
   void _release() {
     _active = false;
     _startNextForeground();
+    if (!_active && _foregroundQueue.isEmpty) {
+      final waiter = _idleWaiter;
+      _idleWaiter = null;
+      waiter?.complete();
+    }
+  }
+
+  void _releaseBackground() {
+    _activeBackgroundOperations--;
+    if (_activeBackgroundOperations > 0) {
+      return;
+    }
+    _activeBackgroundGroup = null;
+    _release();
   }
 }

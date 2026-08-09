@@ -128,15 +128,26 @@ class SlotsStatus {
   final Set<SlotFacet> unavailableFacets;
   final Set<SlotFacet> staleFacets;
 
-  bool get hasConfirmedData => slots.any(
-        (slot) =>
-            slot.hf.type.isConfirmed ||
-            slot.hf.enabled.isConfirmed ||
-            slot.hf.name.isConfirmed ||
-            slot.lf.type.isConfirmed ||
-            slot.lf.enabled.isConfirmed ||
-            slot.lf.name.isConfirmed,
-      );
+  bool get hasConfirmedData => SlotFacet.values.any(isFacetConfirmed);
+
+  bool isFacetConfirmed(SlotFacet facet) {
+    switch (facet) {
+      case SlotFacet.types:
+        return slots.every(
+          (slot) => slot.hf.type.isConfirmed && slot.lf.type.isConfirmed,
+        );
+      case SlotFacet.enabledStates:
+        return slots.every(
+          (slot) => slot.hf.enabled.isConfirmed && slot.lf.enabled.isConfirmed,
+        );
+      case SlotFacet.names:
+        return slots.every(
+          (slot) => slot.hf.name.isConfirmed && slot.lf.name.isConfirmed,
+        );
+      case SlotFacet.activeSlot:
+        return activeSlot.isConfirmed;
+    }
+  }
 
   bool get hasConfirmedTypes =>
       !unavailableFacets.contains(SlotFacet.types) &&
@@ -327,6 +338,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _batteryTimer;
   Future<void>? _batteryRefresh;
   Future<void>? _slotsRefresh;
+  final Object _backgroundOperationGroup = Object();
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
   bool _disposed = false;
@@ -350,10 +362,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _refreshHomeOnEntry() async {
-    await refreshSlots();
-    if (_homePresenceCount > 0 && _isAppActive) {
-      await refreshBattery();
-    }
+    final batteryRefresh = refreshBattery();
+    final slotsRefresh = refreshSlots();
+    await Future.wait([batteryRefresh, slotsRefresh]);
   }
 
   Future<void> refreshSlots() {
@@ -374,13 +385,20 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _refreshSlots() async {
     final previous = _snapshot.slots;
     try {
-      final result = await _rfOperations.tryRunBackground<_SlotReadBatch>(
-        () => _readSlots(previous),
-      );
-      if (!result.acquired || !_canPublish) {
-        return;
+      while (_canPublish) {
+        final result = await _rfOperations.tryRunBackground<SlotsStatus?>(
+          () => _readSlots(previous),
+          group: _backgroundOperationGroup,
+        );
+        if (result.acquired) {
+          final status = result.value;
+          if (_canPublish && status != null) {
+            _publish(_snapshot.copyWith(slots: status));
+          }
+          return;
+        }
+        await _rfOperations.waitUntilIdle();
       }
-      _publish(_snapshot.copyWith(slots: result.value!.status));
     } catch (error, stackTrace) {
       _session.appState.log?.w(
         'Unable to refresh connected-device slots',
@@ -403,18 +421,25 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           return false;
         }
         await _session.communicator.activateSlot(slot);
+        if (!_canPublish) {
+          return false;
+        }
         final confirmedSlot = await _session.communicator.getActiveSlot();
         if (!_canPublish || confirmedSlot < 0 || confirmedSlot >= 8) {
           return false;
         }
         final currentSlots = _snapshot.slots;
+        final staleFacets = {...currentSlots.staleFacets}
+          ..remove(SlotFacet.activeSlot);
+        final unavailableFacets = {...currentSlots.unavailableFacets}
+          ..remove(SlotFacet.activeSlot);
         _publish(
           _snapshot.copyWith(
             slots: currentSlots.copyWith(
+              availability: _slotsAvailability(staleFacets, unavailableFacets),
               activeSlot: SlotField.confirmed(confirmedSlot),
-              staleFacets: {
-                ...currentSlots.staleFacets,
-              }..remove(SlotFacet.activeSlot),
+              staleFacets: staleFacets,
+              unavailableFacets: unavailableFacets,
             ),
           ),
         );
@@ -444,57 +469,92 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<_SlotReadBatch> _readSlots(SlotsStatus previous) async {
+  Future<SlotsStatus?> _readSlots(SlotsStatus previous) async {
     final failures = <SlotFacet>{};
     List<SlotTypes>? types;
     List<EnabledSlotInfo>? enabled;
     List<SlotNames>? names;
     int? activeSlot;
 
+    if (!_canPublish) {
+      return null;
+    }
     try {
       types = await _session.communicator.getSlotTagTypes();
+      if (!_canPublish) {
+        return null;
+      }
       if (types.length != 8) {
         throw StateError('Expected 8 slot type records, got ${types.length}');
       }
     } catch (error, stackTrace) {
+      if (!_canPublish) {
+        return null;
+      }
       types = null;
       failures.add(SlotFacet.types);
       _logSlotFacetFailure(SlotFacet.types, error, stackTrace);
     }
+    if (!_canPublish) {
+      return null;
+    }
     try {
       enabled = await _session.communicator.getEnabledSlots();
+      if (!_canPublish) {
+        return null;
+      }
       if (enabled.length != 8) {
         throw StateError(
           'Expected 8 enabled-slot records, got ${enabled.length}',
         );
       }
     } catch (error, stackTrace) {
+      if (!_canPublish) {
+        return null;
+      }
       enabled = null;
       failures.add(SlotFacet.enabledStates);
       _logSlotFacetFailure(SlotFacet.enabledStates, error, stackTrace);
     }
+    if (!_canPublish) {
+      return null;
+    }
     try {
       names = await _session.communicator.getSlotTagNames();
+      if (!_canPublish) {
+        return null;
+      }
       if (names.length != 8) {
         throw StateError('Expected 8 slot-name records, got ${names.length}');
       }
     } catch (error, stackTrace) {
+      if (!_canPublish) {
+        return null;
+      }
       names = null;
       failures.add(SlotFacet.names);
       _logSlotFacetFailure(SlotFacet.names, error, stackTrace);
     }
+    if (!_canPublish) {
+      return null;
+    }
     try {
       final readActiveSlot = await _session.communicator.getActiveSlot();
+      if (!_canPublish) {
+        return null;
+      }
       if (readActiveSlot < 0 || readActiveSlot >= 8) {
         throw RangeError.range(readActiveSlot, 0, 7, 'activeSlot');
       }
       activeSlot = readActiveSlot;
     } catch (error, stackTrace) {
+      if (!_canPublish) {
+        return null;
+      }
       failures.add(SlotFacet.activeSlot);
       _logSlotFacetFailure(SlotFacet.activeSlot, error, stackTrace);
     }
 
-    final hadConfirmedData = previous.hasConfirmedData;
     final normalized = List.generate(8, (index) {
       final old = previous.slots[index];
       final type = index < (types?.length ?? 0) ? types![index] : null;
@@ -505,71 +565,73 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         index: index,
         hf: SlotFrequencyStatus(
           type: type == null
-              ? _preservedOrUnavailable(old.hf.type, hadConfirmedData)
+              ? _preservedOrUnavailable(old.hf.type)
               : SlotField.confirmed(type.hf),
           enabled: enabledInfo == null
-              ? _preservedOrUnavailable(old.hf.enabled, hadConfirmedData)
+              ? _preservedOrUnavailable(old.hf.enabled)
               : SlotField.confirmed(enabledInfo.hf),
           name: slotNames == null
-              ? _preservedOrUnavailable(old.hf.name, hadConfirmedData)
+              ? _preservedOrUnavailable(old.hf.name)
               : SlotField.confirmed(slotNames.hf),
         ),
         lf: SlotFrequencyStatus(
           type: type == null
-              ? _preservedOrUnavailable(old.lf.type, hadConfirmedData)
+              ? _preservedOrUnavailable(old.lf.type)
               : SlotField.confirmed(type.lf),
           enabled: enabledInfo == null
-              ? _preservedOrUnavailable(old.lf.enabled, hadConfirmedData)
+              ? _preservedOrUnavailable(old.lf.enabled)
               : SlotField.confirmed(enabledInfo.lf),
           name: slotNames == null
-              ? _preservedOrUnavailable(old.lf.name, hadConfirmedData)
+              ? _preservedOrUnavailable(old.lf.name)
               : SlotField.confirmed(slotNames.lf),
         ),
       );
     });
 
-    final staleFacets = hadConfirmedData ? failures : const <SlotFacet>{};
-    final unavailableFacets = hadConfirmedData ? const <SlotFacet>{} : failures;
-    final availability = failures.isEmpty
-        ? SlotsAvailability.available
-        : hadConfirmedData
-            ? SlotsAvailability.stale
-            : failures.length == SlotFacet.values.length
-                ? SlotsAvailability.unavailable
-                : SlotsAvailability.partial;
+    final staleFacets = failures.where(previous.isFacetConfirmed).toSet();
+    final unavailableFacets =
+        failures.where((facet) => !previous.isFacetConfirmed(facet)).toSet();
 
-    return _SlotReadBatch(
-      SlotsStatus(
-        availability: availability,
-        slots: normalized,
-        activeSlot: activeSlot == null
-            ? _preservedOrUnavailable(previous.activeSlot, hadConfirmedData)
-            : SlotField.confirmed(activeSlot),
-        unavailableFacets: unavailableFacets,
-        staleFacets: staleFacets,
-      ),
+    return SlotsStatus(
+      availability: _slotsAvailability(staleFacets, unavailableFacets),
+      slots: normalized,
+      activeSlot: activeSlot == null
+          ? _preservedOrUnavailable(previous.activeSlot)
+          : SlotField.confirmed(activeSlot),
+      unavailableFacets: unavailableFacets,
+      staleFacets: staleFacets,
     );
   }
 
-  SlotField<T> _preservedOrUnavailable<T>(
-    SlotField<T> previous,
-    bool preserve,
-  ) =>
-      preserve ? previous : SlotField<T>.unavailable();
+  SlotField<T> _preservedOrUnavailable<T>(SlotField<T> previous) =>
+      previous.isConfirmed ? previous : SlotField<T>.unavailable();
 
   SlotsStatus _failedSlots(SlotsStatus previous) {
-    if (previous.hasConfirmedData) {
-      return previous.copyWith(
-        availability: SlotsAvailability.stale,
-        staleFacets: SlotFacet.values.toSet(),
-      );
-    }
-    return SlotsStatus(
-      availability: SlotsAvailability.unavailable,
-      slots: previous.slots,
-      activeSlot: previous.activeSlot,
-      unavailableFacets: SlotFacet.values.toSet(),
+    final staleFacets =
+        SlotFacet.values.where(previous.isFacetConfirmed).toSet();
+    final unavailableFacets = SlotFacet.values
+        .where((facet) => !previous.isFacetConfirmed(facet))
+        .toSet();
+    return previous.copyWith(
+      availability: _slotsAvailability(staleFacets, unavailableFacets),
+      staleFacets: staleFacets,
+      unavailableFacets: unavailableFacets,
     );
+  }
+
+  SlotsAvailability _slotsAvailability(
+    Set<SlotFacet> staleFacets,
+    Set<SlotFacet> unavailableFacets,
+  ) {
+    if (staleFacets.isNotEmpty) {
+      return SlotsAvailability.stale;
+    }
+    if (unavailableFacets.isEmpty) {
+      return SlotsAvailability.available;
+    }
+    return unavailableFacets.length == SlotFacet.values.length
+        ? SlotsAvailability.unavailable
+        : SlotsAvailability.partial;
   }
 
   void _logSlotFacetFailure(
@@ -603,6 +665,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final result = await _rfOperations.tryRunBackground<BatteryCharge>(
         _session.communicator.getBatteryCharge,
+        group: _backgroundOperationGroup,
       );
       if (!result.acquired || !_canPublish) {
         return;
@@ -699,10 +762,4 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
-}
-
-class _SlotReadBatch {
-  const _SlotReadBatch(this.status);
-
-  final SlotsStatus status;
 }
