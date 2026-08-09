@@ -392,10 +392,10 @@ class CardReaderState extends State<MifareClassicHelper> {
                   ? () async {
                       setState(() {
                         widget.mfcInfo.state =
-                            MifareClassicState.recoveryOngoing;
-                      });
+                                    MifareClassicState.recoveryOngoing;
+                              });
 
-                      await widget.mfcInfo.recovery?.recoverKeys();
+                              await widget.mfcInfo.recovery?.recoverKeys();
 
                       if (widget.mfcInfo.recovery!.error.isNotEmpty) {
                         setState(() {
@@ -407,10 +407,10 @@ class CardReaderState extends State<MifareClassicHelper> {
                         });
                       }
                     }
-                  : null,
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.recover_keys),
-            ),
+                          : null,
+                      style: customCardButtonStyle(appState),
+                      child: Text(localizations.recover_keys),
+                    ),
             if (widget.allowSave) ...[
               const SizedBox(width: 8),
               ElevatedButton(
@@ -421,7 +421,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                         });
 
                         try {
-                          await widget.mfcInfo.recovery?.dumpData();
+                                  await widget.mfcInfo.recovery?.dumpData();
 
                           setState(() {
                             widget.mfcInfo.recovery?.dumpProgress = 0;
@@ -435,19 +435,19 @@ class CardReaderState extends State<MifareClassicHelper> {
                           });
                         }
                       }
-                    : null,
-                style: customCardButtonStyle(appState),
-                child: Text(localizations.dump_partial_data),
-              )
-            ],
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () async {
-                await exportFoundKeys();
-              },
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.export_to_dictionary),
-            ),
+                            : null,
+                        style: customCardButtonStyle(appState),
+                        child: Text(localizations.dump_partial_data),
+                      )
+                    ],
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await exportFoundKeys();
+                      },
+                      style: customCardButtonStyle(appState),
+                      child: Text(localizations.export_to_dictionary),
+                    ),
           ]),
         if (widget.mfcInfo.state == MifareClassicState.checkKeys ||
             widget.mfcInfo.state == MifareClassicState.checkKeysOngoing)
@@ -609,7 +609,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                 widget.mfcInfo.state == MifareClassicState.dumpOngoing) &&
             widget.allowSave)
           _ResponsiveButtonGroup(children: [
-            ElevatedButton(
+                ElevatedButton(
               onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
                   ? () async {
                       setState(() {
@@ -617,32 +617,32 @@ class CardReaderState extends State<MifareClassicHelper> {
                       });
 
                       try {
-                        await widget.mfcInfo.recovery?.dumpData();
+                            await widget.mfcInfo.recovery?.dumpData();
 
-                        setState(() {
-                          widget.mfcInfo.recovery?.dumpProgress = 0;
-                          widget.mfcInfo.state = MifareClassicState.save;
-                        });
-                      } catch (_) {
-                        setState(() {
-                          widget.mfcInfo.recovery?.error =
-                              localizations.recovery_error_dump_data;
-                          widget.mfcInfo.state = MifareClassicState.dump;
-                        });
-                      }
-                    }
-                  : null,
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.dump_card),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () async {
-                await exportFoundKeys();
-              },
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.export_to_dictionary),
-            ),
+                            setState(() {
+                              widget.mfcInfo.recovery?.dumpProgress = 0;
+                              widget.mfcInfo.state = MifareClassicState.save;
+                            });
+                          } catch (_) {
+                            setState(() {
+                              widget.mfcInfo.recovery?.error =
+                                  localizations.recovery_error_dump_data;
+                              widget.mfcInfo.state = MifareClassicState.dump;
+                            });
+                          }
+                        }
+                      : null,
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.dump_card),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    await exportFoundKeys();
+                  },
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.export_to_dictionary),
+                ),
           ]),
       ],
       if (widget.mfcInfo.state == MifareClassicState.save && widget.allowSave)
@@ -717,20 +717,18 @@ class CardReaderState extends State<MifareClassicHelper> {
                     },
                   );
                 },
-              );
-            },
-            style: customCardButtonStyle(appState),
-            child: Text(localizations.save),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: () async {
-              await saveCard(bin: true);
-            },
-            style: customCardButtonStyle(appState),
-            child: Text(localizations.save_as(".bin")),
-          ),
-        ]),
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.save),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  await saveCard(bin: true);
+                },
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.save_as(".bin")),
+              ),
+            ]),
     ]);
   }
 }
