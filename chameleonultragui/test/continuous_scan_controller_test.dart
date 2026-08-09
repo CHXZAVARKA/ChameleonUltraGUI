@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/continuous_scan_controller.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -22,10 +23,12 @@ void main() {
     addTearDown(controller.dispose);
 
     var reads = 0;
+    ConnectedDeviceSession? observedSession;
     await controller.start(
       appState: fixture.appState,
       isAvailable: () => true,
       read: (session, canContinue) async {
+        observedSession = session;
         reads++;
         return canContinue();
       },
@@ -33,8 +36,8 @@ void main() {
     );
 
     expect(controller.isActive, isTrue);
-    expect(controller.session?.connector, same(fixture.connector));
-    expect(controller.session?.communicator, same(fixture.communicator));
+    expect(observedSession?.connector, same(fixture.connector));
+    expect(observedSession?.communicator, same(fixture.communicator));
     expect(reads, 1);
 
     await tester.pump(const Duration(minutes: 5));
@@ -43,7 +46,6 @@ void main() {
     controller.stop();
 
     expect(controller.isActive, isFalse);
-    expect(controller.session, isNull);
     await tester.pump(const Duration(minutes: 5));
     expect(reads, 2);
   });
@@ -76,7 +78,134 @@ void main() {
     await firstScan;
 
     expect(controller.isActive, isTrue);
-    expect(controller.session?.communicator, same(fixture.communicator));
+  });
+
+  testWidgets('start rolls back when its active-state callback throws', (
+    tester,
+  ) async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    final controller = ContinuousScanController(
+      interval: const Duration(minutes: 5),
+      maxDuration: const Duration(minutes: 20),
+    );
+    addTearDown(controller.dispose);
+    final callbackError = StateError('active state callback failed');
+    final states = <bool>[];
+    var reads = 0;
+
+    await expectLater(
+      controller.start(
+        appState: fixture.appState,
+        isAvailable: () => true,
+        read: (session, canContinue) async {
+          reads++;
+          return true;
+        },
+        hasResult: () => false,
+        onStateChanged: (active) {
+          states.add(active);
+          if (active) {
+            throw callbackError;
+          }
+        },
+      ),
+      throwsA(same(callbackError)),
+    );
+
+    expect(controller.isActive, isFalse);
+    expect(states, [true]);
+    expect(reads, 0);
+    await tester.pump(const Duration(minutes: 5));
+    expect(reads, 0);
+  });
+
+  testWidgets('read and observer failures cannot strand an active scan', (
+    tester,
+  ) async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    final controller = ContinuousScanController(
+      interval: const Duration(minutes: 5),
+      maxDuration: const Duration(minutes: 20),
+    );
+    addTearDown(controller.dispose);
+    final readError = StateError('read failed');
+    final onErrorFailure = StateError('error observer failed');
+    final stoppedStateFailure = StateError('stopped state observer failed');
+    final states = <bool>[];
+    Object? observedReadError;
+    StackTrace? observedReadStackTrace;
+    var reads = 0;
+
+    await expectLater(
+      controller.start(
+        appState: fixture.appState,
+        isAvailable: () => true,
+        read: (session, canContinue) async {
+          reads++;
+          throw readError;
+        },
+        hasResult: () => false,
+        onStateChanged: (active) {
+          states.add(active);
+          if (!active) {
+            throw stoppedStateFailure;
+          }
+        },
+        onError: (error, stackTrace, session) {
+          observedReadError = error;
+          observedReadStackTrace = stackTrace;
+          throw onErrorFailure;
+        },
+      ),
+      throwsA(same(onErrorFailure)),
+    );
+
+    expect(observedReadError, same(readError));
+    expect(observedReadStackTrace, isNotNull);
+    expect(controller.isActive, isFalse);
+    expect(states, [true, false]);
+    expect(reads, 1);
+    await tester.pump(const Duration(minutes: 5));
+    expect(reads, 1);
+  });
+
+  testWidgets('availability callback failure is reported and cleaned up', (
+    tester,
+  ) async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    final controller = ContinuousScanController(
+      interval: const Duration(minutes: 5),
+      maxDuration: const Duration(minutes: 20),
+    );
+    addTearDown(controller.dispose);
+    final availabilityError = StateError('availability failed');
+    Object? reportedError;
+    StackTrace? reportedStackTrace;
+    var reads = 0;
+
+    await controller.start(
+      appState: fixture.appState,
+      isAvailable: () => throw availabilityError,
+      read: (session, canContinue) async {
+        reads++;
+        return true;
+      },
+      hasResult: () => false,
+      onError: (error, stackTrace, session) {
+        reportedError = error;
+        reportedStackTrace = stackTrace;
+      },
+    );
+
+    expect(reportedError, same(availabilityError));
+    expect(reportedStackTrace, isNotNull);
+    expect(controller.isActive, isFalse);
+    expect(reads, 0);
+    await tester.pump(const Duration(minutes: 5));
+    expect(reads, 0);
   });
 }
 

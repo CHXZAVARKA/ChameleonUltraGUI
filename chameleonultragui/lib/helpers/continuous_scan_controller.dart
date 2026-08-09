@@ -20,7 +20,6 @@ class ContinuousScanController {
   _ContinuousScanHandle? _activeScan;
 
   bool get isActive => _activeScan != null;
-  ConnectedDeviceSession? get session => _activeScan?.session;
 
   Future<void> start({
     required ChameleonGUIState appState,
@@ -45,11 +44,6 @@ class ContinuousScanController {
 
     late final _ContinuousScanHandle handle;
     final timer = Timer.periodic(interval, (_) {
-      if (!_canContinue(handle) ||
-          DateTime.now().difference(handle.startedAt) > maxDuration) {
-        _stop(handle);
-        return;
-      }
       unawaited(_runTick(handle));
     });
     handle = _ContinuousScanHandle(
@@ -64,7 +58,12 @@ class ContinuousScanController {
       onError: onError,
     );
     _activeScan = handle;
-    onStateChanged?.call(true);
+    try {
+      onStateChanged?.call(true);
+    } catch (error, stackTrace) {
+      _deactivate(handle);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
 
     await _runTick(handle);
   }
@@ -89,11 +88,20 @@ class ContinuousScanController {
       _owns(handle) && handle.isAvailable() && handle.session.isCurrent;
 
   Future<void> _runTick(_ContinuousScanHandle handle) async {
-    if (!_canContinue(handle)) {
+    bool canContinue;
+    try {
+      canContinue = _canContinue(handle);
+    } catch (error, stackTrace) {
+      _handleFailure(handle, error, stackTrace);
+      return;
+    }
+    if (!canContinue ||
+        DateTime.now().difference(handle.startedAt) > maxDuration) {
       _stop(handle);
       return;
     }
 
+    var shouldStop = false;
     try {
       final result = await handle.appState.rfOperations.tryRunBackground(
         () => handle.read(
@@ -104,34 +112,74 @@ class ContinuousScanController {
       if (!_owns(handle)) {
         return;
       }
-      if (!_canContinue(handle)) {
-        _stop(handle);
+      canContinue = _canContinue(handle);
+      if (!canContinue) {
+        shouldStop = true;
+      } else if (!result.acquired) {
         return;
-      }
-      if (!result.acquired) {
-        return;
-      }
-      if (result.value != true || handle.hasResult()) {
-        _stop(handle);
+      } else {
+        shouldStop = result.value != true || handle.hasResult();
       }
     } catch (error, stackTrace) {
       if (!_owns(handle)) {
         return;
       }
-      handle.onError?.call(error, stackTrace, handle.session);
+      _handleFailure(handle, error, stackTrace);
+      return;
+    }
+
+    if (shouldStop) {
       _stop(handle);
     }
   }
 
   void _stop(_ContinuousScanHandle handle, {bool notify = true}) {
-    if (!_owns(handle)) {
+    if (!_deactivate(handle)) {
       return;
+    }
+
+    if (notify) {
+      handle.onStateChanged?.call(false);
+    }
+  }
+
+  bool _deactivate(_ContinuousScanHandle handle) {
+    if (!_owns(handle)) {
+      return false;
     }
 
     handle.timer.cancel();
     _activeScan = null;
-    if (notify) {
+    return true;
+  }
+
+  void _handleFailure(
+    _ContinuousScanHandle handle,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    if (!_deactivate(handle)) {
+      return;
+    }
+
+    Object? observerError;
+    StackTrace? observerStackTrace;
+    try {
+      handle.onError?.call(error, stackTrace, handle.session);
+    } catch (error, stackTrace) {
+      observerError = error;
+      observerStackTrace = stackTrace;
+    }
+
+    try {
       handle.onStateChanged?.call(false);
+    } catch (error, stackTrace) {
+      observerError ??= error;
+      observerStackTrace ??= stackTrace;
+    }
+
+    if (observerError != null) {
+      Error.throwWithStackTrace(observerError, observerStackTrace!);
     }
   }
 }

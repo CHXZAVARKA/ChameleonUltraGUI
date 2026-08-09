@@ -723,6 +723,123 @@ void main() {
   });
 
   testWidgets(
+    'continuous HF scan stops when its app-state provider is replaced',
+    (tester) async {
+      final fixture = await _ReplaceableReadCardFixture.mount(
+        tester,
+        originalCommunicatorFactory: (logger, connector) =>
+            _PendingHFCommunicator(logger, port: connector),
+        replacementCommunicatorFactory: (logger, connector) =>
+            _ContinuousHFCommunicator(logger, port: connector),
+      );
+      final originalCommunicator =
+          fixture.originalCommunicator as _PendingHFCommunicator;
+      final replacementCommunicator =
+          fixture.replacementCommunicator as _ContinuousHFCommunicator;
+      final readCardState = tester.state<ReadCardPageState>(
+        find.byType(ReadCardPage),
+      );
+      final originalInfo = HFCardInfo(uid: 'original persisted');
+      final replacementInfo = HFCardInfo(uid: 'replacement persisted');
+      fixture.originalAppState.readCardSession.hfInfo = originalInfo;
+      fixture.replacementAppState.readCardSession.hfInfo = replacementInfo;
+
+      final scan = readCardState.startContinuousHFScan();
+      await tester.pump();
+      expect(originalCommunicator.scanStarted.isCompleted, isTrue);
+
+      fixture.replaceProvider();
+      await tester.pump();
+      expect(
+        tester.state<ReadCardPageState>(find.byType(ReadCardPage)),
+        same(readCardState),
+      );
+      expect(readCardState.isContinuousHFScan, isFalse);
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(originalCommunicator.detectCalls, 0);
+      expect(replacementCommunicator.scanCalls, 0);
+
+      originalCommunicator.completeScan(
+        CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 0x08,
+          atqa: Uint8List.fromList([0x00, 0x04]),
+          ats: Uint8List(0),
+        ),
+      );
+      await scan;
+      await tester.pump();
+
+      expect(originalCommunicator.detectCalls, 0);
+      expect(replacementCommunicator.scanCalls, 0);
+      expect(
+        fixture.originalAppState.readCardSession.hfInfo,
+        same(originalInfo),
+      );
+      expect(
+        fixture.replacementAppState.readCardSession.hfInfo,
+        same(replacementInfo),
+      );
+    },
+  );
+
+  testWidgets(
+    'continuous LF scan stops when its app-state provider is replaced',
+    (tester) async {
+      final fixture = await _ReplaceableReadCardFixture.mount(
+        tester,
+        originalCommunicatorFactory: (logger, connector) =>
+            _PendingLFCommunicator(logger, port: connector),
+        replacementCommunicatorFactory: (logger, connector) =>
+            _ContinuousLFCommunicator(logger, port: connector),
+      );
+      final originalCommunicator =
+          fixture.originalCommunicator as _PendingLFCommunicator;
+      final replacementCommunicator =
+          fixture.replacementCommunicator as _ContinuousLFCommunicator;
+      final readCardState = tester.state<ReadCardPageState>(
+        find.byType(ReadCardPage),
+      );
+      final replacementInfo = LFCardInfo();
+      fixture.replacementAppState.readCardSession.lfInfo = replacementInfo;
+
+      final scan = readCardState.startContinuousLFScan();
+      await tester.pump();
+      expect(originalCommunicator.readStarted.isCompleted, isTrue);
+      final originalInfo = fixture.originalAppState.readCardSession.lfInfo;
+
+      fixture.replaceProvider();
+      await tester.pump();
+      expect(
+        tester.state<ReadCardPageState>(find.byType(ReadCardPage)),
+        same(readCardState),
+      );
+      expect(readCardState.isContinuousLFScan, isFalse);
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(originalCommunicator.followUpCalls, 0);
+      expect(replacementCommunicator.readCalls, 0);
+
+      originalCommunicator.completeRead(EM410XCard.fromUID('0102030405'));
+      await scan;
+      await tester.pump();
+
+      expect(originalCommunicator.followUpCalls, 0);
+      expect(replacementCommunicator.readCalls, 0);
+      expect(
+        fixture.originalAppState.readCardSession.lfInfo,
+        same(originalInfo),
+      );
+      expect(originalInfo.card, isNull);
+      expect(
+        fixture.replacementAppState.readCardSession.lfInfo,
+        same(replacementInfo),
+      );
+    },
+  );
+
+  testWidgets(
     'slow continuous scan skips overlapping ticks and resumes later',
     (tester) async {
       final fixture = await _ReadCardFixture.mount(
@@ -1040,6 +1157,119 @@ class _ReadCardFixture {
     appState
       ..communicator = ChameleonCommunicator(logger, port: connector)
       ..changesMade();
+  }
+}
+
+class _ReplaceableReadCardFixture {
+  _ReplaceableReadCardFixture({
+    required this.hostKey,
+    required this.originalAppState,
+    required this.originalCommunicator,
+    required this.replacementAppState,
+    required this.replacementCommunicator,
+  });
+
+  final GlobalKey<_ReplaceableReadCardHostState> hostKey;
+  final ChameleonGUIState originalAppState;
+  final ChameleonCommunicator originalCommunicator;
+  final ChameleonGUIState replacementAppState;
+  final ChameleonCommunicator replacementCommunicator;
+
+  static Future<_ReplaceableReadCardFixture> mount(
+    WidgetTester tester, {
+    required _CommunicatorFactory originalCommunicatorFactory,
+    required _CommunicatorFactory replacementCommunicatorFactory,
+  }) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+
+    ChameleonGUIState createAppState(_CommunicatorFactory factory) {
+      final connector = EmulatorSerial(log: logger)
+        ..connected = true
+        ..device = ChameleonDevice.ultra
+        ..connectionType = ConnectionType.usb;
+      final communicator = factory(logger, connector);
+      return ChameleonGUIState(preferences)
+        ..log = logger
+        ..connector = connector
+        ..communicator = communicator;
+    }
+
+    final originalAppState = createAppState(originalCommunicatorFactory);
+    final replacementAppState = createAppState(replacementCommunicatorFactory);
+    final hostKey = GlobalKey<_ReplaceableReadCardHostState>();
+
+    tester.view.physicalSize = const Size(3000, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      _ReplaceableReadCardHost(
+        key: hostKey,
+        initialAppState: originalAppState,
+        preferences: preferences,
+      ),
+    );
+    await tester.pump();
+
+    return _ReplaceableReadCardFixture(
+      hostKey: hostKey,
+      originalAppState: originalAppState,
+      originalCommunicator: originalAppState.communicator!,
+      replacementAppState: replacementAppState,
+      replacementCommunicator: replacementAppState.communicator!,
+    );
+  }
+
+  void replaceProvider() {
+    hostKey.currentState!.replaceAppState(replacementAppState);
+  }
+}
+
+class _ReplaceableReadCardHost extends StatefulWidget {
+  const _ReplaceableReadCardHost({
+    super.key,
+    required this.initialAppState,
+    required this.preferences,
+  });
+
+  final ChameleonGUIState initialAppState;
+  final SharedPreferencesProvider preferences;
+
+  @override
+  State<_ReplaceableReadCardHost> createState() =>
+      _ReplaceableReadCardHostState();
+}
+
+class _ReplaceableReadCardHostState extends State<_ReplaceableReadCardHost> {
+  late ChameleonGUIState _appState;
+
+  @override
+  void initState() {
+    super.initState();
+    _appState = widget.initialAppState;
+  }
+
+  void replaceAppState(ChameleonGUIState appState) {
+    setState(() {
+      _appState = appState;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider<ChameleonGUIState>.value(
+      value: _appState,
+      child: MaterialApp(
+        locale: widget.preferences.getLocale(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const ReadCardPage(),
+      ),
+    );
   }
 }
 

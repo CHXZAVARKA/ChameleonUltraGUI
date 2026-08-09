@@ -29,6 +29,7 @@ class ReadCardPage extends StatefulWidget {
 class ReadCardPageState extends State<ReadCardPage> {
   late ChameleonGUIState _appState;
   late ReadCardSession _session;
+  bool _dependenciesInitialized = false;
 
   String get dumpName => _session.dumpName;
   set dumpName(String value) => _session.dumpName = value;
@@ -56,8 +57,17 @@ class ReadCardPageState extends State<ReadCardPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final appState = Provider.of<ChameleonGUIState>(context);
+    final appStateChanged =
+        _dependenciesInitialized && !identical(_appState, appState);
+    _appState = appState;
     _session = _appState.readCardSession;
+    _dependenciesInitialized = true;
+
+    if (appStateChanged) {
+      _continuousHFScan.stop();
+      _continuousLFScan.stop();
+    }
     mfcInfo.recovery?.update = updateMifareClassicRecovery;
 
     final activeSession = _manualReadSession;
@@ -235,21 +245,22 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   Future<void> startContinuousHFScan() async {
+    final appState = _appState;
     await _continuousHFScan.start(
-      appState: _appState,
-      isAvailable: () => mounted,
+      appState: appState,
+      isAvailable: () => mounted && identical(_appState, appState),
       read: (session, canContinue) => _readAndCommitHFInfoUnderLease(
         session: session,
         canContinue: canContinue,
       ),
       hasResult: () => hfInfo.cardExist && hfInfo.uid.isNotEmpty,
       onStateChanged: (_) {
-        if (mounted) {
+        if (mounted && identical(_appState, appState)) {
           setState(() {});
         }
       },
       onError: (error, stackTrace, session) {
-        (_appState.log ?? session.communicator.log).e(
+        (appState.log ?? session.communicator.log).e(
           'Continuous HF scan failed',
           error: error,
           stackTrace: stackTrace,
@@ -261,21 +272,22 @@ class ReadCardPageState extends State<ReadCardPage> {
   void stopContinuousHFScan() => _continuousHFScan.stop();
 
   Future<void> startContinuousLFScan() async {
+    final appState = _appState;
     await _continuousLFScan.start(
-      appState: _appState,
-      isAvailable: () => mounted,
+      appState: appState,
+      isAvailable: () => mounted && identical(_appState, appState),
       read: (session, canContinue) => _readLFInfoUnderLease(
         session,
         canContinue: canContinue,
       ),
       hasResult: () => lfInfo.cardExist && lfInfo.card != null,
       onStateChanged: (_) {
-        if (mounted) {
+        if (mounted && identical(_appState, appState)) {
           setState(() {});
         }
       },
       onError: (error, stackTrace, session) {
-        (_appState.log ?? session.communicator.log).e(
+        (appState.log ?? session.communicator.log).e(
           'Continuous LF scan failed',
           error: error,
           stackTrace: stackTrace,
