@@ -55,26 +55,19 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
   Future<void> _loadCapabilities() async {
     final appState = context.read<ChameleonGUIState>();
-    if (appState.communicator == null) {
+    final result = await appState.runSessionBoundForegroundCatching(
+      (session) async {
+        final capabilities = await session.communicator.getDeviceCapabilities();
+        return capabilities.contains(ChameleonCommand.lfSniff.value);
+      },
+    );
+    final session = result.session;
+    if (!result.executed || session == null || !mounted || !session.isCurrent) {
       return;
     }
-    try {
-      final capabilities = await appState.communicator!.getDeviceCapabilities();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported =
-            capabilities.contains(ChameleonCommand.lfSniff.value);
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported = null;
-      });
-    }
+    setState(() {
+      _capabilitySupported = result.error == null ? result.value : null;
+    });
   }
 
   bool _isDeviceConnected() {
@@ -96,10 +89,9 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
       _statusMessage = localizations.lf_sniff_capture_in_progress(timeoutMs);
     });
 
-    ConnectedDeviceSession? operationSession;
     try {
-      final result = await appState.runSessionBoundForeground((session) async {
-        operationSession = session;
+      final result =
+          await appState.runSessionBoundForegroundCatching((session) async {
         if (!mounted || !session.isCurrent) {
           return null;
         }
@@ -122,11 +114,27 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
       final samples = result.value;
       if (!result.executed ||
           session == null ||
-          samples == null ||
           !mounted ||
           !session.isCurrent) {
         return;
       }
+
+      final error = result.error;
+      if (error != null) {
+        final errorText = error.toString();
+        final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
+        setState(() {
+          if (firmwareUnsupported) {
+            _capabilitySupported = false;
+            _statusMessage = null;
+            _errorMessage = null;
+          } else {
+            _errorMessage = errorText;
+          }
+        });
+        return;
+      }
+      if (samples == null) return;
 
       if (samples.isEmpty) {
         setState(() {
@@ -147,23 +155,6 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         _decodeError = decodeOutcome.error;
         _statusMessage =
             localizations.lf_sniff_capture_done(capture.summary.sampleCount);
-      });
-    } catch (error) {
-      final session = operationSession;
-      if (!mounted || session == null || !session.isCurrent) {
-        return;
-      }
-
-      final errorText = error.toString();
-      final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
-      setState(() {
-        if (firmwareUnsupported) {
-          _capabilitySupported = false;
-          _statusMessage = null;
-          _errorMessage = null;
-        } else {
-          _errorMessage = errorText;
-        }
       });
     } finally {
       if (mounted) {
@@ -244,8 +235,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.lf_sniff_load_failed(localizations.lf_sniff_no_samples);
+        _errorMessage = localizations
+            .lf_sniff_load_failed(localizations.lf_sniff_no_samples);
       });
       return;
     }
@@ -268,8 +259,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.lf_sniff_load_failed(localizations.lf_sniff_no_samples);
+        _errorMessage = localizations
+            .lf_sniff_load_failed(localizations.lf_sniff_no_samples);
       });
       return;
     }

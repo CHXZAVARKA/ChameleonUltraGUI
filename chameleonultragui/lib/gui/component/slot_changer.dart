@@ -22,26 +22,39 @@ class SlotChangerState extends State<SlotChanger> {
 
   Future<List<Icon>> getFutureData() async {
     var appState = context.read<ChameleonGUIState>();
-    List<SlotTypes> usedSlots;
+    final result = await appState.runSessionBoundForeground((session) async {
+      List<SlotTypes> usedSlots;
+      try {
+        usedSlots = await session.communicator.getSlotTagTypes();
+      } catch (_) {
+        usedSlots = [];
+      }
+      if (!mounted || !session.isCurrent) return null;
 
-    try {
-      usedSlots = await appState.communicator!.getSlotTagTypes();
-    } catch (_) {
-      usedSlots = [];
+      var activeSlot = 1;
+      try {
+        activeSlot = await session.communicator.getActiveSlot() + 1;
+      } catch (_) {}
+      if (!mounted || !session.isCurrent) return null;
+
+      return (usedSlots: usedSlots, activeSlot: activeSlot);
+    });
+    final session = result.session;
+    final data = result.value;
+    if (!result.executed ||
+        session == null ||
+        data == null ||
+        !mounted ||
+        !session.isCurrent) {
+      return [const Icon(Icons.warning)];
     }
 
-    return await getSlotIcons(usedSlots);
+    selectedSlot = data.activeSlot;
+    return getSlotIcons(data.usedSlots);
   }
 
-  Future<List<Icon>> getSlotIcons(List<SlotTypes> usedSlots) async {
-    var appState = context.read<ChameleonGUIState>();
+  List<Icon> getSlotIcons(List<SlotTypes> usedSlots) {
     List<Icon> icons = [];
-
-    try {
-      selectedSlot = await appState.communicator!.getActiveSlot() + 1;
-    } catch (_) {
-      selectedSlot = 1;
-    }
 
     if (usedSlots.isEmpty) {
       return [const Icon(Icons.warning)];

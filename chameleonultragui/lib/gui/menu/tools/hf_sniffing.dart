@@ -68,26 +68,19 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
   Future<void> _loadCapabilities() async {
     final appState = context.read<ChameleonGUIState>();
-    if (appState.communicator == null) {
+    final result = await appState.runSessionBoundForegroundCatching(
+      (session) async {
+        final capabilities = await session.communicator.getDeviceCapabilities();
+        return capabilities.contains(ChameleonCommand.hf14aSniff.value);
+      },
+    );
+    final session = result.session;
+    if (!result.executed || session == null || !mounted || !session.isCurrent) {
       return;
     }
-    try {
-      final capabilities = await appState.communicator!.getDeviceCapabilities();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported =
-            capabilities.contains(ChameleonCommand.hf14aSniff.value);
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported = null;
-      });
-    }
+    setState(() {
+      _capabilitySupported = result.error == null ? result.value : null;
+    });
   }
 
   Future<void> _captureFrames() async {
@@ -107,10 +100,9 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
       _statusMessage = localizations.hf_sniff_capture_in_progress(timeoutMs);
     });
 
-    ConnectedDeviceSession? operationSession;
     try {
-      final result = await appState.runSessionBoundForeground((session) async {
-        operationSession = session;
+      final result =
+          await appState.runSessionBoundForegroundCatching((session) async {
         if (!mounted || !session.isCurrent) {
           return null;
         }
@@ -133,11 +125,27 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
       final rawBytes = result.value;
       if (!result.executed ||
           session == null ||
-          rawBytes == null ||
           !mounted ||
           !session.isCurrent) {
         return;
       }
+
+      final error = result.error;
+      if (error != null) {
+        final errorText = error.toString();
+        final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
+        setState(() {
+          if (firmwareUnsupported) {
+            _capabilitySupported = false;
+            _statusMessage = null;
+            _errorMessage = null;
+          } else {
+            _errorMessage = errorText;
+          }
+        });
+        return;
+      }
+      if (rawBytes == null) return;
 
       if (rawBytes.isEmpty) {
         setState(() {
@@ -152,23 +160,6 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
         _statusMessage = capture.frames.isEmpty
             ? localizations.hf_sniff_no_decoded_frames
             : localizations.hf_sniff_capture_done(capture.frames.length);
-      });
-    } catch (error) {
-      final session = operationSession;
-      if (!mounted || session == null || !session.isCurrent) {
-        return;
-      }
-
-      final errorText = error.toString();
-      final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
-      setState(() {
-        if (firmwareUnsupported) {
-          _capabilitySupported = false;
-          _statusMessage = null;
-          _errorMessage = null;
-        } else {
-          _errorMessage = errorText;
-        }
       });
     } finally {
       if (mounted) {
@@ -232,8 +223,8 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.hf_sniff_load_failed(localizations.hf_sniff_no_frames);
+        _errorMessage = localizations
+            .hf_sniff_load_failed(localizations.hf_sniff_no_frames);
       });
       return;
     }

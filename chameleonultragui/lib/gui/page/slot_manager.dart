@@ -53,9 +53,35 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     var appState = context.read<ChameleonGUIState>();
     var localizations = AppLocalizations.of(context)!;
 
-    usedSlots = await appState.communicator!.getSlotTagTypes();
-    enabledSlots = await appState.communicator!.getEnabledSlots();
-    slotData = await appState.communicator!.getSlotTagNames();
+    final result = await appState.runSessionBoundForeground((session) async {
+      final nextUsedSlots = await session.communicator.getSlotTagTypes();
+      if (!mounted || !session.isCurrent) return null;
+
+      final nextEnabledSlots = await session.communicator.getEnabledSlots();
+      if (!mounted || !session.isCurrent) return null;
+
+      final nextSlotData = await session.communicator.getSlotTagNames();
+      if (!mounted || !session.isCurrent) return null;
+
+      return (
+        usedSlots: nextUsedSlots,
+        enabledSlots: nextEnabledSlots,
+        slotData: nextSlotData,
+      );
+    });
+    final session = result.session;
+    final data = result.value;
+    if (!result.executed ||
+        session == null ||
+        data == null ||
+        !mounted ||
+        !session.isCurrent) {
+      return;
+    }
+
+    usedSlots = data.usedSlots;
+    enabledSlots = data.enabledSlots;
+    slotData = data.slotData;
 
     for (SlotNames slot in slotData) {
       slot.hf = slot.hf.isEmpty ? localizations.no_name : slot.hf;

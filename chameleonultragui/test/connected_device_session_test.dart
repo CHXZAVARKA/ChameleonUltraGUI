@@ -158,6 +158,55 @@ void main() {
     expect(resumed.executed, isTrue);
     expect(resumed.value, 42);
   });
+
+  test('catching session-bound foreground returns the session and error',
+      () async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    final failure = StateError('boom');
+
+    final result = await fixture.appState
+        .runSessionBoundForegroundCatching<Object?>((session) async {
+      throw failure;
+    });
+
+    expect(result.executed, isTrue);
+    expect(result.session, isNotNull);
+    expect(result.session!.connector, same(fixture.connector));
+    expect(result.session!.communicator, same(fixture.communicator));
+    expect(result.error, same(failure));
+    expect(result.stackTrace, isNotNull);
+    expect(result.value, isNull);
+  });
+
+  test('queued catching session-bound foreground rejects a stale session',
+      () async {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+    final blocker = Completer<void>();
+    final blockingOperation = fixture.appState.rfOperations.runForeground(
+      () => blocker.future,
+    );
+    var callbackRan = false;
+
+    final queued = fixture.appState.runSessionBoundForegroundCatching<void>(
+      (session) async {
+        callbackRan = true;
+      },
+    );
+    fixture.appState.communicator = ChameleonCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    blocker.complete();
+    await blockingOperation;
+
+    final result = await queued;
+    expect(callbackRan, isFalse);
+    expect(result.executed, isFalse);
+    expect(result.session, isNull);
+    expect(result.error, isNull);
+  });
 }
 
 ({

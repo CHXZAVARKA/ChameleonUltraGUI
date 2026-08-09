@@ -42,16 +42,29 @@ class SessionBoundRfResult<T> {
   const SessionBoundRfResult.rejected()
       : executed = false,
         session = null,
-        value = null;
+        value = null,
+        error = null,
+        stackTrace = null;
 
   const SessionBoundRfResult.completed({
     required ConnectedDeviceSession this.session,
     required this.value,
-  }) : executed = true;
+  })  : executed = true,
+        error = null,
+        stackTrace = null;
+
+  const SessionBoundRfResult.failed({
+    required ConnectedDeviceSession this.session,
+    required Object this.error,
+    required StackTrace this.stackTrace,
+  })  : executed = true,
+        value = null;
 
   final bool executed;
   final ConnectedDeviceSession? session;
   final T? value;
+  final Object? error;
+  final StackTrace? stackTrace;
 }
 
 extension SessionBoundRfOperations on ChameleonGUIState {
@@ -79,5 +92,34 @@ extension SessionBoundRfOperations on ChameleonGUIState {
         value: await operation(session),
       );
     });
+  }
+
+  /// Runs [operation] like [runSessionBoundForeground], but returns callback
+  /// failures together with the session that observed them.
+  Future<SessionBoundRfResult<T>> runSessionBoundForegroundCatching<T>(
+    Future<T> Function(ConnectedDeviceSession session) operation,
+  ) async {
+    final outerResult =
+        await runSessionBoundForeground<SessionBoundRfResult<T>>(
+      (session) async {
+        try {
+          return SessionBoundRfResult.completed(
+            session: session,
+            value: await operation(session),
+          );
+        } catch (error, stackTrace) {
+          return SessionBoundRfResult.failed(
+            session: session,
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      },
+    );
+
+    if (!outerResult.executed) {
+      return const SessionBoundRfResult.rejected();
+    }
+    return outerResult.value!;
   }
 }

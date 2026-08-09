@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/component/slot_changer.dart';
+import 'package:chameleonultragui/gui/menu/tools/hf_sniffing.dart';
 import 'package:chameleonultragui/gui/menu/tools/lf_sniffing.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -22,6 +24,7 @@ void main() {
     addTearDown(fixture.dispose);
     await fixture.mount(tester, const SlotManagerPage());
     await tester.pumpAndSettle();
+    fixture.communicator.operations.clear();
 
     final state = tester.state<SlotManagerPageState>(
       find.byType(SlotManagerPage),
@@ -124,6 +127,7 @@ void main() {
     addTearDown(fixture.dispose);
     await fixture.mount(tester, const SlotManagerPage());
     await tester.pumpAndSettle();
+    fixture.communicator.operations.clear();
     final state = tester.state<SlotManagerPageState>(
       find.byType(SlotManagerPage),
     );
@@ -158,6 +162,7 @@ void main() {
     addTearDown(fixture.dispose);
     await fixture.mount(tester, const SlotManagerPage());
     await tester.pumpAndSettle();
+    fixture.communicator.operations.clear();
     final state = tester.state<SlotManagerPageState>(
       find.byType(SlotManagerPage),
     );
@@ -202,6 +207,186 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('Slot Manager metadata waits for its foreground FIFO turn',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create();
+    addTearDown(fixture.dispose);
+    final gate = Completer<void>();
+    final blocker = fixture.appState.rfOperations.runForeground(
+      () => gate.future,
+    );
+
+    await fixture.mount(tester, const SlotManagerPage());
+    await tester.pump();
+    await tester.pump();
+    expect(fixture.communicator.operations, isEmpty);
+
+    final afterMetadata = fixture.appState.rfOperations.runForeground(() async {
+      fixture.communicator.operations.add('after-metadata');
+    });
+    gate.complete();
+    await blocker;
+    await afterMetadata;
+    await tester.pumpAndSettle();
+
+    expect(
+      fixture.communicator.operations,
+      ['slot-types', 'enabled-slots', 'slot-names', 'after-metadata'],
+    );
+  });
+
+  testWidgets('Slot Manager metadata stops after communicator replacement',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create(holdSlotTypes: true);
+    addTearDown(fixture.dispose);
+
+    await fixture.mount(tester, const SlotManagerPage());
+    await tester.pump();
+    await fixture.communicator.slotTypesStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    final replacement = _WorkflowCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    fixture.appState.communicator = replacement;
+    fixture.communicator.allowSlotTypes.complete();
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.operations, ['slot-types']);
+    expect(replacement.operations, isEmpty);
+  });
+
+  testWidgets('Slot Changer metadata waits for its foreground FIFO turn',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create();
+    addTearDown(fixture.dispose);
+    final gate = Completer<void>();
+    final blocker = fixture.appState.rfOperations.runForeground(
+      () => gate.future,
+    );
+
+    await fixture.mount(tester, const SlotChanger());
+    await tester.pump();
+    await tester.pump();
+    expect(fixture.communicator.operations, isEmpty);
+
+    final afterMetadata = fixture.appState.rfOperations.runForeground(() async {
+      fixture.communicator.operations.add('after-metadata');
+    });
+    gate.complete();
+    await blocker;
+    await afterMetadata;
+    await tester.pumpAndSettle();
+
+    expect(
+      fixture.communicator.operations,
+      ['slot-types', 'active-slot', 'after-metadata'],
+    );
+  });
+
+  testWidgets('Slot Changer metadata stops after communicator replacement',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create(holdSlotTypes: true);
+    addTearDown(fixture.dispose);
+
+    await fixture.mount(tester, const SlotChanger());
+    await tester.pump();
+    await fixture.communicator.slotTypesStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    final replacement = _WorkflowCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    fixture.appState.communicator = replacement;
+    fixture.communicator.allowSlotTypes.complete();
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.operations, ['slot-types']);
+    expect(replacement.operations, isEmpty);
+  });
+
+  testWidgets('HF capability probe waits and ignores a stale response',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create(holdCapabilities: true);
+    addTearDown(fixture.dispose);
+    final gate = Completer<void>();
+    final blocker = fixture.appState.rfOperations.runForeground(
+      () => gate.future,
+    );
+
+    await fixture.mount(tester, const HfSniffingMenu());
+    await tester.pump();
+    await tester.pump();
+    expect(fixture.communicator.operations, isEmpty);
+
+    gate.complete();
+    await blocker;
+    await tester.pump();
+    await fixture.communicator.capabilitiesStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    final replacement = _WorkflowCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    fixture.appState.communicator = replacement;
+    fixture.communicator.allowCapabilities.complete();
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.operations, ['capabilities']);
+    expect(replacement.operations, isEmpty);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Capture').first,
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('LF capability probe waits and ignores a stale response',
+      (tester) async {
+    final fixture = await _WorkflowFixture.create(holdCapabilities: true);
+    addTearDown(fixture.dispose);
+    final gate = Completer<void>();
+    final blocker = fixture.appState.rfOperations.runForeground(
+      () => gate.future,
+    );
+
+    await fixture.mount(tester, const LfSniffingMenu());
+    await tester.pump();
+    await tester.pump();
+    expect(fixture.communicator.operations, isEmpty);
+
+    gate.complete();
+    await blocker;
+    await tester.pump();
+    await fixture.communicator.capabilitiesStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    final replacement = _WorkflowCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    fixture.appState.communicator = replacement;
+    fixture.communicator.allowCapabilities.complete();
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.operations, ['capabilities']);
+    expect(replacement.operations, isEmpty);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Capture').first,
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
 }
 
 class _WorkflowFixture {
@@ -217,7 +402,11 @@ class _WorkflowFixture {
   final EmulatorSerial connector;
   final Logger logger;
 
-  static Future<_WorkflowFixture> create({bool throwOnLfSniff = false}) async {
+  static Future<_WorkflowFixture> create({
+    bool throwOnLfSniff = false,
+    bool holdSlotTypes = false,
+    bool holdCapabilities = false,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -228,6 +417,8 @@ class _WorkflowFixture {
       logger,
       port: connector,
       throwOnLfSniff: throwOnLfSniff,
+      holdSlotTypes: holdSlotTypes,
+      holdCapabilities: holdCapabilities,
     );
     final appState = ChameleonGUIState(preferences)
       ..log = logger
@@ -265,26 +456,50 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
     super.logger, {
     required super.port,
     this.throwOnLfSniff = false,
+    this.holdSlotTypes = false,
+    this.holdCapabilities = false,
   });
 
   final bool throwOnLfSniff;
+  final bool holdSlotTypes;
+  final bool holdCapabilities;
   final List<String> operations = [];
   final Completer<void> modeStarted = Completer<void>();
   final Completer<void> allowMode = Completer<void>();
   final Completer<void> readerModeStarted = Completer<void>();
   final Completer<void> allowReaderMode = Completer<void>();
+  final Completer<void> slotTypesStarted = Completer<void>();
+  final Completer<void> allowSlotTypes = Completer<void>();
+  final Completer<void> capabilitiesStarted = Completer<void>();
+  final Completer<void> allowCapabilities = Completer<void>();
 
   @override
-  Future<List<SlotTypes>> getSlotTagTypes() async =>
-      List.generate(8, (_) => SlotTypes());
+  Future<List<SlotTypes>> getSlotTagTypes() async {
+    operations.add('slot-types');
+    if (holdSlotTypes) {
+      slotTypesStarted.complete();
+      await allowSlotTypes.future;
+    }
+    return List.generate(8, (_) => SlotTypes());
+  }
 
   @override
-  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
-      List.generate(8, (_) => EnabledSlotInfo());
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async {
+    operations.add('enabled-slots');
+    return List.generate(8, (_) => EnabledSlotInfo());
+  }
 
   @override
-  Future<List<SlotNames>> getSlotTagNames() async =>
-      List.generate(8, (_) => SlotNames());
+  Future<List<SlotNames>> getSlotTagNames() async {
+    operations.add('slot-names');
+    return List.generate(8, (_) => SlotNames());
+  }
+
+  @override
+  Future<int> getActiveSlot() async {
+    operations.add('active-slot');
+    return 0;
+  }
 
   @override
   Future<void> setReaderDeviceMode(bool readerMode) async {
@@ -341,6 +556,11 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
   @override
   Future<List<int>> getDeviceCapabilities() async {
     operations.add('capabilities');
+    if (holdCapabilities) {
+      capabilitiesStarted.complete();
+      await allowCapabilities.future;
+      return [];
+    }
     return [ChameleonCommand.lfSniff.value];
   }
 
