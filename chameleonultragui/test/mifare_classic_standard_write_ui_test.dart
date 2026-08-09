@@ -20,6 +20,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+// ignore: depend_on_referenced_packages
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -612,11 +615,30 @@ void main() {
     await tester.pump();
 
     expect(find.text('Writing changed blocks: 0/2'), findsOneWidget);
-    for (final button in tester.widgetList<OutlinedButton>(
-      find.byType(OutlinedButton),
-    )) {
-      expect(button.onPressed, isNull);
-    }
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Load file'),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Select saved card'),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Cancel'),
+          )
+          .onPressed,
+      isNotNull,
+    );
     expect(
       tester
           .widget<DropdownButton<String>>(
@@ -639,6 +661,113 @@ void main() {
     expect(communicator.writeCalls, 1);
     expect(communicator.postWriteScans, 1);
     expect(communicator.postWriteReads, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'Standard write stays active offstage, exposes global progress, and stops safely',
+      (tester) async {
+    final previousWakelock = wakelockPlusPlatformInstance;
+    final wakelock = _RecordingWakelock();
+    wakelockPlusPlatformInstance = wakelock;
+    addTearDown(() => wakelockPlusPlatformInstance = previousWakelock);
+
+    final targetBlocks = _miniTargetBlocks();
+    targetBlocks[2][0] = 2;
+    final preferences = await _standardMiniPreferences(targetBlocks);
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final connector = _TestSerial(log: logger)..connected = true;
+    final currentBlocks = [
+      for (var block = 0; block < 20; block++)
+        Uint8List.fromList(targetBlocks[block]),
+    ]
+      ..[1] = Uint8List(16)
+      ..[2] = Uint8List(16);
+    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+      ..writeStarted = Completer<void>()
+      ..allowWriteResponse = Completer<void>();
+    final appState = ChameleonGUIState(preferences)
+      ..log = logger
+      ..connector = connector
+      ..communicator = communicator;
+
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MainPage(sharedPreferencesProvider: preferences),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.system_update_alt).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Standard MIFARE Classic'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select saved card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mini dump'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select key profile'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mini keys (5 keys)').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pump();
+    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
+    await tester.pump();
+
+    final writePage = tester.state<WriteCardPageState>(
+      find.byType(WriteCardPage),
+    );
+    expect(appState.standardWriteActivity?.isActive, isTrue);
+    expect(wakelock.states.last, isTrue);
+
+    await tester.tap(find.byIcon(Icons.auto_awesome_motion));
+    await tester.pump();
+    expect(find.byType(WriteCardPage), findsNothing);
+    expect(
+      find.byType(WriteCardPage, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(writePage.mounted, isTrue);
+    expect(
+      find.byKey(
+        const ValueKey('standard-write-global-progress'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('standard-write-global-progress')),
+    );
+    await tester.pump();
+    expect(tester.state<WriteCardPageState>(find.byType(WriteCardPage)),
+        same(writePage));
+    expect(find.textContaining('Mini dump'), findsWidgets);
+    expect(find.text('Writing changed blocks: 0/2'), findsNWidgets(2));
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    communicator.allowWriteResponse!.complete();
+    await appState.rfOperations
+        .runForeground(() async {})
+        .timeout(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(communicator.writeCalls, 1);
+    expect(communicator.postWriteScans, 1);
+    expect(communicator.postWriteReads, 1);
+    expect(
+      appState.standardWriteActivity?.state,
+      StandardWriteActivityState.cancelled,
+    );
+    expect(wakelock.states.last, isFalse);
     expect(tester.takeException(), isNull);
   });
 
@@ -914,4 +1043,16 @@ class _TestSerial extends AbstractSerial {
 
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
+}
+
+class _RecordingWakelock extends WakelockPlusPlatformInterface {
+  final List<bool> states = [];
+
+  @override
+  Future<bool> get enabled async => states.isNotEmpty && states.last;
+
+  @override
+  Future<void> toggle({required bool enable}) async {
+    states.add(enable);
+  }
 }

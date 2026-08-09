@@ -14,9 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class StandardMifareClassicWritePanel extends StatefulWidget {
-  final ValueChanged<bool>? onBusyChanged;
-
-  const StandardMifareClassicWritePanel({super.key, this.onBusyChanged});
+  const StandardMifareClassicWritePanel({super.key});
 
   @override
   State<StandardMifareClassicWritePanel> createState() =>
@@ -33,7 +31,7 @@ class _StandardMifareClassicWritePanelState
   MifareClassicMaintenanceProgress? _progress;
   bool _busy = false;
   String? _error;
-  bool _cancelled = false;
+  bool _stopRequested = false;
 
   List<MifareClassicKeyProfile> _profiles(ChameleonGUIState appState) {
     final profiles =
@@ -65,7 +63,44 @@ class _StandardMifareClassicWritePanelState
       return;
     }
     setState(() => _busy = value);
-    widget.onBusyChanged?.call(value);
+  }
+
+  void _publishActivity(
+    ChameleonGUIState appState,
+    ConnectedDeviceSession session,
+    MifareClassicMaintenanceProgress progress, {
+    StandardWriteActivityState state = StandardWriteActivityState.active,
+    String? outcome,
+  }) {
+    appState.publishStandardWriteActivity(
+      connector: session.connector,
+      communicator: session.communicator,
+      activity: StandardWriteActivity(
+        state: state,
+        phase: progress.phase,
+        completed: progress.completed,
+        total: progress.total,
+        outcome: outcome,
+      ),
+    );
+  }
+
+  void _updateProgress(
+    ChameleonGUIState appState,
+    ConnectedDeviceSession session,
+    MifareClassicMaintenanceProgress progress,
+  ) {
+    if (mounted) {
+      setState(() => _progress = progress);
+    }
+    _publishActivity(appState, session, progress);
+  }
+
+  void _stop() {
+    if (!_busy || _stopRequested) {
+      return;
+    }
+    setState(() => _stopRequested = true);
   }
 
   String _safeMaintenanceError(Object error) {
@@ -129,7 +164,7 @@ class _StandardMifareClassicWritePanelState
 
   @override
   void dispose() {
-    _cancelled = true;
+    _stopRequested = true;
     super.dispose();
   }
 
@@ -281,19 +316,35 @@ class _StandardMifareClassicWritePanelState
       return;
     }
     final selectedProfile = profile;
+    final operationSession = ConnectedDeviceSession.capture(appState);
+    if (operationSession == null) {
+      return;
+    }
+    final initialProgress = MifareClassicMaintenanceProgress(
+      phase: MifareClassicMaintenancePhase.preflight,
+      completed: 0,
+      total: _geometry?.sectorCount ?? 1,
+    );
 
     setState(() {
       _invalidatePlan();
-      _progress = MifareClassicMaintenanceProgress(
-        phase: MifareClassicMaintenancePhase.preflight,
-        completed: 0,
-        total: _geometry?.sectorCount ?? 1,
-      );
+      _stopRequested = false;
+      _progress = initialProgress;
     });
     _setBusy(true);
+    _publishActivity(appState, operationSession, initialProgress);
+    final wakelockOwner = appState.acquireSessionWakelock(
+      connector: operationSession.connector,
+      communicator: operationSession.communicator,
+    );
     try {
       final result = await appState.runSessionBoundForeground((session) async {
-        if (_cancelled) {
+        if (_stopRequested ||
+            !identical(session.connector, operationSession.connector) ||
+            !identical(
+              session.communicator,
+              operationSession.communicator,
+            )) {
           return null;
         }
         final maintenance = MifareClassicMaintenance(
@@ -302,53 +353,82 @@ class _StandardMifareClassicWritePanelState
         final plan = await maintenance.preflight(
             image: image,
             profile: selectedProfile,
-            shouldCancel: () => _cancelled || !session.isCurrent,
-            onProgress: (progress) {
-              if (mounted) {
-                setState(() => _progress = progress);
-              }
-            });
+            shouldCancel: () => _stopRequested || !session.isCurrent,
+            onProgress: (progress) =>
+                _updateProgress(appState, session, progress));
         return maintenance.execute(
           plan,
-          shouldCancel: () => _cancelled,
+          shouldCancel: () => _stopRequested,
           isSessionCurrent: () => session.isCurrent,
-          onProgress: (progress) {
-            if (mounted) {
-              setState(() => _progress = progress);
-            }
-          },
+          onProgress: (progress) =>
+              _updateProgress(appState, session, progress),
         );
       });
       final report = result.value;
       if (!result.executed || report == null) {
         if (mounted) {
+          final error = _safeMaintenanceError(
+            const MifareClassicMaintenanceException(
+              MifareClassicMaintenanceFailure.stalePlan,
+              'The connected device session changed before execution',
+            ),
+          );
+          final progress = _progress ?? initialProgress;
           setState(() {
             _clearProgress();
-            _error = _safeMaintenanceError(
-              const MifareClassicMaintenanceException(
-                MifareClassicMaintenanceFailure.stalePlan,
-                'The connected device session changed before execution',
-              ),
-            );
+            _error = error;
           });
+          _publishActivity(
+            appState,
+            operationSession,
+            progress,
+            state: StandardWriteActivityState.failed,
+            outcome: error,
+          );
         }
         return;
       }
       if (mounted) {
+        final progress = _progress ?? initialProgress;
+        final outcome = AppLocalizations.of(context)!
+            .mifare_classic_standard_write_complete_summary(
+          report.verifiedBlocks,
+          report.unchangedBlocks,
+        );
         setState(() {
           _report = report;
           _clearProgress();
         });
+        _publishActivity(
+          appState,
+          operationSession,
+          progress,
+          state: StandardWriteActivityState.succeeded,
+          outcome: outcome,
+        );
       }
     } catch (error, stackTrace) {
       _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
+        final safeError = _safeMaintenanceError(error);
+        final progress = _progress ?? initialProgress;
         setState(() {
-          _error = _safeMaintenanceError(error);
+          _error = safeError;
           _clearProgress();
         });
+        _publishActivity(
+          appState,
+          operationSession,
+          progress,
+          state: error is MifareClassicMaintenanceException &&
+                  error.failure == MifareClassicMaintenanceFailure.cancelled
+              ? StandardWriteActivityState.cancelled
+              : StandardWriteActivityState.failed,
+          outcome: safeError,
+        );
       }
     } finally {
+      appState.releaseSessionWakelock(wakelockOwner);
       _setBusy(false);
     }
   }
@@ -510,6 +590,12 @@ class _StandardMifareClassicWritePanelState
                     progress.completed,
                     progress.total,
                   ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _stopRequested ? null : _stop,
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: Text(localizations.cancel),
                 ),
               ],
               if (_report != null) ...[

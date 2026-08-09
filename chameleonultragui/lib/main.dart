@@ -8,6 +8,7 @@ import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
@@ -76,6 +77,7 @@ class ChameleonGUIState extends ChangeNotifier {
   bool _readCardSessionConnected = false;
   bool _readCardSessionDfu = false;
   bool _readCardSessionBindingInitialized = false;
+  StandardWriteActivity? _standardWriteActivity;
 
   final Map<Object, (AbstractSerial, ChameleonCommunicator)>
       _sessionWakelockOwners = {};
@@ -112,6 +114,27 @@ class ChameleonGUIState extends ChangeNotifier {
   ReadCardSession get readCardSession {
     _synchronizeReadCardSession();
     return _readCardSession;
+  }
+
+  StandardWriteActivity? get standardWriteActivity {
+    _synchronizeReadCardSession();
+    return _standardWriteActivity;
+  }
+
+  void publishStandardWriteActivity({
+    required AbstractSerial connector,
+    required ChameleonCommunicator communicator,
+    required StandardWriteActivity activity,
+  }) {
+    _synchronizeReadCardSession();
+    if (!_readCardSessionConnected ||
+        _readCardSessionDfu ||
+        !identical(_connector, connector) ||
+        !identical(_communicator, communicator)) {
+      return;
+    }
+    _standardWriteActivity = activity;
+    notifyListeners();
   }
 
   bool devMode = false;
@@ -154,6 +177,7 @@ class ChameleonGUIState extends ChangeNotifier {
 
     if (_readCardSessionBindingInitialized) {
       _readCardSession = ReadCardSession();
+      _standardWriteActivity = null;
       _sessionWakelockOwners.clear();
       _updateWakelock();
     }
@@ -257,7 +281,28 @@ class ChameleonGUIState extends ChangeNotifier {
   }
 }
 
+enum StandardWriteActivityState { active, succeeded, failed, cancelled }
+
+class StandardWriteActivity {
+  const StandardWriteActivity({
+    required this.state,
+    required this.phase,
+    required this.completed,
+    required this.total,
+    this.outcome,
+  });
+
+  final StandardWriteActivityState state;
+  final MifareClassicMaintenancePhase phase;
+  final int completed;
+  final int total;
+  final String? outcome;
+
+  bool get isActive => state == StandardWriteActivityState.active;
+}
+
 const _readCardNavigationIndex = 3;
+const _writeCardNavigationIndex = 4;
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key, required this.sharedPreferencesProvider});
@@ -344,6 +389,9 @@ class _MainPageState extends State<MainPage> {
     }
 
     appState.devMode = appState.sharedPreferencesProvider.isDebugMode();
+    final writeCardPage = WriteCardPage(
+      key: ObjectKey(appState.readCardSession),
+    );
 
     Widget page; // Set Page
     if (!appState.connector!.connected &&
@@ -382,8 +430,8 @@ class _MainPageState extends State<MainPage> {
       case _readCardNavigationIndex:
         page = readCardPage;
         break;
-      case 4:
-        page = const WriteCardPage();
+      case _writeCardNavigationIndex:
+        page = writeCardPage;
         break;
       case 5:
         page = const ToolsPage();
@@ -403,6 +451,9 @@ class _MainPageState extends State<MainPage> {
     final canMountReadCard = appState.connector!.connected && !isDfu;
     final isReadCardVisible =
         canMountReadCard && selectedIndex == _readCardNavigationIndex;
+    final canMountWriteCard = appState.connector!.connected && !isDfu;
+    final isWriteCardVisible =
+        canMountWriteCard && selectedIndex == _writeCardNavigationIndex;
 
     appState.setFlashingWakelock(foregroundPage is FlashingPage);
 
@@ -415,7 +466,13 @@ class _MainPageState extends State<MainPage> {
             offstage: !isReadCardVisible,
             child: readCardPage,
           ),
-        if (!isReadCardVisible)
+        if (canMountWriteCard)
+          Offstage(
+            key: const ValueKey('persistent-write-card'),
+            offstage: !isWriteCardVisible,
+            child: writeCardPage,
+          ),
+        if (!isReadCardVisible && !isWriteCardVisible)
           KeyedSubtree(
             key: ValueKey(
               isDfu ? 'foreground-page-dfu' : 'foreground-page-$selectedIndex',
@@ -505,7 +562,13 @@ class _MainPageState extends State<MainPage> {
                               ),
                               NavigationRailDestination(
                                 disabled: !appState.connector!.connected,
-                                icon: const Icon(Icons.system_update_alt),
+                                icon: Badge(
+                                  isLabelVisible: appState
+                                          .standardWriteActivity?.isActive ==
+                                      true,
+                                  smallSize: 8,
+                                  child: const Icon(Icons.system_update_alt),
+                                ),
                                 label: Text(
                                     AppLocalizations.of(context)!.write_card),
                               ),
@@ -543,7 +606,13 @@ class _MainPageState extends State<MainPage> {
                   ),
                 ],
               ),
-              bottomNavigationBar: const BottomProgressBar()),
+              bottomNavigationBar: BottomProgressBar(
+                onStandardWriteTap: () {
+                  setState(() {
+                    selectedIndex = _writeCardNavigationIndex;
+                  });
+                },
+              )),
         );
       }),
     );
@@ -551,17 +620,73 @@ class _MainPageState extends State<MainPage> {
 }
 
 class BottomProgressBar extends StatelessWidget {
-  const BottomProgressBar({super.key});
+  const BottomProgressBar({
+    super.key,
+    required this.onStandardWriteTap,
+  });
+
+  final VoidCallback onStandardWriteTap;
 
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
-    return (appState.connector!.connected && appState.connector!.isDFU)
-        ? LinearProgressIndicator(
-            value: appState.progress,
-            backgroundColor: Colors.grey[300],
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-          )
-        : const SizedBox();
+    if (appState.connector!.connected && appState.connector!.isDFU) {
+      return LinearProgressIndicator(
+        value: appState.progress,
+        backgroundColor: Colors.grey[300],
+        valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+      );
+    }
+
+    final activity = appState.standardWriteActivity;
+    if (activity == null || !activity.isActive) {
+      return const SizedBox();
+    }
+    final localizations = AppLocalizations.of(context)!;
+    final phase = switch (activity.phase) {
+      MifareClassicMaintenancePhase.preflight =>
+        localizations.mifare_classic_standard_phase_preflight,
+      MifareClassicMaintenancePhase.revalidating =>
+        localizations.mifare_classic_standard_phase_revalidating,
+      MifareClassicMaintenancePhase.writing =>
+        localizations.mifare_classic_standard_phase_writing,
+      MifareClassicMaintenancePhase.verifying =>
+        localizations.mifare_classic_standard_phase_verifying,
+    };
+    final progress =
+        activity.total == 0 ? null : activity.completed / activity.total;
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        key: const ValueKey('standard-write-global-progress'),
+        onTap: onStandardWriteTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.system_update_alt, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      localizations.mifare_classic_standard_progress(
+                        phase,
+                        activity.completed,
+                        activity.total,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: progress),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
