@@ -4,6 +4,7 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/mifare/classic.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
@@ -16,6 +17,77 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('profile UID confirmation does not hold the RF lease',
+      (tester) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.check,
+      mismatchedProfile: true,
+    );
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(fixture.info.state, MifareClassicState.checkKeys);
+
+    var backgroundRan = false;
+    final backgroundExecuted =
+        await fixture.appState.rfOperations.tryRunBackground(() async {
+      backgroundRan = true;
+    });
+    var foregroundRan = false;
+    final foreground = fixture.appState.rfOperations.runForeground(() async {
+      foregroundRan = true;
+    });
+    await tester.pump();
+    final foregroundRanWhileDialogOpen = foregroundRan;
+
+    final replacement = fixture.createReplacement();
+    await fixture.pump(replacement);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(ElevatedButton),
+      ),
+    );
+    await tester.pump();
+    await foreground;
+
+    expect(backgroundExecuted.acquired, isTrue);
+    expect(backgroundRan, isTrue);
+    expect(foregroundRanWhileDialogOpen, isTrue);
+    expect(fixture.recovery.started.isCompleted, isFalse);
+    expect(fixture.info.state, MifareClassicState.checkKeys);
+    expect(replacement.state, MifareClassicState.checkKeys);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile UID confirmation rejects a reconnected device',
+      (tester) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.check,
+      mismatchedProfile: true,
+    );
+
+    await tester.tap(find.text(fixture.buttonLabel));
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    fixture.reconnect();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(ElevatedButton),
+      ),
+    );
+    await tester.pump();
+
+    expect(fixture.recovery.started.isCompleted, isFalse);
+    expect(fixture.info.state, MifareClassicState.checkKeys);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final operation in _ClassicOperation.values) {
     testWidgets(
       'queued canceled ${operation.name} restores only its original model',
@@ -242,8 +314,9 @@ class _ClassicFixture {
 
   static Future<_ClassicFixture> create(
     WidgetTester tester,
-    _ClassicOperation operation,
-  ) async {
+    _ClassicOperation operation, {
+    bool mismatchedProfile = false,
+  }) async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     const wakelockChannel = MethodChannel('dev.fluttercommunity.plus/wakelock');
@@ -254,6 +327,17 @@ class _ClassicFixture {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
+    final profile = MifareClassicKeyProfile(
+      id: 'mismatched-profile',
+      name: 'Other card',
+      cardType: 'm1k',
+      sectorCount: 16,
+      uid: 'AA BB CC DD',
+      assignments: const [],
+    );
+    if (mismatchedProfile) {
+      preferences.setMifareClassicKeyProfiles([profile]);
+    }
     final localizations = await AppLocalizations.delegate.load(
       const Locale('en'),
     );
@@ -277,6 +361,9 @@ class _ClassicFixture {
       type: MifareClassicType.m1k,
       state: operation.actionableState,
     )..recovery = recovery;
+    if (mismatchedProfile) {
+      recovery.selectedKeyProfile = profile;
+    }
     final fixture = _ClassicFixture._(
       tester: tester,
       appState: appState,

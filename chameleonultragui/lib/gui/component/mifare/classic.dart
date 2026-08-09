@@ -80,6 +80,48 @@ class CardReaderState extends State<MifareClassicHelper> {
     }
   }
 
+  Future<bool> _runRecoveryOperation({
+    required ChameleonGUIState appState,
+    required MifareClassicInfo info,
+    required MifareClassicRecovery recovery,
+    required MifareClassicState actionableState,
+    required Future<bool> Function() operation,
+    required void Function(Object error, StackTrace stackTrace) onError,
+  }) async {
+    final result = await appState.runSessionBoundForeground(
+      (session) async {
+        if (!_canContinue(info, recovery, session)) {
+          return const _RecoveryAttempt.canceled();
+        }
+
+        try {
+          return await operation()
+              ? const _RecoveryAttempt.completed()
+              : const _RecoveryAttempt.canceled();
+        } catch (error, stackTrace) {
+          return _RecoveryAttempt.failed(error, stackTrace);
+        }
+      },
+    );
+    final attempt = result.value;
+    final session = result.session;
+    if (!result.executed ||
+        attempt == null ||
+        session == null ||
+        !attempt.completed ||
+        !_canContinue(info, recovery, session)) {
+      _restoreCanceledOperation(info, recovery, actionableState);
+      if (attempt?.error != null &&
+          session != null &&
+          _canContinue(info, recovery, session)) {
+        onError(attempt!.error!, attempt.stackTrace!);
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   @override
   void didUpdateWidget(covariant MifareClassicHelper oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -435,58 +477,35 @@ class CardReaderState extends State<MifareClassicHelper> {
                         info.state = MifareClassicState.recoveryOngoing;
                       });
 
-                      ConnectedDeviceSession? operationSession;
-                      try {
-                        final result = await appState.runSessionBoundForeground(
-                          (session) async {
-                            operationSession = session;
-                            if (!_canContinue(info, recovery, session)) {
-                              return false;
-                            }
-                            return recovery.recoverKeys();
-                          },
-                        );
-                        if (!result.executed || result.value != true) {
-                          _restoreCanceledOperation(
-                            info,
-                            recovery,
-                            MifareClassicState.recovery,
+                      final completed = await _runRecoveryOperation(
+                        appState: appState,
+                        info: info,
+                        recovery: recovery,
+                        actionableState: MifareClassicState.recovery,
+                        operation: recovery.recoverKeys,
+                        onError: (error, stackTrace) {
+                          (appState.log ?? appState.communicator?.log)?.e(
+                            'MIFARE Classic key recovery failed',
+                            error: error,
+                            stackTrace: stackTrace,
                           );
-                          return;
-                        }
-                        final session = result.session!;
-                        if (!_canContinue(info, recovery, session)) {
-                          return;
-                        }
-
-                        if (recovery.error.isNotEmpty) {
                           setState(() {
+                            recovery.error = localizations.error;
                             info.state = MifareClassicState.recovery;
                           });
-                        } else {
-                          setState(() {
-                            info.state = MifareClassicState.dump;
-                          });
-                        }
-                      } catch (error, stackTrace) {
-                        _restoreCanceledOperation(
-                          info,
-                          recovery,
-                          MifareClassicState.recovery,
-                        );
-                        if (operationSession == null ||
-                            !_canContinue(
-                                info, recovery, operationSession)) {
-                          return;
-                        }
-                        (appState.log ?? appState.communicator?.log)?.e(
-                          'MIFARE Classic key recovery failed',
-                          error: error,
-                          stackTrace: stackTrace,
-                        );
+                        },
+                      );
+                      if (!completed) {
+                        return;
+                      }
+
+                      if (recovery.error.isNotEmpty) {
                         setState(() {
-                          recovery.error = localizations.error;
                           info.state = MifareClassicState.recovery;
+                        });
+                      } else {
+                        setState(() {
+                          info.state = MifareClassicState.dump;
                         });
                       }
                     }
@@ -505,52 +524,28 @@ class CardReaderState extends State<MifareClassicHelper> {
                           info.state = MifareClassicState.dumpOngoing;
                         });
 
-                        ConnectedDeviceSession? operationSession;
-                        try {
-                          final result =
-                              await appState.runSessionBoundForeground(
-                            (session) async {
-                              operationSession = session;
-                              if (!_canContinue(info, recovery, session)) {
-                                return false;
-                              }
-                              return recovery.dumpData();
-                            },
-                          );
-                          if (!result.executed || result.value != true) {
-                            _restoreCanceledOperation(
-                              info,
-                              recovery,
-                              MifareClassicState.recovery,
-                            );
-                            return;
-                          }
-                          final session = result.session!;
-                          if (!_canContinue(info, recovery, session)) {
-                            return;
-                          }
-
-                          setState(() {
-                            recovery.dumpProgress = 0;
-                            info.state = MifareClassicState.save;
-                          });
-                        } catch (_) {
-                          _restoreCanceledOperation(
-                            info,
-                            recovery,
-                            MifareClassicState.recovery,
-                          );
-                          if (operationSession == null ||
-                              !_canContinue(
-                                  info, recovery, operationSession)) {
-                            return;
-                          }
-                          setState(() {
-                            recovery.error =
-                                localizations.recovery_error_dump_data;
-                            info.state = MifareClassicState.dump;
-                          });
+                        final completed = await _runRecoveryOperation(
+                          appState: appState,
+                          info: info,
+                          recovery: recovery,
+                          actionableState: MifareClassicState.recovery,
+                          operation: recovery.dumpData,
+                          onError: (error, stackTrace) {
+                            setState(() {
+                              recovery.error =
+                                  localizations.recovery_error_dump_data;
+                              info.state = MifareClassicState.dump;
+                            });
+                          },
+                        );
+                        if (!completed) {
+                          return;
                         }
+
+                        setState(() {
+                          recovery.dumpProgress = 0;
+                          info.state = MifareClassicState.save;
+                        });
                       }
                     : null,
                 style: customCardButtonStyle(appState),
@@ -664,73 +659,45 @@ class CardReaderState extends State<MifareClassicHelper> {
                   ? () async {
                       final info = widget.mfcInfo;
                       final recovery = info.recovery!;
+                      final confirmationSession =
+                          ConnectedDeviceSession.capture(appState);
+                      if (confirmationSession == null ||
+                          !await _confirmSelectedProfileUid() ||
+                          !_canContinue(info, recovery, confirmationSession)) {
+                        return;
+                      }
+
                       setState(() {
                         info.state = MifareClassicState.checkKeysOngoing;
                       });
 
-                      ConnectedDeviceSession? operationSession;
-                      try {
-                        final result = await appState.runSessionBoundForeground(
-                          (session) async {
-                            operationSession = session;
-                            if (!_canContinue(info, recovery, session)) {
-                              return false;
-                            }
-                            if (!await _confirmSelectedProfileUid() ||
-                                !_canContinue(info, recovery, session)) {
-                              return false;
-                            }
-                            return recovery.checkKeys(
-                              skipDefaultDictionary: skipDefaultDictionary,
-                            );
-                          },
-                        );
-                        if (!result.executed || result.value != true) {
-                          _restoreCanceledOperation(
-                            info,
-                            recovery,
-                            MifareClassicState.checkKeys,
-                          );
-                          return;
-                        }
-                        final session = result.session!;
-                        if (!_canContinue(info, recovery, session)) {
-                          return;
-                        }
-
-                        if (recovery.allKeysExists) {
-                          // all keys exists
+                      final completed = await _runRecoveryOperation(
+                        appState: appState,
+                        info: info,
+                        recovery: recovery,
+                        actionableState: MifareClassicState.checkKeys,
+                        operation: () => recovery.checkKeys(
+                          skipDefaultDictionary: skipDefaultDictionary,
+                        ),
+                        onError: (error, stackTrace) {
                           setState(() {
-                            info.state = MifareClassicState.dump;
+                            recovery.error = localizations.recovery_error_dict;
+                            info.state = MifareClassicState.checkKeys;
                           });
-                        } else {
-                          setState(() {
-                            info.state = MifareClassicState.recovery;
-                          });
-                        }
-                      } catch (_) {
-                        _restoreCanceledOperation(
-                          info,
-                          recovery,
-                          MifareClassicState.checkKeys,
-                        );
-                        if (operationSession == null ||
-                            !_canContinue(
-                                info, recovery, operationSession)) {
-                          return;
-                        }
-                        for (var checkmark = 0; checkmark < 80; checkmark++) {
-                          if (recovery.checkMarks[checkmark] ==
-                              ChameleonKeyCheckmark.checking) {
-                            recovery.checkMarks[checkmark] =
-                                ChameleonKeyCheckmark.none;
-                          }
-                        }
+                        },
+                      );
+                      if (!completed) {
+                        return;
+                      }
 
+                      if (recovery.allKeysExists) {
+                        // all keys exists
                         setState(() {
-                          recovery.checkMarks = recovery.checkMarks;
-                          recovery.error = localizations.recovery_error_dict;
-                          info.state = MifareClassicState.checkKeys;
+                          info.state = MifareClassicState.dump;
+                        });
+                      } else {
+                        setState(() {
+                          info.state = MifareClassicState.recovery;
                         });
                       }
                     }
@@ -752,51 +719,28 @@ class CardReaderState extends State<MifareClassicHelper> {
                         info.state = MifareClassicState.dumpOngoing;
                       });
 
-                      ConnectedDeviceSession? operationSession;
-                      try {
-                        final result = await appState.runSessionBoundForeground(
-                          (session) async {
-                            operationSession = session;
-                            if (!_canContinue(info, recovery, session)) {
-                              return false;
-                            }
-                            return recovery.dumpData();
-                          },
-                        );
-                        if (!result.executed || result.value != true) {
-                          _restoreCanceledOperation(
-                            info,
-                            recovery,
-                            MifareClassicState.dump,
-                          );
-                          return;
-                        }
-                        final session = result.session!;
-                        if (!_canContinue(info, recovery, session)) {
-                          return;
-                        }
-
-                        setState(() {
-                          recovery.dumpProgress = 0;
-                          info.state = MifareClassicState.save;
-                        });
-                      } catch (_) {
-                        _restoreCanceledOperation(
-                          info,
-                          recovery,
-                          MifareClassicState.dump,
-                        );
-                        if (operationSession == null ||
-                            !_canContinue(
-                                info, recovery, operationSession)) {
-                          return;
-                        }
-                        setState(() {
-                          recovery.error =
-                              localizations.recovery_error_dump_data;
-                          info.state = MifareClassicState.dump;
-                        });
+                      final completed = await _runRecoveryOperation(
+                        appState: appState,
+                        info: info,
+                        recovery: recovery,
+                        actionableState: MifareClassicState.dump,
+                        operation: recovery.dumpData,
+                        onError: (error, stackTrace) {
+                          setState(() {
+                            recovery.error =
+                                localizations.recovery_error_dump_data;
+                            info.state = MifareClassicState.dump;
+                          });
+                        },
+                      );
+                      if (!completed) {
+                        return;
                       }
+
+                      setState(() {
+                        recovery.dumpProgress = 0;
+                        info.state = MifareClassicState.save;
+                      });
                     }
                   : null,
               style: customCardButtonStyle(appState),
@@ -864,6 +808,25 @@ class CardReaderState extends State<MifareClassicHelper> {
         ]),
     ]);
   }
+}
+
+class _RecoveryAttempt {
+  const _RecoveryAttempt.completed()
+      : completed = true,
+        error = null,
+        stackTrace = null;
+
+  const _RecoveryAttempt.canceled()
+      : completed = false,
+        error = null,
+        stackTrace = null;
+
+  const _RecoveryAttempt.failed(this.error, this.stackTrace)
+      : completed = false;
+
+  final bool completed;
+  final Object? error;
+  final StackTrace? stackTrace;
 }
 
 class _ResponsiveButtonGroup extends StatelessWidget {
