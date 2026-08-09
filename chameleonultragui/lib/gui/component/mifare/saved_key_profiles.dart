@@ -35,10 +35,9 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
           ),
         );
       }
-    } catch (error, stackTrace) {
+    } catch (_, stackTrace) {
       (appState.log ?? appState.communicator?.log)?.e(
         'Failed to import MIFARE Classic key profile',
-        error: error,
         stackTrace: stackTrace,
       );
       if (context.mounted) {

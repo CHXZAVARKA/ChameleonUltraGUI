@@ -6,15 +6,19 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations_en.dart';
 import 'package:chameleonultragui/gui/component/mifare/saved_key_profiles.dart';
 import 'package:chameleonultragui/gui/page/saved_cards.dart';
+import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class _Ticket06Localizations extends AppLocalizationsEn {
+import 'support/mifare_classic_localizations.dart';
+
+class _SavedProfilesLocalizations extends AppLocalizationsEn {
   @override
   String get mifare_classic_assigned_key_profiles =>
       'Localized assigned key profiles';
@@ -61,25 +65,8 @@ class _Ticket06Localizations extends AppLocalizationsEn {
       'Localized B sectors: $sectors';
 }
 
-class _Ticket06LocalizationsDelegate
-    extends LocalizationsDelegate<AppLocalizations> {
-  const _Ticket06LocalizationsDelegate();
-
-  @override
-  bool isSupported(Locale locale) => true;
-
-  @override
-  Future<AppLocalizations> load(Locale locale) =>
-      Future.value(_Ticket06Localizations());
-
-  @override
-  bool shouldReload(_Ticket06LocalizationsDelegate old) => false;
-}
-
-List<LocalizationsDelegate<dynamic>> get _localizationsDelegates => [
-      const _Ticket06LocalizationsDelegate(),
-      ...AppLocalizations.localizationsDelegates,
-    ];
+final _savedProfilesLocalizationsDelegates =
+    mifareClassicTestLocalizationsDelegates(_SavedProfilesLocalizations());
 
 void main() {
   testWidgets('saved cards imports a canonical profile from its import action',
@@ -109,7 +96,7 @@ void main() {
         value: appState,
         child: MaterialApp(
           locale: const Locale('en'),
-          localizationsDelegates: _localizationsDelegates,
+          localizationsDelegates: _savedProfilesLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: MifareClassicKeyProfilesCard(
@@ -130,24 +117,37 @@ void main() {
         'imported-profile');
   });
 
-  testWidgets('profile import keeps technical details out of localized UI',
+  testWidgets('profile import keeps plaintext keys out of UI and stored logs',
       (tester) async {
+    const plaintextKey = 'A0A1A2A3A4A5';
+    const malformedProfile =
+        '{"assignments":[{"sector":0,"keyA":"$plaintextKey"}]';
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
-    final appState = ChameleonGUIState(preferences);
+    final logger = Logger(
+      filter: ChameleonLogFilter(),
+      printer: PrettyPrinter(noBoxingByDefault: true),
+      output: SharedPreferencesLogger(preferences),
+    );
+    addTearDown(logger.close);
+    final appState = ChameleonGUIState(preferences)..log = logger;
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
         value: appState,
         child: MaterialApp(
           locale: const Locale('en'),
-          localizationsDelegates: _localizationsDelegates,
+          localizationsDelegates: _savedProfilesLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: MifareClassicKeyProfilesCard(
-              pickProfile: () =>
-                  Future.error(const FormatException('raw parser detail')),
+              pickProfile: () => Future.error(
+                const FormatException(
+                  'Unexpected end of input',
+                  malformedProfile,
+                ),
+              ),
             ),
           ),
         ),
@@ -159,7 +159,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Localized profile import failed'), findsOneWidget);
-    expect(find.textContaining('raw parser detail'), findsNothing);
+    expect(find.textContaining(plaintextKey), findsNothing);
+    final storedLog = preferences.getLogLines().join('\n');
+    expect(storedLog, contains('Failed to import MIFARE Classic key profile'));
+    expect(storedLog, isNot(contains(plaintextKey)));
+    expect(storedLog, isNot(contains(malformedProfile)));
   });
 
   testWidgets('saved cards automatically lists assigned key profiles',
@@ -198,7 +202,7 @@ void main() {
         value: appState,
         child: MaterialApp(
           locale: const Locale('en'),
-          localizationsDelegates: _localizationsDelegates,
+          localizationsDelegates: _savedProfilesLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: const SavedCardsPage(),
         ),
