@@ -1182,30 +1182,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   SlotsStatus _mergePendingSlotActivation(SlotsStatus reconciled) {
-    final current = _snapshot.slots;
-    if (current.pendingActivation == null) {
-      return reconciled;
-    }
-
-    final staleFacets = {...reconciled.staleFacets};
-    final unavailableFacets = {...reconciled.unavailableFacets};
-    if (current.staleFacets.contains(SlotFacet.activeSlot)) {
-      staleFacets.add(SlotFacet.activeSlot);
-    } else {
-      staleFacets.remove(SlotFacet.activeSlot);
-    }
-    if (current.unavailableFacets.contains(SlotFacet.activeSlot)) {
-      unavailableFacets.add(SlotFacet.activeSlot);
-    } else {
-      unavailableFacets.remove(SlotFacet.activeSlot);
-    }
-
     return reconciled.copyWith(
-      availability: _slotsAvailability(staleFacets, unavailableFacets),
-      activeSlot: current.activeSlot,
-      pendingActivation: current.pendingActivation,
-      staleFacets: staleFacets,
-      unavailableFacets: unavailableFacets,
+      pendingActivation: _snapshot.slots.pendingActivation,
     );
   }
 
@@ -1214,7 +1192,13 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return null;
     }
     final current = _snapshot.mode;
-    return current.pendingMode == null ? reconciled : current;
+    return current.pendingMode == null
+        ? reconciled
+        : ModeStatus._(
+            availability: reconciled.availability,
+            confirmedMode: reconciled.confirmedMode,
+            pendingMode: current.pendingMode,
+          );
   }
 
   Future<ModeStatus?> _readModeAfterSlotMutation() async {

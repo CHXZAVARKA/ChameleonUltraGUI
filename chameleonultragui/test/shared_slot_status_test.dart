@@ -1234,6 +1234,53 @@ void main() {
     expect(communicator.activations, [1]);
   });
 
+  testWidgets(
+      'queued activation keeps the active slot confirmed by reconciliation',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    final mutationGate = Completer<void>();
+    final mutationStarted = Completer<void>();
+    final activationGate = Completer<void>();
+    communicator
+      ..activationGate = activationGate
+      ..failActivation = true;
+    addTearDown(() {
+      if (!mutationGate.isCompleted) {
+        mutationGate.complete();
+      }
+      if (!activationGate.isCompleted) {
+        activationGate.complete();
+      }
+    });
+
+    final mutation = status.mutateSlots<void>((_) async {
+      mutationStarted.complete();
+      await mutationGate.future;
+    });
+    await mutationStarted.future;
+
+    final activation = status.activateSlot(2);
+    communicator.activeSlot = 1;
+    mutationGate.complete();
+    await mutation;
+
+    expect(status.snapshot.slots.activeSlot.value, 1);
+    expect(status.snapshot.slots.pendingActivation, 2);
+    expect(await status.activateSlot(2), isFalse);
+
+    activationGate.complete();
+    expect(await activation, isFalse);
+    expect(status.snapshot.slots.activeSlot.value, 1);
+    expect(
+      status.snapshot.slots.staleFacets,
+      contains(SlotFacet.activeSlot),
+    );
+    expect(status.snapshot.slots.pendingActivation, isNull);
+  });
+
   testWidgets('queued mode switch stays pending through slot reconciliation',
       (tester) async {
     final communicator = _SlotCommunicator();
@@ -1295,6 +1342,59 @@ void main() {
       communicator.commandEvents.where((event) => event == 'mode:true'),
       hasLength(1),
     );
+  });
+
+  testWidgets('queued mode switch keeps the mode confirmed by reconciliation',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshMode();
+    await status.refreshSlots();
+    final mutationGate = Completer<void>();
+    final mutationStarted = Completer<void>();
+    final modeWriteGate = Completer<void>();
+    final modeWriteStarted = Completer<void>();
+    communicator
+      ..modeWriteGate = modeWriteGate
+      ..modeWriteStarted = modeWriteStarted;
+    addTearDown(() {
+      if (!mutationGate.isCompleted) {
+        mutationGate.complete();
+      }
+      if (!modeWriteGate.isCompleted) {
+        modeWriteGate.complete();
+      }
+    });
+
+    final mutation = status.mutateSlots<void>(
+      (_) async {
+        mutationStarted.complete();
+        await mutationGate.future;
+      },
+      reconcileMode: true,
+    );
+    await mutationStarted.future;
+
+    final modeSwitch = status.switchMode(ConnectedDeviceMode.reader);
+    communicator.readerMode = true;
+    mutationGate.complete();
+    await mutation;
+    await modeWriteStarted.future;
+
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+    expect(status.snapshot.mode.pendingMode, ConnectedDeviceMode.reader);
+    expect(
+      await status.switchMode(ConnectedDeviceMode.reader),
+      ModeActionOutcome.busy,
+    );
+
+    communicator.failModeRead = true;
+    modeWriteGate.complete();
+    expect(await modeSwitch, ModeActionOutcome.failed);
+    expect(status.snapshot.mode.availability, ModeAvailability.available);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+    expect(status.snapshot.mode.pendingMode, isNull);
   });
 
   testWidgets('partial slot mutation failure still reconciles device state',
