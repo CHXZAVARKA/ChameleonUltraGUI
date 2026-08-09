@@ -161,6 +161,22 @@ void main() {
     }
   });
 
+  test('rejects duplicate keys in the raw Proxmark3 blocks object', () {
+    final source = proxmark(cardSize: 'Mini').replaceFirst(
+      '"blocks":{"0":',
+      '"blocks":{"7":"${blockHex[7]}","0":',
+    );
+    expect(
+      (jsonDecode(source) as Map<String, dynamic>)['blocks'],
+      hasLength(20),
+    );
+
+    expect(
+      () => importMifareClassicImage(text(source)),
+      throwsFormatException,
+    );
+  });
+
   test('rejects malformed, partial, and contradictory Flipper NFC', () {
     final validLines = [
       for (var block = 0; block < blocks.length; block++)

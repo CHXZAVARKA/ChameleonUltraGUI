@@ -19,8 +19,10 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
   String? source;
   dynamic decodedJson;
   var isJson = false;
+  var hasDuplicateProxmark3BlockKey = false;
   try {
     source = const Utf8Decoder().convert(contents);
+    hasDuplicateProxmark3BlockKey = _hasDuplicateProxmark3BlockKey(source);
     try {
       decodedJson = jsonDecode(source);
       isJson = true;
@@ -37,6 +39,9 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
         throw const FormatException('Card folders are not single-card dumps');
       }
       if (decodedJson is Map && decodedJson['Created'] == 'proxmark3') {
+        if (hasDuplicateProxmark3BlockKey) {
+          throw const FormatException('Duplicate Proxmark3 block');
+        }
         return _importProxmark3(source, decodedJson);
       }
       if (decodedJson is Map && decodedJson['data'] is List) {
@@ -69,6 +74,59 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
     throw const FormatException('Unsupported card dump format');
   }
   return MifareClassicImportedImage(bytes: contents, geometry: geometry);
+}
+
+bool _hasDuplicateProxmark3BlockKey(String source) {
+  final blocksObject = RegExp(r'"blocks"\s*:\s*\{').firstMatch(source);
+  if (blocksObject == null) {
+    return false;
+  }
+
+  final keys = <String>{};
+  var depth = 1;
+  var index = blocksObject.end;
+  while (index < source.length && depth > 0) {
+    final character = source[index];
+    if (character == '"') {
+      final stringStart = index;
+      var escaped = false;
+      index++;
+      while (index < source.length) {
+        final stringCharacter = source[index];
+        if (!escaped && stringCharacter == '"') {
+          break;
+        }
+        escaped = !escaped && stringCharacter == '\\';
+        if (stringCharacter != '\\') {
+          escaped = false;
+        }
+        index++;
+      }
+      if (index >= source.length) {
+        return false;
+      }
+
+      if (depth == 1) {
+        var following = index + 1;
+        while (following < source.length &&
+            RegExp(r'\s').hasMatch(source[following])) {
+          following++;
+        }
+        if (following < source.length && source[following] == ':') {
+          final key = jsonDecode(source.substring(stringStart, index + 1));
+          if (key is String && !keys.add(key)) {
+            return true;
+          }
+        }
+      }
+    } else if (character == '{' || character == '[') {
+      depth++;
+    } else if (character == '}' || character == ']') {
+      depth--;
+    }
+    index++;
+  }
+  return false;
 }
 
 MifareClassicImportedImage _importNative(

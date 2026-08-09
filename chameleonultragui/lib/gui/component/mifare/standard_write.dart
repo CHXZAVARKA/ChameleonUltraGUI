@@ -50,12 +50,12 @@ class _StandardMifareClassicWritePanelState
         .toList();
   }
 
-  void _discardPlan() {
+  void _clearProgress() {
     _progress = null;
   }
 
   void _invalidatePlan() {
-    _discardPlan();
+    _clearProgress();
     _report = null;
     _error = null;
   }
@@ -323,7 +323,7 @@ class _StandardMifareClassicWritePanelState
       if (!result.executed || report == null) {
         if (mounted) {
           setState(() {
-            _discardPlan();
+            _clearProgress();
             _error = _safeMaintenanceError(
               const MifareClassicMaintenanceException(
                 MifareClassicMaintenanceFailure.stalePlan,
@@ -337,7 +337,7 @@ class _StandardMifareClassicWritePanelState
       if (mounted) {
         setState(() {
           _report = report;
-          _discardPlan();
+          _clearProgress();
         });
       }
     } catch (error, stackTrace) {
@@ -345,7 +345,7 @@ class _StandardMifareClassicWritePanelState
       if (mounted) {
         setState(() {
           _error = _safeMaintenanceError(error);
-          _discardPlan();
+          _clearProgress();
         });
       }
     } finally {
