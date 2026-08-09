@@ -6,11 +6,11 @@ import 'package:uuid/uuid.dart';
 const String mifareClassicKeyProfileFormat =
     'chameleon-ultra-gui-mf1-key-profile';
 const int mifareClassicKeyProfileVersion = 1;
-const Set<String> mifareClassicKeyProfileCardTypes = {
-  'mini',
-  'm1k',
-  'm2k',
-  'm4k',
+const Map<String, Set<int>> _mifareClassicKeyProfileGeometries = {
+  'mini': {5},
+  'm1k': {16, 18},
+  'm2k': {32},
+  'm4k': {40},
 };
 
 String _bytesToUpperHex(Uint8List bytes) => bytes
@@ -132,11 +132,12 @@ class MifareClassicKeyProfile {
     if (this.id.trim().isEmpty) {
       throw const FormatException('Profile id cannot be empty');
     }
-    if (!mifareClassicKeyProfileCardTypes.contains(cardType)) {
+    final supportedSectorCounts = _mifareClassicKeyProfileGeometries[cardType];
+    if (supportedSectorCounts == null) {
       throw const FormatException('Unsupported MIFARE Classic card type');
     }
-    if (sectorCount < 1 || sectorCount > 40) {
-      throw RangeError.range(sectorCount, 1, 40, 'sectorCount');
+    if (!supportedSectorCounts.contains(sectorCount)) {
+      throw const FormatException('Unsupported MIFARE Classic card geometry');
     }
 
     final sectors = <int>{};

@@ -56,20 +56,45 @@ void main() {
         sectorCount: testCase.sectorCount,
         assignments: const [],
       );
+      final importedProfile = MifareClassicKeyProfile.fromJson(
+        profile.toJson(),
+      );
 
-      expect(profile.geometry?.type, testCase.type);
-      expect(profile.geometry?.isEV1, testCase.isEV1);
-      expect(profile.geometry?.sectorCount, testCase.sectorCount);
-      expect(profile.geometry?.blockCount, testCase.blockCount);
+      expect(importedProfile.geometry?.type, testCase.type);
+      expect(importedProfile.geometry?.isEV1, testCase.isEV1);
+      expect(importedProfile.geometry?.sectorCount, testCase.sectorCount);
+      expect(importedProfile.geometry?.blockCount, testCase.blockCount);
     }
+  });
 
-    final invalid = MifareClassicKeyProfile(
-      name: 'Invalid geometry',
-      cardType: 'm1k',
-      sectorCount: 17,
-      assignments: const [],
-    );
-    expect(invalid.geometry, isNull);
+  test('profile wire data rejects impossible card geometries', () {
+    const invalidPairs = [
+      (cardType: 'mini', sectorCount: 4),
+      (cardType: 'mini', sectorCount: 16),
+      (cardType: 'm1k', sectorCount: 5),
+      (cardType: 'm1k', sectorCount: 17),
+      (cardType: 'm2k', sectorCount: 16),
+      (cardType: 'm2k', sectorCount: 40),
+      (cardType: 'm4k', sectorCount: 32),
+      (cardType: 'm4k', sectorCount: 39),
+    ];
+
+    for (final invalidPair in invalidPairs) {
+      expect(
+        () => MifareClassicKeyProfile.fromJson(jsonEncode({
+          'format': mifareClassicKeyProfileFormat,
+          'version': mifareClassicKeyProfileVersion,
+          'id': 'invalid-profile',
+          'name': 'Invalid geometry',
+          'cardType': invalidPair.cardType,
+          'sectorCount': invalidPair.sectorCount,
+          'uid': null,
+          'keys': const [],
+        })),
+        throwsFormatException,
+        reason: '${invalidPair.cardType}/${invalidPair.sectorCount}',
+      );
+    }
   });
 
   test('legacy wire JSON round-trips with identical text and bytes', () {

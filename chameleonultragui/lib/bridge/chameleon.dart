@@ -27,6 +27,7 @@ class ChameleonCommunicator {
     ChameleonCommand.mf1LoadBlockData,
     ChameleonCommand.mf1GetBlockData,
     ChameleonCommand.mf1ManipulateValueBlock,
+    ChameleonCommand.hf14ARawCommand,
   };
 
   int baudrate = 115200;
