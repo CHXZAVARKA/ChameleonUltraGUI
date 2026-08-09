@@ -1,4 +1,4 @@
-import 'package:chameleonultragui/gui/page/read_card.dart';
+import 'package:chameleonultragui/helpers/card_info.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';

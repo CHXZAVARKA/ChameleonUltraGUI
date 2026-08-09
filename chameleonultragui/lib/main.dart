@@ -8,6 +8,7 @@ import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -67,6 +68,7 @@ class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   ChameleonGUIState(this.sharedPreferencesProvider);
 
+  final ReadCardSession readCardSession = ReadCardSession();
   final RfOperationCoordinator rfOperations = RfOperationCoordinator();
 
   SharedPreferencesProvider? _sharedPreferencesProvider;
@@ -146,6 +148,8 @@ class ChameleonGUIState extends ChangeNotifier {
   }
 }
 
+const _readCardNavigationIndex = 3;
+
 class MainPage extends StatefulWidget {
   const MainPage({super.key, required this.sharedPreferencesProvider});
 
@@ -212,6 +216,9 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
+    const readCardPage = ReadCardPage(
+      key: ValueKey('read-card-page'),
+    );
     appState._sharedPreferencesProvider = widget.sharedPreferencesProvider;
     appState.log ??= getLogger(appState);
     appState.connector ??= getConnector(appState);
@@ -263,8 +270,8 @@ class _MainPageState extends State<MainPage> {
       case 2:
         page = const SavedCardsPage();
         break;
-      case 3:
-        page = const ReadCardPage();
+      case _readCardNavigationIndex:
+        page = readCardPage;
         break;
       case 4:
         page = const WriteCardPage();
@@ -282,9 +289,34 @@ class _MainPageState extends State<MainPage> {
         throw UnimplementedError('no widget for $selectedIndex');
     }
 
+    final isDfu = appState.connector!.connected && appState.connector!.isDFU;
+    final foregroundPage = isDfu ? const FlashingPage() : page;
+    final canMountReadCard = appState.connector!.connected && !isDfu;
+    final isReadCardVisible =
+        canMountReadCard && selectedIndex == _readCardNavigationIndex;
+
     try {
-      WakelockPlus.toggle(enable: page is FlashingPage);
+      WakelockPlus.toggle(enable: foregroundPage is FlashingPage);
     } catch (_) {}
+
+    final pageContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (canMountReadCard)
+          Offstage(
+            key: const ValueKey('persistent-read-card'),
+            offstage: !isReadCardVisible,
+            child: readCardPage,
+          ),
+        if (!isReadCardVisible)
+          KeyedSubtree(
+            key: ValueKey(
+              isDfu ? 'foreground-page-dfu' : 'foreground-page-$selectedIndex',
+            ),
+            child: foregroundPage,
+          ),
+      ],
+    );
 
     return MaterialApp(
       title: 'Chameleon Ultra GUI', // App Name
@@ -399,7 +431,7 @@ class _MainPageState extends State<MainPage> {
                   Expanded(
                     child: Container(
                       color: Theme.of(context).colorScheme.primaryContainer,
-                      child: page,
+                      child: pageContent,
                     ),
                   ),
                 ],

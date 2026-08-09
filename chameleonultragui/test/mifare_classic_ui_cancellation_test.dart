@@ -150,12 +150,6 @@ extension on _ClassicOperation {
         _ClassicOperation.recover => MifareClassicState.recovery,
         _ClassicOperation.dump => MifareClassicState.dump,
       };
-
-  MifareClassicState get ongoingState => switch (this) {
-        _ClassicOperation.check => MifareClassicState.checkKeysOngoing,
-        _ClassicOperation.recover => MifareClassicState.recoveryOngoing,
-        _ClassicOperation.dump => MifareClassicState.dumpOngoing,
-      };
 }
 
 class _ClassicFixture {
