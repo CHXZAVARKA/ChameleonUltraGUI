@@ -156,14 +156,15 @@ class SlotSettingsState extends State<SlotSettings> {
                   icon: const Icon(Icons.refresh),
                 ),
               IconButton(
+                key: const Key('slot-settings-export'),
                 onPressed: canExport
                     ? () {
                         showDialog<String>(
                           context: context,
                           builder: (context) => SlotExportMenu(
                             names: SlotNames(
-                              hf: _confirmedName(hf.name, localizations),
-                              lf: _confirmedName(lf.name, localizations),
+                              hf: hf.name.value!,
+                              lf: lf.name.value!,
                             ),
                             enabledSlotInfo: EnabledSlotInfo(
                               hf: hf.enabled.value!,
@@ -246,6 +247,7 @@ class SlotSettingsState extends State<SlotSettings> {
                       showDialog<String>(
                         context: context,
                         builder: (context) => SlotEditMenu(
+                          status: status,
                           name: frequencyStatus.name.value!,
                           isEnabled: frequencyStatus.enabled.value!,
                           slotType: frequencyStatus.type.value!,

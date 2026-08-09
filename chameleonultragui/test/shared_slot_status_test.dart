@@ -6,6 +6,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
@@ -1938,6 +1939,38 @@ void main() {
     expect(edit.slotType, TagType.unknown);
   });
 
+  testWidgets('Slot Settings keeps raw confirmed names for export',
+      (tester) async {
+    final communicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) => index == 0 ? SlotNames(hf: '', lf: 'Garage') : SlotNames(),
+      );
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    communicator.commandEvents.clear();
+
+    await tester.tap(find.byKey(const Key('slot-settings-export')));
+    await tester.pump();
+
+    final export = tester.widget<SlotExportMenu>(find.byType(SlotExportMenu));
+    expect(export.names.hf, isEmpty);
+    expect(export.names.lf, 'Garage');
+    expect(communicator.commandEvents, isEmpty);
+  });
+
   testWidgets(
       'open Slot Settings adopts replacement status and mutates its communicator',
       (tester) async {
@@ -2115,7 +2148,137 @@ void main() {
     expect(communicator.slotTypeReads, initialTypeReads + 1);
     expect(status.snapshot.slots.slots.first.lf.name.value, 'Renamed');
   });
+
+  testWidgets(
+      'open Slot Edit blocks stale save and quick settings after replacement',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final oldCommunicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+      );
+    final appState = _connectedState(oldCommunicator);
+    final oldStatus = appState.connectedDeviceStatus!;
+    final oldSerial = appState.connector! as _TestSerial;
+    var oldPublications = 0;
+    oldStatus.addListener(() => oldPublications++);
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SlotEditMenu), findsOneWidget);
+    for (final key in _classicQuickSettingKeys) {
+      expect(find.byKey(Key(key)), findsOneWidget);
+    }
+    await tester.enterText(find.byType(TextFormField).first, 'Stale edit');
+
+    oldCommunicator.commandEvents.clear();
+    oldPublications = 0;
+    final newCommunicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'New HF', lf: 'New LF') : SlotNames(),
+      );
+    _replaceConnection(appState, newCommunicator);
+    final replacementSerial = appState.connector! as _TestSerial;
+    appState.changesMade();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(const SlotMutationConnectionChanged().toString()),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextButton>(find.byKey(
+            const Key('slot-edit-save'),
+            skipOffstage: false,
+          ))
+          .onPressed,
+      isNull,
+    );
+    newCommunicator.commandEvents.clear();
+    await tester.tap(
+      find.byKey(
+        const Key('slot-edit-save'),
+        skipOffstage: false,
+      ),
+      warnIfMissed: false,
+    );
+    for (final key in _classicQuickSettingKeys) {
+      final setting = find.byKey(Key(key), skipOffstage: false);
+      await tester.tap(setting, warnIfMissed: false);
+      await tester.pump();
+    }
+
+    expect(oldCommunicator.commandEvents, isEmpty);
+    expect(newCommunicator.commandEvents, isEmpty);
+    expect(oldPublications, 0);
+    expect(oldSerial.disconnects, 0);
+    expect(replacementSerial.disconnects, 0);
+
+    await tester.tap(
+      find.byKey(const Key('slot-edit-connection-changed-close')),
+    );
+    await tester.pumpAndSettle();
+    newCommunicator.commandEvents.clear();
+    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SlotEditMenu), findsOneWidget);
+    expect(
+      find.text(const SlotMutationConnectionChanged().toString()),
+      findsNothing,
+    );
+    final newSetting = find.byKey(const Key('slot-edit-setting-gen1a'));
+    await tester.ensureVisible(newSetting);
+    final settingRect = tester.getRect(newSetting);
+    await tester.tapAt(
+      Offset(
+          settingRect.left + settingRect.width * 0.75, settingRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+
+    expect(newCommunicator.commandEvents, contains('setting-gen1a:false'));
+    expect(oldCommunicator.commandEvents, isEmpty);
+  });
 }
+
+const _classicQuickSettingKeys = [
+  'slot-edit-setting-gen1a',
+  'slot-edit-setting-gen2',
+  'slot-edit-setting-prng',
+  'slot-edit-setting-anticollision',
+  'slot-edit-setting-detection',
+  'slot-edit-setting-write-mode',
+];
 
 Future<void> _pumpPage(
         WidgetTester tester, ChameleonGUIState appState, Widget page,
@@ -2331,6 +2494,56 @@ class _SlotCommunicator extends ChameleonCommunicator {
   @override
   Future<Uint8List> getEM410XEmulatorID() async =>
       Uint8List.fromList([1, 2, 3, 4, 5]);
+
+  @override
+  Future<CardData> mf1GetAntiCollData() async => CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x08,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+        ats: Uint8List(0),
+      );
+
+  @override
+  Future<EmulatorSettings> getMf1EmulatorSettings() async => EmulatorSettings(
+        isDetectionEnabled: false,
+        isGen1a: true,
+        isGen2: true,
+        isAntiColl: true,
+        writeMode: MifareWriteMode.normal,
+      );
+
+  @override
+  Future<Mf1PrngType> getMf1PrngType() async => Mf1PrngType.weak;
+
+  @override
+  Future<void> setMf1Gen1aMode(bool enabled) async {
+    commandEvents.add('setting-gen1a:$enabled');
+  }
+
+  @override
+  Future<void> setMf1Gen2Mode(bool enabled) async {
+    commandEvents.add('setting-gen2:$enabled');
+  }
+
+  @override
+  Future<void> setMf1PrngType(Mf1PrngType type) async {
+    commandEvents.add('setting-prng:${type.name}');
+  }
+
+  @override
+  Future<void> setMf1UseFirstBlockColl(bool enabled) async {
+    commandEvents.add('setting-anticollision:$enabled');
+  }
+
+  @override
+  Future<void> setMf1DetectionStatus(bool enabled) async {
+    commandEvents.add('setting-detection:$enabled');
+  }
+
+  @override
+  Future<void> setMf1WriteMode(MifareWriteMode mode) async {
+    commandEvents.add('setting-write-mode:${mode.name}');
+  }
 
   @override
   Future<void> deleteSlotInfo(int slot, TagFrequency frequency) async {

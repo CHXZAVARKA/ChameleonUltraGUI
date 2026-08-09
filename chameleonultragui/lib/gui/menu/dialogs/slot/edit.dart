@@ -17,6 +17,7 @@ import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 class SlotEditMenu extends StatefulWidget {
+  final ConnectedDeviceStatus? status;
   final String name;
   final bool isEnabled;
   final TagType slotType;
@@ -25,6 +26,7 @@ class SlotEditMenu extends StatefulWidget {
 
   const SlotEditMenu(
       {super.key,
+      this.status,
       required this.name,
       required this.isEnabled,
       required this.slotType,
@@ -57,12 +59,37 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   EmulatorSettings? emulatorSettings;
   Mf1PrngType? mf1PrngType;
   int detectionCount = 0;
+  ConnectedDeviceStatus? _status;
+  bool _statusCaptured = false;
 
   @override
   void initState() {
     super.initState();
     selectedType = widget.slotType;
     nameController.text = widget.name;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_statusCaptured) {
+      return;
+    }
+    _status = widget.status ??
+        context.read<ChameleonGUIState>().connectedDeviceStatus;
+    _statusCaptured = true;
+  }
+
+  ConnectedDeviceStatus _requireCurrentStatus() {
+    final status = _status;
+    if (status == null ||
+        !identical(
+          status,
+          context.read<ChameleonGUIState>().connectedDeviceStatus,
+        )) {
+      throw const SlotMutationConnectionChanged();
+    }
+    return status;
   }
 
   String getMf1PrngLabel(Mf1PrngType type, AppLocalizations localizations) {
@@ -77,16 +104,11 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   }
 
   Future<void> updateInfo() async {
-    var appState = context.read<ChameleonGUIState>();
+    final status = _requireCurrentStatus();
     if (previousTagType == selectedType ||
         isMifareClassic(previousTagType) && isMifareClassic(selectedType!)) {
       return;
     }
-    final status = appState.connectedDeviceStatus;
-    if (status == null) {
-      throw const SlotMutationConnectionChanged();
-    }
-
     await status.mutateSlots((mutation) async {
       await mutation.run(
         (communicator) => communicator.activateSlot(widget.slot),
@@ -215,11 +237,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   }
 
   Future<void> save() async {
-    var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    final status = appState.connectedDeviceStatus;
-    if (status == null) {
-      throw const SlotMutationConnectionChanged();
-    }
+    final status = _requireCurrentStatus();
 
     await status.mutateSlots((mutation) async {
       await mutation.run(
@@ -344,10 +362,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   Future<void> _mutateSetting(
     Future<void> Function(ChameleonCommunicator communicator) command,
   ) async {
-    final status = context.read<ChameleonGUIState>().connectedDeviceStatus;
-    if (status == null) {
-      throw const SlotMutationConnectionChanged();
-    }
+    final status = _requireCurrentStatus();
     await status.mutateSlots(
       (mutation) => mutation.run(command),
     );
@@ -357,8 +372,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
+    final connectionChanged =
+        _status == null || !identical(_status, appState.connectedDeviceStatus);
 
-    return AlertDialog(
+    final dialog = AlertDialog(
       title: Text(localizations.edit_slot_data),
       content: SingleChildScrollView(
         child: Form(
@@ -393,7 +410,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                 },
               ),
               FutureBuilder(
-                  future: updateInfo(),
+                  future: connectionChanged ? null : updateInfo(),
                   builder: (BuildContext context, AsyncSnapshot snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !(previousTagType == selectedType ||
@@ -555,6 +572,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.mode_gen1a),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-gen1a'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -575,6 +594,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.mode_gen2),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-gen2'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -596,6 +617,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                             Text(localizations.prng_type),
                                             const SizedBox(height: 8),
                                             ToggleButtonsWrapper(
+                                                key: const Key(
+                                                    'slot-edit-setting-prng'),
                                                 items: Mf1PrngType.values
                                                     .map((type) =>
                                                         getMf1PrngLabel(type,
@@ -622,6 +645,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.use_from_block),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-anticollision'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -643,6 +668,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               .collect_nonces('Mfkey32')),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-detection'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -720,6 +747,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.write_mode),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-write-mode'),
                                               items: [
                                                 localizations.normal,
                                                 localizations.decline,
@@ -1004,18 +1033,44 @@ class SlotEditMenuState extends State<SlotEditMenu> {
         ),
         TextButton(
           key: const Key('slot-edit-save'),
-          onPressed: () async {
-            if (!_formKey.currentState!.validate()) {
-              return;
-            }
+          onPressed: connectionChanged
+              ? null
+              : () async {
+                  if (!_formKey.currentState!.validate()) {
+                    return;
+                  }
 
-            await save();
+                  await save();
 
-            if (context.mounted) {
-              Navigator.pop(context);
-            }
-          },
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                },
           child: Text(localizations.save),
+        ),
+      ],
+    );
+
+    if (!connectionChanged) {
+      return dialog;
+    }
+
+    return AlertDialog(
+      title: Text(localizations.edit_slot_data),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ErrorPage(
+            errorMessage: const SlotMutationConnectionChanged().toString(),
+          ),
+          Offstage(offstage: true, child: dialog),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('slot-edit-connection-changed-close'),
+          onPressed: () => Navigator.pop(context),
+          child: Text(localizations.cancel),
         ),
       ],
     );
