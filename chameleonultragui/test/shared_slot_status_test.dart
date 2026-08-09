@@ -1679,6 +1679,266 @@ void main() {
   });
 
   testWidgets(
+      'Slot Settings keeps unavailable fields inert and retries shared status',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final semantics = tester.ensureSemantics();
+    final communicator = _SlotCommunicator()..failAll = true;
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.availability,
+      SlotsAvailability.unavailable,
+    );
+    expect(find.text('Empty'), findsNothing);
+    expect(find.text('Unavailable'), findsNWidgets(6));
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-edit-hf')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-delete-hf')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      find.bySemanticsLabel('HF enabled: Unavailable'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('slot-settings-refresh')), findsOneWidget);
+
+    communicator.commandEvents.clear();
+    for (final key in const [
+      'slot-settings-edit-hf',
+      'slot-settings-delete-hf',
+      'slot-settings-enable-hf',
+    ]) {
+      await tester.tap(find.byKey(Key(key)), warnIfMissed: false);
+      await tester.pump();
+    }
+    expect(communicator.commandEvents, isEmpty);
+    expect(find.byType(SlotEditMenu), findsNothing);
+
+    communicator.failAll = false;
+    await tester.tap(find.byKey(const Key('slot-settings-refresh')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Office'), findsOneWidget);
+    expect(find.text('Mifare Classic 1K'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-edit-hf')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(const Key('slot-settings-enable-hf')),
+          )
+          .onChanged,
+      isNotNull,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets(
+      'Slot Settings keeps confirmed fields when enabled state is unavailable',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final communicator = _SlotCommunicator()
+      ..failEnabled = true
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+      );
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+
+    final slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.partial);
+    expect(slots.unavailableFacets, {SlotFacet.enabledStates});
+    expect(find.text('Office'), findsOneWidget);
+    expect(find.text('Garage'), findsOneWidget);
+    expect(find.text('Mifare Classic 1K'), findsOneWidget);
+    expect(find.text('EM410X'), findsOneWidget);
+    expect(find.text('Unavailable'), findsNWidgets(2));
+    expect(
+      find.bySemanticsLabel('HF enabled: Unavailable'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-edit-hf')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-delete-hf')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    communicator.commandEvents.clear();
+    await tester.tap(
+      find.byKey(const Key('slot-settings-edit-hf')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(find.byType(SlotEditMenu), findsNothing);
+    expect(communicator.commandEvents, isEmpty);
+
+    communicator.failEnabled = false;
+    await tester.tap(find.byKey(const Key('slot-settings-refresh')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+    await tester.pump();
+
+    final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
+    expect(edit.name, 'Office');
+    expect(edit.isEnabled, isTrue);
+    expect(edit.slotType, TagType.mifare1K);
+    semantics.dispose();
+  });
+
+  testWidgets(
+      'open Slot Settings marks cached enabled state stale without inventing off',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final communicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+      );
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(const Key('slot-settings-enable-hf')),
+          )
+          .value,
+      isTrue,
+    );
+
+    communicator.failEnabled = true;
+    await status.refreshSlots();
+    await tester.pump();
+
+    expect(status.snapshot.slots.availability, SlotsAvailability.stale);
+    expect(status.snapshot.slots.staleFacets, {SlotFacet.enabledStates});
+    expect(find.text('Office'), findsOneWidget);
+    expect(find.text('Garage'), findsOneWidget);
+    expect(find.text('Mifare Classic 1K'), findsOneWidget);
+    expect(find.text('EM410X'), findsOneWidget);
+    expect(find.text('Unavailable'), findsNWidgets(2));
+    final hfSwitch = tester.widget<Switch>(
+      find.byKey(const Key('slot-settings-enable-hf')),
+    );
+    expect(hfSwitch.value, isTrue);
+    expect(hfSwitch.onChanged, isNull);
+    expect(
+      tester
+          .getSemantics(find.byKey(const Key('slot-settings-enable-hf')))
+          .label,
+      contains('Enabled (Unavailable)'),
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-edit-hf')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('slot-settings-delete-hf')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    communicator.commandEvents.clear();
+    await tester.tap(
+      find.byKey(const Key('slot-settings-enable-hf')),
+      warnIfMissed: false,
+    );
+    await tester.tap(
+      find.byKey(const Key('slot-settings-edit-hf')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(communicator.commandEvents, isEmpty);
+    expect(find.byType(SlotEditMenu), findsNothing);
+    semantics.dispose();
+  });
+
+  testWidgets(
+      'Slot Settings passes confirmed empty fields without placeholders',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotSettings(slot: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Empty'), findsNWidgets(4));
+    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+    await tester.pump();
+
+    final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
+    expect(edit.name, isEmpty);
+    expect(edit.isEnabled, isFalse);
+    expect(edit.slotType, TagType.unknown);
+  });
+
+  testWidgets(
       'open Slot Settings adopts replacement status and mutates its communicator',
       (tester) async {
     final oldCommunicator = _SlotCommunicator()
