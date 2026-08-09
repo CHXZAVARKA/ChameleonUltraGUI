@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
@@ -1509,9 +1510,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           type: type == null
               ? _preservedOrUnavailable(old.hf.type)
               : SlotField.confirmed(type.hf),
-          enabled: enabledInfo == null
-              ? _preservedOrUnavailable(old.hf.enabled)
-              : SlotField.confirmed(enabledInfo.hf),
+          enabled: _slotEnabledState(
+            previous: old.hf.enabled,
+            enabled: enabledInfo?.hf,
+            slotIndex: index,
+            frequency: TagFrequency.hf,
+          ),
           name: slotNames == null
               ? _preservedOrUnavailable(old.hf.name)
               : SlotField.confirmed(slotNames.hf),
@@ -1520,9 +1524,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           type: type == null
               ? _preservedOrUnavailable(old.lf.type)
               : SlotField.confirmed(type.lf),
-          enabled: enabledInfo == null
-              ? _preservedOrUnavailable(old.lf.enabled)
-              : SlotField.confirmed(enabledInfo.lf),
+          enabled: _slotEnabledState(
+            previous: old.lf.enabled,
+            enabled: enabledInfo?.lf,
+            slotIndex: index,
+            frequency: TagFrequency.lf,
+          ),
           name: slotNames == null
               ? _preservedOrUnavailable(old.lf.name)
               : SlotField.confirmed(slotNames.lf),
@@ -1547,6 +1554,23 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   SlotField<T> _preservedOrUnavailable<T>(SlotField<T> previous) =>
       previous.isConfirmed ? previous : SlotField<T>.unavailable();
+
+  SlotField<bool> _slotEnabledState({
+    required SlotField<bool> previous,
+    required bool? enabled,
+    required int slotIndex,
+    required TagFrequency frequency,
+  }) {
+    if (enabled == null) {
+      return _preservedOrUnavailable(previous);
+    }
+    final connector = _session.connector;
+    if (connector is EmulatorSerial &&
+        !connector.isSlotEnabledStateKnown(slotIndex, frequency)) {
+      return const SlotField<bool>.unavailable();
+    }
+    return SlotField.confirmed(enabled);
+  }
 
   SlotsStatus _failedSlots(SlotsStatus previous) {
     final staleFacets =

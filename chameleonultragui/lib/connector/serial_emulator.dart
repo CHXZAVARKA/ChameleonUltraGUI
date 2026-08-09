@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:flutter/services.dart';
 
@@ -10,6 +11,11 @@ import 'package:flutter/services.dart';
 
 class EmulatorSerial extends AbstractSerial {
   EmulatorSerial({required super.log});
+
+  // The enabled-slots protocol carries bools only. Keep one configured Demo
+  // mark explicitly uncertain so the demo can represent that real UI state.
+  bool isSlotEnabledStateKnown(int slotIndex, TagFrequency frequency) =>
+      slotIndex != 6 || frequency != TagFrequency.hf;
 
   @override
   Future<bool> performConnect() async {

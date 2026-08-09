@@ -208,28 +208,48 @@ class _HomeControls extends StatelessWidget {
       preferences: preferences,
       layout: layout,
     );
-    return Row(
-      key: const Key('home-controls'),
-      children: [
-        layoutControl,
-        const SizedBox(width: 2),
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: _DeviceModeControl(status: status),
+    Widget controls() => Row(
+          key: const Key('home-controls'),
+          children: [
+            layoutControl,
+            const SizedBox(width: 2),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _DeviceModeControl(status: status),
+              ),
+            ),
+            const SizedBox(width: 2),
+            IconButton(
+              key: const Key('home-device-settings'),
+              tooltip: localizations.settings,
+              onPressed: () => showDialog<String>(
+                context: context,
+                builder: (_) => const ChameleonSettings(),
+              ),
+              icon: const Icon(Icons.settings),
+            ),
+          ],
+        );
+
+    final textScaler = MediaQuery.textScalerOf(context);
+    final baseLabelSize =
+        Theme.of(context).textTheme.labelLarge?.fontSize ?? 14;
+    if (textScaler.scale(baseLabelSize) <= baseLabelSize * 1.3) {
+      return controls();
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        key: const Key('home-controls-scroll'),
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: constraints.maxWidth),
+          child: IntrinsicWidth(
+            child: controls(),
           ),
         ),
-        const SizedBox(width: 2),
-        IconButton(
-          key: const Key('home-device-settings'),
-          tooltip: localizations.settings,
-          onPressed: () => showDialog<String>(
-            context: context,
-            builder: (_) => const ChameleonSettings(),
-          ),
-          icon: const Icon(Icons.settings),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -357,33 +377,31 @@ class _FirmwarePill extends StatelessWidget {
                         horizontal: 14,
                         vertical: 8,
                       ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              localizations.firmware,
-                              key: const Key('firmware-label'),
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            localizations.firmware,
+                            key: const Key('firmware-label'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
                             ),
-                            const Text(' • '),
-                            Text(
-                              statusLabel,
-                              key: const Key('firmware-status-text'),
-                              style: TextStyle(
-                                color: _firmwareStatusColor(
-                                  context,
-                                  firmware.state,
-                                ),
-                                fontWeight: FontWeight.w600,
+                          ),
+                          const Text(' • '),
+                          Text(
+                            statusLabel,
+                            key: const Key('firmware-status-text'),
+                            style: TextStyle(
+                              color: _firmwareStatusColor(
+                                context,
+                                firmware.state,
                               ),
+                              fontWeight: FontWeight.w600,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

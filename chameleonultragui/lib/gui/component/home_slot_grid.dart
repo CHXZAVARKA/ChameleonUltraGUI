@@ -184,7 +184,31 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                     label: localizations.slot_grid_description,
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        const labelWidth = 28.0;
+                        final textScaler = MediaQuery.textScalerOf(context);
+                        final textDirection = Directionality.of(context);
+                        final frequencyStyle = Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(fontWeight: FontWeight.w700);
+                        double measureWidth(String text, TextStyle? style) {
+                          final painter = TextPainter(
+                            text: TextSpan(text: text, style: style),
+                            textDirection: textDirection,
+                            textScaler: textScaler,
+                          )..layout();
+                          final width = painter.width;
+                          painter.dispose();
+                          return width;
+                        }
+
+                        final labelWidth = math.max(
+                          28.0,
+                          math.max(
+                                measureWidth(localizations.hf, frequencyStyle),
+                                measureWidth(localizations.lf, frequencyStyle),
+                              ) +
+                              4,
+                        );
                         final availableSlotsWidth = math.max(
                           0.0,
                           constraints.maxWidth - labelWidth,
@@ -196,7 +220,17 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           availableSlotsWidth / columns,
                         );
                         final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
-                        final gridHeight = markSize * 2 + 44;
+                        final slotNumberPainter = TextPainter(
+                          text: TextSpan(
+                            text: '8',
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                          textDirection: textDirection,
+                          textScaler: textScaler,
+                        )..layout();
+                        final slotNumberHeight = slotNumberPainter.height;
+                        slotNumberPainter.dispose();
+                        final gridHeight = markSize * 2 + 29 + slotNumberHeight;
                         Widget buildSlot(int index) => SizedBox(
                               key: _slotKeys[index],
                               width: slotWidth,
@@ -221,7 +255,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _FrequencyLabels(markSize: markSize),
+                                  _FrequencyLabels(
+                                    markSize: markSize,
+                                    width: labelWidth,
+                                  ),
                                   for (var offset = 0;
                                       offset < columns;
                                       offset++)
@@ -250,7 +287,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _FrequencyLabels(markSize: markSize),
+                            _FrequencyLabels(
+                              markSize: markSize,
+                              width: labelWidth,
+                            ),
                             SizedBox(
                               key: const Key('home-slot-grid-scroll'),
                               width: availableSlotsWidth,
@@ -295,9 +335,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
 }
 
 class _FrequencyLabels extends StatelessWidget {
-  const _FrequencyLabels({required this.markSize});
+  const _FrequencyLabels({required this.markSize, required this.width});
 
   final double markSize;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +348,7 @@ class _FrequencyLabels extends StatelessWidget {
           fontWeight: FontWeight.w700,
         );
     return SizedBox(
-      width: 28,
+      width: width,
       child: Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Column(
