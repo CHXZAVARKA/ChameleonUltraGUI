@@ -658,11 +658,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     if (readFacts || _firmwareFacts == null) {
-      _firmwareFacts = await _readFirmwareFacts();
-      if (!_canPublish) {
+      final facts = await _readFirmwareFacts();
+      if (!_canPublish || facts == null) {
         return;
       }
-      final facts = _firmwareFacts!;
+      _firmwareFacts = facts;
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
@@ -738,31 +738,54 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<_FirmwareFacts> _readFirmwareFacts() async {
+  Future<_FirmwareFacts?> _readFirmwareFacts() async {
     while (_canPublish) {
-      final result = await _rfOperations.tryRunBackground<_FirmwareFacts>(
+      final result = await _rfOperations.tryRunBackground<_FirmwareFacts?>(
         () async {
           FirmwareVersion? version;
           String? commit;
           List<int>? capabilities;
 
+          if (!_canPublish) {
+            return null;
+          }
           try {
             version = await _session.communicator.getFirmwareVersion();
           } catch (error, stackTrace) {
+            if (!_canPublish) {
+              return null;
+            }
             _logFirmwareFactFailure('version', error, stackTrace);
           }
+          if (!_canPublish) {
+            return null;
+          }
+
           try {
             commit = await _session.communicator.getGitCommitHash();
             if (commit.isEmpty) {
               commit = null;
             }
           } catch (error, stackTrace) {
+            if (!_canPublish) {
+              return null;
+            }
             _logFirmwareFactFailure('commit', error, stackTrace);
           }
+          if (!_canPublish) {
+            return null;
+          }
+
           try {
             capabilities = await _session.communicator.getDeviceCapabilities();
           } catch (error, stackTrace) {
+            if (!_canPublish) {
+              return null;
+            }
             _logFirmwareFactFailure('compatibility', error, stackTrace);
+          }
+          if (!_canPublish) {
+            return null;
           }
 
           final legacy = version?.legacyProtocol == true;
@@ -790,16 +813,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         group: _backgroundOperationGroup,
       );
       if (result.acquired) {
-        return result.value!;
+        return result.value;
       }
       await _rfOperations.waitUntilIdle();
     }
-    return const _FirmwareFacts(
-      installedVersion: null,
-      installedCommit: null,
-      protocol: FirmwareProtocol.unknown,
-      compatibility: FirmwareCompatibility.unknown,
-    );
+    return null;
   }
 
   void _logFirmwareFactFailure(

@@ -83,6 +83,38 @@ void main() {
     }
   });
 
+  testWidgets(
+      'firmware pill keeps a compact visual inside one accessible 48px action',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final appState = _connectedState(
+        _FirmwareCommunicator.current(),
+        catalog: _FakeFirmwareCatalog.current(),
+      );
+
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+
+      final pill = find.byKey(const Key('home-firmware-pill'));
+      expect(tester.getSize(pill).height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSize(find.byKey(const Key('firmware-visual-pill'))).height,
+        lessThan(48),
+      );
+      expect(
+        find.bySemanticsLabel('Firmware · Up to date · Firmware details'),
+        findsOneWidget,
+      );
+
+      await tester.tap(pill);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('firmware-details-dialog')), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('firmware details contain facts and exclude unsupported content',
       (tester) async {
     final communicator = _FirmwareCommunicator.current(
@@ -443,6 +475,42 @@ void main() {
     expect(appState.connectedDeviceStatus, same(newStatus));
     expect(newStatus.snapshot.firmware.state, FirmwareState.upToDate);
   });
+
+  testWidgets(
+      'replacement during firmware version read stops all old session work',
+      (tester) async {
+    final oldCommunicator = _FirmwareCommunicator.pendingFirmware();
+    final newCommunicator = _FirmwareCommunicator.current(commit: 'new1234');
+    final catalog = _FakeFirmwareCatalog([
+      const FirmwareCatalogRelease(
+        latestCommit: 'new1234',
+        updateAvailable: false,
+      ),
+    ]);
+    final appState = _connectedState(oldCommunicator, catalog: catalog);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    await tester.pump();
+    expect(oldCommunicator.firmwareReads, 1);
+
+    _replaceConnection(appState, newCommunicator);
+    appState.changesMade();
+    await tester.pumpAndSettle();
+    expect(appState.connectedDeviceStatus!.snapshot.firmware.state,
+        FirmwareState.upToDate);
+
+    oldCommunicator.completePendingFirmware();
+    await tester.pump();
+    await tester.pump();
+
+    expect(oldCommunicator.commitReads, 0);
+    expect(oldCommunicator.capabilityReads, 0);
+    expect(newCommunicator.firmwareReads, 1);
+    expect(newCommunicator.commitReads, 1);
+    expect(newCommunicator.capabilityReads, 1);
+    expect(catalog.lookups, 1);
+  });
 }
 
 Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
@@ -516,6 +584,14 @@ class _FirmwareCommunicator extends ChameleonCommunicator {
   final String commit;
   final List<int> capabilities;
   int firmwareReads = 0;
+  int commitReads = 0;
+  int capabilityReads = 0;
+
+  void completePendingFirmware() {
+    _pendingFirmware?.complete(
+      FirmwareVersion(legacyProtocol: false, version: 0x0100),
+    );
+  }
 
   @override
   Future<FirmwareVersion> getFirmwareVersion() {
@@ -524,10 +600,16 @@ class _FirmwareCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<String> getGitCommitHash() async => commit;
+  Future<String> getGitCommitHash() async {
+    commitReads++;
+    return commit;
+  }
 
   @override
-  Future<List<int>> getDeviceCapabilities() async => capabilities;
+  Future<List<int>> getDeviceCapabilities() async {
+    capabilityReads++;
+    return capabilities;
+  }
 
   @override
   Future<BatteryCharge> getBatteryCharge() async =>

@@ -194,41 +194,63 @@ class _FirmwarePill extends StatelessWidget {
       builder: (context, _) {
         final firmware = status.snapshot.firmware;
         final statusLabel = _firmwareStatusLabel(localizations, firmware.state);
-        final semanticLabel = '${localizations.firmware} · $statusLabel';
+        final semanticLabel = '${localizations.firmware} · $statusLabel · '
+            '${localizations.firmware_details}';
         return Semantics(
           button: true,
           label: semanticLabel,
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(999),
-            child: InkWell(
-              key: const Key('home-firmware-pill'),
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => _openFirmwareDetails(context, status),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      localizations.firmware,
-                      key: const Key('firmware-label'),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
+          excludeSemantics: true,
+          onTap: () => _openFirmwareDetails(context, status),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: const Key('home-firmware-pill'),
+                excludeFromSemantics: true,
+                customBorder: const StadiumBorder(),
+                onTap: () => _openFirmwareDetails(context, status),
+                child: Center(
+                  widthFactor: 1,
+                  child: Ink(
+                    key: const Key('firmware-visual-pill'),
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            localizations.firmware,
+                            key: const Key('firmware-label'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Text(' • '),
+                          Text(
+                            statusLabel,
+                            key: const Key('firmware-status-text'),
+                            style: TextStyle(
+                              color: _firmwareStatusColor(
+                                context,
+                                firmware.state,
+                              ),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const Text(' • '),
-                    Text(
-                      statusLabel,
-                      key: const Key('firmware-status-text'),
-                      style: TextStyle(
-                        color: _firmwareStatusColor(context, firmware.state),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

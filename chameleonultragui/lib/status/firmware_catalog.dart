@@ -22,30 +22,53 @@ abstract interface class FirmwareCatalog {
   });
 }
 
+typedef LatestFirmwareCommitLoader = Future<String> Function(
+  ChameleonDevice device,
+);
+typedef FirmwareCommitResolver = Future<String> Function(String commit);
+
 class GitHubFirmwareCatalog implements FirmwareCatalog {
-  const GitHubFirmwareCatalog();
+  const GitHubFirmwareCatalog({
+    this.latestCommitLoader = latestAvailableCommit,
+    this.commitResolver = resolveCommit,
+  });
+
+  final LatestFirmwareCommitLoader latestCommitLoader;
+  final FirmwareCommitResolver commitResolver;
 
   @override
   Future<FirmwareCatalogRelease> latestFirmware({
     required ChameleonDevice device,
     required String? installedCommit,
   }) async {
-    final latestCommit = await latestAvailableCommit(device);
+    final latestCommit = await latestCommitLoader(device);
     if (latestCommit.isEmpty) {
       throw StateError('No firmware release is available');
     }
 
     String? normalizedInstalledCommit;
     if (installedCommit != null && installedCommit.isNotEmpty) {
-      normalizedInstalledCommit = await resolveCommit(installedCommit);
+      normalizedInstalledCommit = await commitResolver(installedCommit);
     }
 
     return FirmwareCatalogRelease(
       latestCommit: latestCommit,
-      updateAvailable:
-          normalizedInstalledCommit == null || normalizedInstalledCommit.isEmpty
-              ? null
-              : !latestCommit.startsWith(normalizedInstalledCommit),
+      updateAvailable: firmwareUpdateAvailable(
+        installedCommit: normalizedInstalledCommit,
+        latestCommit: latestCommit,
+      ),
     );
   }
+}
+
+bool? firmwareUpdateAvailable({
+  required String? installedCommit,
+  required String latestCommit,
+}) {
+  final installed = installedCommit?.trim().toLowerCase() ?? '';
+  final latest = latestCommit.trim().toLowerCase();
+  if (installed.isEmpty || latest.isEmpty) {
+    return null;
+  }
+  return !(latest.startsWith(installed) || installed.startsWith(latest));
 }
