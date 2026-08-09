@@ -299,7 +299,7 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('narrow Home slots expose one 48px semantic tap target',
+  testWidgets('narrow Home slots have distinct 48px pointer targets',
       (tester) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
@@ -317,9 +317,16 @@ void main() {
       Scaffold(body: Center(child: HomeSlotGrid(status: status))),
     );
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
-    for (var slot = 1; slot <= 8; slot++) {
-      final finder = find.byKey(Key('home-slot-$slot'));
+    final slotFinders = [
+      for (var slot = 1; slot <= 8; slot++) find.byKey(Key('home-slot-$slot')),
+    ];
+    final initialRects = [
+      for (final finder in slotFinders) tester.getRect(finder),
+    ];
+    for (var index = 0; index < slotFinders.length; index++) {
+      final finder = slotFinders[index];
       final size = tester.getSize(finder);
       expect(size.width, greaterThanOrEqualTo(48));
       expect(size.height, greaterThanOrEqualTo(48));
@@ -331,20 +338,77 @@ void main() {
         isTrue,
       );
       expect(
-        find.bySemanticsLabel(RegExp('^Slot $slot\\.')),
+        find.bySemanticsLabel(RegExp('^Slot ${index + 1}\\.')),
         findsOneWidget,
       );
+      for (var other = index + 1; other < initialRects.length; other++) {
+        expect(
+          initialRects[index].intersect(initialRects[other]).isEmpty,
+          isTrue,
+          reason: 'Slot ${index + 1} overlaps slot ${other + 1}',
+        );
+      }
     }
+
+    for (var index = 0; index < slotFinders.length; index++) {
+      final finder = slotFinders[index];
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(finder);
+      final points = [
+        rect.center,
+        Offset(rect.left + 4, rect.center.dy),
+        Offset(rect.right - 4, rect.center.dy),
+      ];
+      for (final point in points) {
+        final activationCount = communicator.activations.length;
+        await tester.tapAt(point);
+        await tester.pumpAndSettle();
+        expect(communicator.activations, hasLength(activationCount + 1));
+        expect(
+          communicator.activations.last,
+          index,
+          reason: 'Point $point must activate slot ${index + 1}',
+        );
+      }
+    }
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const Key('home-slot-grid-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(scrollable.position.pixels, greaterThan(0));
+
+    await tester.ensureVisible(slotFinders.first);
+    await tester.pumpAndSettle();
+    await tester.tap(slotFinders.first);
+    await tester.pumpAndSettle();
+    communicator.activations.clear();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    for (var index = 1; index < slotFinders.length; index++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+    expect(communicator.activations, List.generate(8, (index) => index));
+    final scrollRect = tester.getRect(
+      find.byKey(const Key('home-slot-grid-scroll')),
+    );
+    final lastSlotRect = tester.getRect(slotFinders.last);
+    expect(lastSlotRect.left, greaterThanOrEqualTo(scrollRect.left));
+    expect(lastSlotRect.right, lessThanOrEqualTo(scrollRect.right));
 
     final confirmationGate = Completer<void>();
     communicator.nextActiveGate = confirmationGate;
-    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.ensureVisible(slotFinders[1]);
+    await tester.pumpAndSettle();
+    await tester.tap(slotFinders[1]);
     await tester.pump();
 
-    for (var slot = 1; slot <= 8; slot++) {
-      final data = tester
-          .getSemantics(find.byKey(Key('home-slot-$slot')))
-          .getSemanticsData();
+    for (final finder in slotFinders) {
+      final data = tester.getSemantics(finder).getSemanticsData();
       expect(data.hasAction(SemanticsAction.tap), isFalse);
       expect(data.flagsCollection.isEnabled, Tristate.isFalse);
     }

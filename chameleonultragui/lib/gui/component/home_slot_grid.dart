@@ -18,6 +18,10 @@ class HomeSlotGrid extends StatefulWidget {
 
 class _HomeSlotGridState extends State<HomeSlotGrid> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'Home slot grid');
+  final List<GlobalKey> _slotKeys = List.generate(
+    8,
+    (index) => GlobalKey(debugLabel: 'Home slot ${index + 1}'),
+  );
   var _focusedSlot = 0;
   var _hasFocus = false;
 
@@ -33,10 +37,12 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       setState(() => _focusedSlot = math.max(0, _focusedSlot - 1));
+      _revealFocusedSlot();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       setState(() => _focusedSlot = math.min(7, _focusedSlot + 1));
+      _revealFocusedSlot();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -45,6 +51,18 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  void _revealFocusedSlot() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final slotContext = _slotKeys[_focusedSlot].currentContext;
+      if (slotContext != null) {
+        Scrollable.ensureVisible(slotContext, alignment: 0.5);
+      }
+    });
   }
 
   Future<void> _activate(int index) async {
@@ -100,6 +118,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                         _hasFocus = value;
                         if (value && activeSlot != null) {
                           _focusedSlot = activeSlot;
+                          _revealFocusedSlot();
                         }
                       });
                     }
@@ -111,13 +130,16 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         const labelWidth = 28.0;
+                        final availableSlotsWidth = math.max(
+                          0.0,
+                          constraints.maxWidth - labelWidth,
+                        );
                         final slotWidth = math.max(
-                          34.0,
-                          (constraints.maxWidth - labelWidth) / 8,
+                          48.0,
+                          availableSlotsWidth / 8,
                         );
                         final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
                         final slotsWidth = slotWidth * 8;
-                        final targetWidth = math.max(48.0, slotWidth);
                         final gridHeight = markSize * 2 + 44;
                         return Row(
                           mainAxisSize: MainAxisSize.min,
@@ -125,39 +147,41 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           children: [
                             _FrequencyLabels(markSize: markSize),
                             SizedBox(
-                              width: slotsWidth,
+                              width: availableSlotsWidth,
                               height: gridHeight,
-                              child: Stack(
-                                children: [
-                                  for (var index = 0; index < 8; index++)
-                                    Positioned(
-                                      left: (index * slotWidth +
-                                              (slotWidth - targetWidth) / 2)
-                                          .clamp(
-                                        0.0,
-                                        slotsWidth - targetWidth,
-                                      ),
-                                      top: 0,
-                                      bottom: 0,
-                                      width: targetWidth,
-                                      child: _SlotColumn(
-                                        index: index,
-                                        slot: slots.slots[index],
-                                        markSize: markSize,
-                                        loading: slots.availability ==
-                                            SlotsAvailability.loading,
-                                        active: activeSlot == index &&
-                                            slots.activeSlot.isConfirmed,
-                                        activating:
-                                            slots.pendingActivation == index,
-                                        focused:
-                                            _hasFocus && _focusedSlot == index,
-                                        blocked:
-                                            slots.pendingActivation != null,
-                                        onTap: () => _activate(index),
-                                      ),
-                                    ),
-                                ],
+                              child: SingleChildScrollView(
+                                key: const Key('home-slot-grid-scroll'),
+                                scrollDirection: Axis.horizontal,
+                                child: SizedBox(
+                                  width: slotsWidth,
+                                  height: gridHeight,
+                                  child: Row(
+                                    children: [
+                                      for (var index = 0; index < 8; index++)
+                                        SizedBox(
+                                          key: _slotKeys[index],
+                                          width: slotWidth,
+                                          child: _SlotColumn(
+                                            index: index,
+                                            slot: slots.slots[index],
+                                            markSize: markSize,
+                                            loading: slots.availability ==
+                                                SlotsAvailability.loading,
+                                            active: activeSlot == index &&
+                                                slots.activeSlot.isConfirmed,
+                                            activating:
+                                                slots.pendingActivation ==
+                                                    index,
+                                            focused: _hasFocus &&
+                                                _focusedSlot == index,
+                                            blocked:
+                                                slots.pendingActivation != null,
+                                            onTap: () => _activate(index),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ],
