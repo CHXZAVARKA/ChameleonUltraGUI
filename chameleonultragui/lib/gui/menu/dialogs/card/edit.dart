@@ -513,6 +513,8 @@ class CardEditMenuState extends State<CardEditMenu> {
                 atqa: hexToBytes(atqaController.text),
                 uid: finalUid,
                 extraData: CardSaveExtra(
+                  mifareClassicDumpComplete:
+                      widget.tagSave.extraData.mifareClassicDumpComplete,
                   ultralightSignature:
                       hexToBytes(ultralightSignatureController.text),
                   ultralightVersion:

@@ -180,14 +180,14 @@ class DebugPage extends StatelessWidget {
 
                     var keys = await recovery.nested(nested);
                     if (keys.isNotEmpty) {
-                      appState.log!.d("Found keys: $keys. Checking them...");
+                      appState.log!
+                          .d("Recovered ${keys.length} candidate key(s)");
                       for (var key in keys) {
                         var keyBytes = u64ToBytes(key);
                         if ((await appState.communicator!
                                 .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
                             true) {
-                          appState.log!.i(
-                              "Found valid key! Key ${bytesToHex(keyBytes.sublist(2, 8))}");
+                          appState.log!.i("Found a valid key");
                           found = true;
                           break;
                         }
@@ -230,14 +230,14 @@ class DebugPage extends StatelessWidget {
 
                     var keys = await recovery.staticNested(nested);
                     if (keys.isNotEmpty) {
-                      appState.log!.d("Found keys: $keys. Checking them...");
+                      appState.log!
+                          .d("Recovered ${keys.length} candidate key(s)");
                       for (var key in keys) {
                         var keyBytes = u64ToBytes(key);
                         if ((await appState.communicator!
                                 .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
                             true) {
-                          appState.log!.i(
-                              "Found valid key! Key ${bytesToHex(keyBytes.sublist(2, 8))}");
+                          appState.log!.i("Found a valid key");
                           found = true;
                           break;
                         }
@@ -269,14 +269,14 @@ class DebugPage extends StatelessWidget {
                         ar: data.ar));
                     var keys = await recovery.darkside(darkside);
                     if (keys.isNotEmpty) {
-                      appState.log!.d("Found keys: $keys. Checking them...");
+                      appState.log!
+                          .d("Recovered ${keys.length} candidate key(s)");
                       for (var key in keys) {
                         var keyBytes = u64ToBytes(key);
                         if ((await appState.communicator!
                                 .mf1Auth(0x03, 0x61, keyBytes.sublist(2, 8))) ==
                             true) {
-                          appState.log!.i(
-                              "Found valid key! Key ${bytesToHex(keyBytes.sublist(2, 8))}");
+                          appState.log!.i("Found a valid key");
                           found = true;
                           break;
                         }
