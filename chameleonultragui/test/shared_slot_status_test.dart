@@ -356,6 +356,82 @@ void main() {
     expect(slots.unavailableFacets, isEmpty);
     expect(slots.availability, SlotsAvailability.available);
   });
+
+  testWidgets(
+      'waiting entry refresh preserves a newer confirmed activation when its active read fails',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+    expect(status.snapshot.slots.activeSlot.value, 0);
+
+    await _pumpPage(tester, appState, const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    final foregroundGate = Completer<void>();
+    final foregroundStarted = Completer<void>();
+    final foreground = appState.rfOperations.runForeground(() async {
+      foregroundStarted.complete();
+      await foregroundGate.future;
+    });
+    await foregroundStarted.future;
+
+    communicator.scriptedActiveSlotReads.addAll([
+      1,
+      StateError('active slot unavailable after activation'),
+    ]);
+    final observedActiveSlots = <int?>[];
+    status.addListener(
+      () => observedActiveSlots.add(status.snapshot.slots.activeSlot.value),
+    );
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pump();
+    final entryRefresh = status.refreshSlots();
+    final activation = status.activateSlot(1);
+
+    foregroundGate.complete();
+    await foreground;
+    expect(await activation, isTrue);
+    await entryRefresh;
+    await tester.pump();
+
+    final slots = status.snapshot.slots;
+    expect(slots.activeSlot.value, 1);
+    expect(slots.activeSlot.isConfirmed, isTrue);
+    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
+    expect(slots.availability, SlotsAvailability.stale);
+    final activationPublication = observedActiveSlots.indexOf(1);
+    expect(activationPublication, isNonNegative);
+    expect(
+      observedActiveSlots.skip(activationPublication),
+      everyElement(1),
+    );
+  });
+
+  testWidgets('invalid activation reread marks the confirmed active slot stale',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+    expect(status.snapshot.slots.activeSlot.value, 0);
+
+    communicator.scriptedActiveSlotReads.add(8);
+    expect(await status.activateSlot(1), isFalse);
+    await tester.pump();
+
+    final slots = status.snapshot.slots;
+    expect(communicator.activations, [1]);
+    expect(slots.activeSlot.value, 0);
+    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
+    expect(slots.availability, SlotsAvailability.stale);
+  });
 }
 
 Future<void> _pumpPage(
@@ -417,6 +493,7 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Completer<void>? nextTypesGate;
   int activeSlot = 0;
   final List<int> activations = [];
+  final List<Object> scriptedActiveSlotReads = [];
 
   bool get failAll => failTypes && failEnabled && failNames && failActive;
 
@@ -465,6 +542,13 @@ class _SlotCommunicator extends ChameleonCommunicator {
   @override
   Future<int> getActiveSlot() async {
     activeSlotReads++;
+    if (scriptedActiveSlotReads.isNotEmpty) {
+      final result = scriptedActiveSlotReads.removeAt(0);
+      if (result is int) {
+        return result;
+      }
+      throw result;
+    }
     if (failActive) {
       throw StateError('active slot unavailable');
     }

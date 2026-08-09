@@ -383,11 +383,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _refreshSlots() async {
-    final previous = _snapshot.slots;
     try {
       while (_canPublish) {
         final result = await _rfOperations.tryRunBackground<SlotsStatus?>(
-          () => _readSlots(previous),
+          () => _readSlots(_snapshot.slots),
           group: _backgroundOperationGroup,
         );
         if (result.acquired) {
@@ -406,7 +405,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         stackTrace: stackTrace,
       );
       if (_canPublish) {
-        _publish(_snapshot.copyWith(slots: _failedSlots(previous)));
+        _publish(_snapshot.copyWith(slots: _failedSlots(_snapshot.slots)));
       }
     }
   }
@@ -425,8 +424,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           return false;
         }
         final confirmedSlot = await _session.communicator.getActiveSlot();
-        if (!_canPublish || confirmedSlot < 0 || confirmedSlot >= 8) {
+        if (!_canPublish) {
           return false;
+        }
+        if (confirmedSlot < 0 || confirmedSlot >= 8) {
+          throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
         }
         final currentSlots = _snapshot.slots;
         final staleFacets = {...currentSlots.staleFacets}
