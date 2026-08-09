@@ -101,30 +101,43 @@ final gMifareClassicBackdoorKeys = gMifareClassicBackdoorKeysList
         ]))
     .toList();
 
-Future<MifareClassicType> mfClassicGetType(
-    ChameleonCommunicator communicator) async {
+Future<MifareClassicType> mfClassicGetType(ChameleonCommunicator communicator,
+    {bool Function()? canContinue}) async {
+  bool operationCanContinue() => canContinue?.call() ?? true;
+
+  if (!operationCanContinue()) return MifareClassicType.none;
   if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 255]),
               checkResponseCrc: false))
           .length ==
       4) {
-    return MifareClassicType.m4k;
+    return operationCanContinue()
+        ? MifareClassicType.m4k
+        : MifareClassicType.none;
   }
 
+  if (!operationCanContinue()) return MifareClassicType.none;
   if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 80]),
               checkResponseCrc: false))
           .length ==
       4) {
-    return MifareClassicType.m2k;
+    return operationCanContinue()
+        ? MifareClassicType.m2k
+        : MifareClassicType.none;
   }
 
+  if (!operationCanContinue()) return MifareClassicType.none;
   if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 63]),
               checkResponseCrc: false))
           .length ==
       4) {
-    return MifareClassicType.m1k;
+    return operationCanContinue()
+        ? MifareClassicType.m1k
+        : MifareClassicType.none;
   }
 
-  return MifareClassicType.mini;
+  return operationCanContinue()
+      ? MifareClassicType.mini
+      : MifareClassicType.none;
 }
 
 Future<bool> mfClassicHasBackdoor(ChameleonCommunicator communicator) async {

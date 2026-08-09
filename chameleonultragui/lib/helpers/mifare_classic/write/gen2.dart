@@ -95,7 +95,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
           case MifareClassicMagicWriteOutcome.success:
             return operationCanContinue
                 ? outcome
-                : MifareClassicMagicWriteOutcome.rejected;
+                : MifareClassicMagicWriteOutcome.ambiguous;
           case MifareClassicMagicWriteOutcome.ambiguous:
             return outcome;
           case MifareClassicMagicWriteOutcome.rejected:

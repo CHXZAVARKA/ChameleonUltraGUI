@@ -27,6 +27,26 @@ class WriteCardPageState extends State<WriteCardPage> {
   AbstractWriteHelper? baseHelper;
   AbstractWriteHelper? helper;
 
+  Future<SessionBoundRfResult<T?>> _runHelperPreflight<T>(
+    ChameleonGUIState appState,
+    AbstractWriteHelper selectedHelper,
+    Future<T> Function(AbstractWriteHelper helper) operation,
+  ) {
+    return appState.runSessionBoundForegroundCatching<T?>((session) async {
+      if (!mounted ||
+          !identical(selectedHelper.communicator, session.communicator)) {
+        return null;
+      }
+      selectedHelper.setOperationContinuation(
+        () => mounted && session.isCurrent,
+      );
+      if (!selectedHelper.operationCanContinue) return null;
+
+      final value = await operation(selectedHelper);
+      return selectedHelper.operationCanContinue ? value : null;
+    });
+  }
+
   Future<String?> cardSelectDialog(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
     var tags = appState.sharedPreferencesProvider.getCards();
@@ -53,13 +73,32 @@ class WriteCardPageState extends State<WriteCardPage> {
           appState.hasConnectedCommunicator(communicator),
     );
 
+    final selectedHelper = selectedBaseHelper?.getAvailableMethods()[0];
     setState(() {
       card = selectedCard;
       baseHelper = selectedBaseHelper;
-      helper = selectedBaseHelper?.getAvailableMethods()[0];
+      helper = selectedHelper;
     });
 
-    await helper?.getCardType();
+    if (selectedHelper != null) {
+      final result = await _runHelperPreflight<bool>(
+        appState,
+        selectedHelper,
+        (helper) async {
+          await helper.getCardType();
+          return true;
+        },
+      );
+      if (result.error != null) {
+        appState.log?.e('Failed to probe selected card: ${result.error}');
+      }
+      if (!mounted ||
+          result.value != true ||
+          !identical(card, selectedCard) ||
+          !identical(helper, selectedHelper)) {
+        return;
+      }
+    }
 
     if (!mounted) return;
     close(context, selectedCard.name);
@@ -67,50 +106,101 @@ class WriteCardPageState extends State<WriteCardPage> {
 
   Future<void> detectMagicType() async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-    var scaffoldMessenger = ScaffoldMessenger.of(context);
-    var localizations = AppLocalizations.of(context)!;
+    final selectedBaseHelper = baseHelper;
+    final selectedCard = card;
+    if (selectedBaseHelper == null || selectedCard == null) return;
+    final availableMethods = selectedBaseHelper.getAvailableMethods();
 
-    if (!await appState.communicator!.isReaderDeviceMode()) {
-      await appState.communicator!.setReaderDeviceMode(true);
-    }
+    final result = await appState.runSessionBoundForegroundCatching<
+        ({bool completed, AbstractWriteHelper? helper})>((session) async {
+      bool canContinue() => mounted && session.isCurrent;
+      if (!canContinue() ||
+          !identical(selectedBaseHelper.communicator, session.communicator)) {
+        return (completed: false, helper: null);
+      }
 
-    for (final magicHelper in baseHelper!.getAvailableMethods()) {
-      if (await magicHelper.isMagic(card)) {
-        setState(() {
-          helper = magicHelper;
-        });
+      if (!await session.communicator.isReaderDeviceMode()) {
+        if (!canContinue()) return (completed: false, helper: null);
+        await session.communicator.setReaderDeviceMode(true);
+      }
+      if (!canContinue()) return (completed: false, helper: null);
 
-        try {
-          await helper?.getCardType();
-        } catch (_) {
-          await helper?.getCardType();
+      for (final magicHelper in availableMethods) {
+        if (!identical(magicHelper.communicator, session.communicator)) {
+          return (completed: false, helper: null);
+        }
+        magicHelper.setOperationContinuation(canContinue);
+        if (!magicHelper.operationCanContinue) {
+          return (completed: false, helper: null);
+        }
+        if (!await magicHelper.isMagic(selectedCard)) {
+          if (!magicHelper.operationCanContinue) {
+            return (completed: false, helper: null);
+          }
+          continue;
+        }
+        if (!magicHelper.operationCanContinue) {
+          return (completed: false, helper: null);
         }
 
-        appState.log!.i("Detected Magic card type: ${magicHelper.name}");
-        scaffoldMessenger.hideCurrentSnackBar();
-        var snackBar = SnackBar(
+        try {
+          await magicHelper.getCardType();
+        } catch (_) {
+          if (!magicHelper.operationCanContinue) {
+            return (completed: false, helper: null);
+          }
+          await magicHelper.getCardType();
+        }
+        if (!magicHelper.operationCanContinue) {
+          return (completed: false, helper: null);
+        }
+        return (completed: true, helper: magicHelper);
+      }
+
+      return (completed: true, helper: null);
+    });
+    if (result.error != null) {
+      appState.log?.e('Failed to detect Magic card type: ${result.error}');
+    }
+    if (!mounted ||
+        result.error != null ||
+        result.value?.completed != true ||
+        !identical(baseHelper, selectedBaseHelper) ||
+        !identical(card, selectedCard)) {
+      return;
+    }
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final localizations = AppLocalizations.of(context)!;
+    final detectedHelper = result.value!.helper;
+    if (detectedHelper != null) {
+      setState(() {
+        helper = detectedHelper;
+      });
+      appState.log?.i("Detected Magic card type: ${detectedHelper.name}");
+      scaffoldMessenger.hideCurrentSnackBar();
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
           content: Text(
-              '${localizations.detected_magic_card_type}: ${helper!.name}'),
+              '${localizations.detected_magic_card_type}: ${detectedHelper.name}'),
           action: SnackBarAction(
             label: localizations.close,
             onPressed: () {},
           ),
-        );
-
-        scaffoldMessenger.showSnackBar(snackBar);
-        return;
-      }
+        ),
+      );
+      return;
     }
 
-    var snackBar = SnackBar(
-      content: Text(localizations.failed_to_detect_magic_card_type),
-      action: SnackBarAction(
-        label: localizations.close,
-        onPressed: () {},
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(localizations.failed_to_detect_magic_card_type),
+        action: SnackBarAction(
+          label: localizations.close,
+          onPressed: () {},
+        ),
       ),
     );
-
-    scaffoldMessenger.showSnackBar(snackBar);
   }
 
   void updateState() {
@@ -226,8 +316,26 @@ class WriteCardPageState extends State<WriteCardPage> {
     } else if (helper != null && helper!.isReady() && progress == -1) {
       SnackBar snackBar;
       updateProgress(0);
+      final selectedHelper = helper!;
+      final selectedCard = card!;
+      final result = await _runHelperPreflight<bool>(
+        appState,
+        selectedHelper,
+        (helper) => helper.isCompatible(selectedCard),
+      );
+      if (result.error != null) {
+        appState.log?.e('Failed to check card compatibility: ${result.error}');
+      }
+      if (!mounted ||
+          result.error != null ||
+          result.value == null ||
+          !identical(helper, selectedHelper) ||
+          !identical(card, selectedCard)) {
+        if (mounted) updateProgress(-1);
+        return;
+      }
 
-      if (!await helper!.isCompatible(card!)) {
+      if (!result.value!) {
         snackBar = SnackBar(
           content: Text(localizations.magic_incompatible_card),
           action: SnackBarAction(
