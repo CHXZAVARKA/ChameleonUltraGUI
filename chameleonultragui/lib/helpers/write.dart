@@ -16,6 +16,19 @@ abstract class AbstractWriteHelper {
   final ChameleonCommunicator communicator;
   AbstractWriteHelper(this.communicator);
 
+  bool Function()? _operationCanContinue;
+
+  void setOperationContinuation(bool Function() canContinue) {
+    _operationCanContinue = canContinue;
+  }
+
+  bool get operationCanContinue => _operationCanContinue?.call() ?? true;
+
+  T inheritOperationContinuation<T extends AbstractWriteHelper>(T helper) {
+    helper.setOperationContinuation(() => operationCanContinue);
+    return helper;
+  }
+
   bool readSupported = false; // can read data without authorization
   bool writeSupported = false; // can write data without authorization
 
