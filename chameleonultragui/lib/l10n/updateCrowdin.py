@@ -24,6 +24,10 @@ class SyncPlan(NamedTuple):
     removed: tuple[str, ...]
 
 
+class CrowdinSyncError(RuntimeError):
+    pass
+
+
 def source_strings(arb: Mapping[str, object]) -> dict[str, str]:
     return {
         key: value
@@ -108,7 +112,7 @@ def fetch_all_strings():
         page = request(
             "GET",
             f"{API_URL}/projects/{PROJECT_ID}/strings"
-            f"?limit={PAGE_SIZE}&offset={offset}",
+            f"?fileId={SOURCE_ID}&limit={PAGE_SIZE}&offset={offset}",
         )["data"]
         strings.extend(page)
         if len(page) < PAGE_SIZE:
@@ -120,11 +124,25 @@ def fetch(url):
     return json.loads(urlopen(Request(url, method="GET")).read().decode())
 
 
-def approve_english_translation(string_id, value):
+def is_source_string(string):
+    return string.get("data", {}).get("fileId") == SOURCE_ID
+
+
+def require_source_string(string):
+    if not is_source_string(string):
+        file_id = string.get("data", {}).get("fileId")
+        raise CrowdinSyncError(
+            f"Refusing to mutate Crowdin fileId {file_id!r}; expected {SOURCE_ID}"
+        )
+    return string["data"]
+
+
+def approve_english_translation(string, value):
+    string_data = require_source_string(string)
     translation = request(
         "POST",
         f"{API_URL}/projects/{PROJECT_ID}/translations",
-        {"stringId": string_id, "languageId": "en", "text": value},
+        {"stringId": string_data["id"], "languageId": "en", "text": value},
     )
     request(
         "POST",
@@ -139,16 +157,37 @@ def create_source_string(key, value):
         f"{API_URL}/projects/{PROJECT_ID}/strings",
         {"identifier": key, "text": value, "fileId": SOURCE_ID},
     )
-    approve_english_translation(string["data"]["id"], value)
+    approve_english_translation(string, value)
 
 
 def update_source_string(string, value):
-    string = request(
+    string_data = require_source_string(string)
+    updated_string = request(
         "PATCH",
-        f"{API_URL}/projects/{PROJECT_ID}/strings/{string['data']['id']}",
+        f"{API_URL}/projects/{PROJECT_ID}/strings/{string_data['id']}",
         [{"op": "replace", "path": "/text", "value": value}],
     )
-    approve_english_translation(string["data"]["id"], value)
+    approve_english_translation(updated_string, value)
+
+
+def delete_source_string(string):
+    string_data = require_source_string(string)
+    request(
+        "DELETE",
+        f"{API_URL}/projects/{PROJECT_ID}/strings/{string_data['id']}",
+        decode_data=False,
+    )
+
+
+def report_sync_error(action, key, error):
+    if isinstance(error, urllib.error.HTTPError):
+        detail = f"HTTP {error.code}"
+    else:
+        detail = str(error)
+    print(
+        f"Crowdin source sync failed while {action} {key!r}: {detail}",
+        file=sys.stderr,
+    )
 
 
 def main(argv=None):
@@ -183,27 +222,31 @@ def main(argv=None):
     branch_translation = source_strings(branch_arb)
     strings = fetch_all_strings()
     strings_by_identifier = {
-        string["data"]["identifier"]: string for string in strings
+        string["data"]["identifier"]: string
+        for string in strings
+        if is_source_string(string)
     }
     changed = plan.added.keys() | plan.updated.keys()
 
     for key, value in branch_translation.items():
+        action = "creating" if key not in strings_by_identifier else "updating"
         try:
             existing = strings_by_identifier.get(key)
             if existing is None:
                 create_source_string(key, value)
             elif key in changed:
                 update_source_string(existing, value)
-        except urllib.error.HTTPError as error:
-            print(error.reason)
+        except (urllib.error.HTTPError, CrowdinSyncError) as error:
+            report_sync_error(action, key, error)
+            return 1
 
     for key, string in strings_by_identifier.items():
         if key not in branch_translation:
-            request(
-                "DELETE",
-                f"{API_URL}/projects/{PROJECT_ID}/strings/{string['data']['id']}",
-                decode_data=False,
-            )
+            try:
+                delete_source_string(string)
+            except (urllib.error.HTTPError, CrowdinSyncError) as error:
+                report_sync_error("deleting", key, error)
+                return 1
 
     return 0
 
