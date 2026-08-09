@@ -122,37 +122,67 @@ class HomePageState extends State<HomePage> {
         listenable: preferences,
         builder: (context, _) {
           final slotLayout = preferences.getSlotLayout();
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _FirmwarePill(status: status),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontalPadding =
+                  constraints.maxWidth < 500 ? 12.0 : 28.0;
+              final firmware = Align(
+                alignment: Alignment.topCenter,
+                child: _FirmwarePill(status: status),
+              );
+              final bottomDashboard = Center(
+                child: ConstrainedBox(
+                  key: const Key('home-bottom-dashboard'),
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HomeSlotGrid(
+                        status: status,
+                        layout: slotLayout,
+                      ),
+                      const SizedBox(height: 16),
+                      _HomeControls(
+                        status: status,
+                        preferences: preferences,
+                        layout: slotLayout,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                HomeSlotGrid(status: status, layout: slotLayout),
-                Expanded(
-                  child: FractionallySizedBox(
-                    widthFactor: 0.4,
-                    child: Image.asset(
-                      status.snapshot.identity.device == ChameleonDevice.ultra
-                          ? 'assets/black-ultra-standing-front.webp'
-                          : 'assets/black-lite-standing-front.webp',
-                      fit: BoxFit.contain,
-                    ),
+              );
+              final anchored = constraints.maxHeight >= 520;
+              return SingleChildScrollView(
+                key: const Key('home-dashboard-scroll'),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    12,
+                    horizontalPadding,
+                    12,
                   ),
+                  child: anchored
+                      ? SizedBox(
+                          height: constraints.maxHeight - 24,
+                          child: Column(
+                            children: [
+                              firmware,
+                              const Spacer(),
+                              bottomDashboard,
+                            ],
+                          ),
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            firmware,
+                            const SizedBox(height: 24),
+                            bottomDashboard,
+                          ],
+                        ),
                 ),
-                _HomeControls(
-                  status: status,
-                  preferences: preferences,
-                  layout: slotLayout,
-                ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
@@ -178,58 +208,28 @@ class _HomeControls extends StatelessWidget {
       preferences: preferences,
       layout: layout,
     );
-    Widget modeAndSettings({required bool constrained}) {
-      final modeControl = _DeviceModeControl(status: status);
-      return Row(
-        mainAxisSize: constrained ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          if (constrained) Expanded(child: modeControl) else modeControl,
-          const SizedBox(width: 2),
-          IconButton(
-            tooltip: localizations.settings,
-            onPressed: () => showDialog<String>(
-              context: context,
-              builder: (_) => const ChameleonSettings(),
-            ),
-            icon: const Icon(Icons.settings),
+    return Row(
+      key: const Key('home-controls'),
+      children: [
+        layoutControl,
+        const SizedBox(width: 2),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _DeviceModeControl(status: status),
           ),
-        ],
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 560) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: layoutControl,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: modeAndSettings(constrained: true),
-              ),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: layoutControl,
-            ),
-            const Spacer(),
-            modeAndSettings(constrained: false),
-            const SizedBox(width: 8),
-          ],
-        );
-      },
+        ),
+        const SizedBox(width: 2),
+        IconButton(
+          key: const Key('home-device-settings'),
+          tooltip: localizations.settings,
+          onPressed: () => showDialog<String>(
+            context: context,
+            builder: (_) => const ChameleonSettings(),
+          ),
+          icon: const Icon(Icons.settings),
+        ),
+      ],
     );
   }
 }
@@ -248,7 +248,8 @@ class _SlotLayoutControl extends StatelessWidget {
     final localizations = AppLocalizations.of(context)!;
     final dotStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           height: 0.72,
-          letterSpacing: -0.9,
+          fontSize: 8,
+          letterSpacing: -1.2,
           fontWeight: FontWeight.w700,
         );
     return Semantics(
@@ -292,9 +293,10 @@ class _SlotLayoutControl extends StatelessWidget {
         },
         style: const ButtonStyle(
           minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+          fixedSize: WidgetStatePropertyAll(Size(52, 48)),
           tapTargetSize: MaterialTapTargetSize.padded,
           padding: WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 7),
+            EdgeInsets.symmetric(horizontal: 2),
           ),
         ),
       ),
@@ -355,30 +357,33 @@ class _FirmwarePill extends StatelessWidget {
                         horizontal: 14,
                         vertical: 8,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            localizations.firmware,
-                            key: const Key('firmware-label'),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Text(' • '),
-                          Text(
-                            statusLabel,
-                            key: const Key('firmware-status-text'),
-                            style: TextStyle(
-                              color: _firmwareStatusColor(
-                                context,
-                                firmware.state,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              localizations.firmware,
+                              key: const Key('firmware-label'),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontWeight: FontWeight.w600,
                               ),
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
+                            const Text(' • '),
+                            Text(
+                              statusLabel,
+                              key: const Key('firmware-status-text'),
+                              style: TextStyle(
+                                color: _firmwareStatusColor(
+                                  context,
+                                  firmware.state,
+                                ),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -604,60 +609,75 @@ class _DeviceModeControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    return ListenableBuilder(
-      listenable: status,
-      builder: (context, _) {
-        final mode = status.snapshot.mode;
-        final isLite = status.snapshot.identity.device == ChameleonDevice.lite;
-        final enabled = mode.availability == ModeAvailability.available &&
-            mode.pendingMode == null;
-        final control = SegmentedButton<ConnectedDeviceMode>(
-          segments: [
-            ButtonSegment(
-              value: ConnectedDeviceMode.emulator,
-              label: Text(localizations.emulator),
-            ),
-            ButtonSegment(
-              value: ConnectedDeviceMode.reader,
-              enabled: !isLite,
-              tooltip: isLite ? localizations.lite_no_read : null,
-              label: Text(localizations.reader),
-            ),
-          ],
-          selected:
-              mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
-          emptySelectionAllowed: mode.confirmedMode == null,
-          onSelectionChanged: enabled
-              ? (selection) async {
-                  final outcome = await status.switchMode(selection.single);
-                  if (outcome == ModeActionOutcome.failed && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          '${localizations.error}: ${localizations.unavailable}',
+    return SizedBox(
+      key: const Key('home-mode-control'),
+      child: ListenableBuilder(
+        listenable: status,
+        builder: (context, _) {
+          final mode = status.snapshot.mode;
+          final isLite =
+              status.snapshot.identity.device == ChameleonDevice.lite;
+          final enabled = mode.availability == ModeAvailability.available &&
+              mode.pendingMode == null;
+          final control = SegmentedButton<ConnectedDeviceMode>(
+            segments: [
+              ButtonSegment(
+                value: ConnectedDeviceMode.emulator,
+                label: Text(localizations.emulator),
+              ),
+              ButtonSegment(
+                value: ConnectedDeviceMode.reader,
+                enabled: !isLite,
+                tooltip: isLite ? localizations.lite_no_read : null,
+                label: Text(localizations.reader),
+              ),
+            ],
+            selected:
+                mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
+            emptySelectionAllowed: mode.confirmedMode == null,
+            onSelectionChanged: enabled
+                ? (selection) async {
+                    final outcome = await status.switchMode(selection.single);
+                    if (outcome == ModeActionOutcome.failed &&
+                        context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${localizations.error}: ${localizations.unavailable}',
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    }
                   }
-                }
-              : null,
-        );
-        if (mode.availability != ModeAvailability.unavailable) {
-          return control;
-        }
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            control,
-            IconButton(
-              key: const Key('home-mode-retry'),
-              tooltip: localizations.unavailable,
-              onPressed: status.refreshMode,
-              icon: const Icon(Icons.refresh),
+                : null,
+            style: const ButtonStyle(
+              minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+              tapTargetSize: MaterialTapTargetSize.padded,
+              padding: WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 8),
+              ),
             ),
-          ],
-        );
-      },
+          );
+          if (mode.availability != ModeAvailability.unavailable) {
+            return control;
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              control,
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  key: const Key('home-mode-retry'),
+                  tooltip: localizations.unavailable,
+                  onPressed: status.refreshMode,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

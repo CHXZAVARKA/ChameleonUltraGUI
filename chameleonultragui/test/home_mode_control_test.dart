@@ -52,7 +52,7 @@ void main() {
 
     var control = _modeControl(tester);
     expect(control.showSelectedIcon, isTrue);
-    expect(control.style, isNull);
+    expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
     expect(tester.takeException(), isNull);
     expect(
       tester.getCenter(find.text('Emulator')).dy,
@@ -60,7 +60,7 @@ void main() {
     );
     expect(
       tester.getCenter(find.byKey(const Key('home-slot-layout-control'))).dy,
-      lessThan(tester.getCenter(find.text('Emulator')).dy),
+      closeTo(tester.getCenter(find.text('Emulator')).dy, 1),
     );
 
     appState.sharedPreferencesProvider.setSlotLayout(SlotLayout.twoByFour);
@@ -68,7 +68,7 @@ void main() {
 
     control = _modeControl(tester);
     expect(control.showSelectedIcon, isTrue);
-    expect(control.style, isNull);
+    expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
     expect(tester.takeException(), isNull);
   });
 
