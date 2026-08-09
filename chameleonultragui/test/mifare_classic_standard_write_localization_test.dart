@@ -29,7 +29,10 @@ class _WriterLocalizations extends AppLocalizationsEn {
       'Localized safe blocks note';
 
   @override
-  String get mifare_classic_standard_select_bin_dump => 'Localized select BIN';
+  String get mifare_classic_standard_load_file => 'Localized load file';
+
+  @override
+  String get mifare_classic_standard_or => 'Localized or';
 
   @override
   String get select_saved_card => 'Localized select saved card';
@@ -39,7 +42,27 @@ class _WriterLocalizations extends AppLocalizationsEn {
       'Localized select profile';
 
   @override
-  String get mifare_classic_standard_run_preflight => 'Localized run preflight';
+  String get mifare_classic_standard_start => 'Localized start';
+
+  @override
+  String get mifare_classic_standard_phase_preflight =>
+      'Localized checking phase';
+
+  @override
+  String get mifare_classic_standard_phase_revalidating =>
+      'Localized revalidating phase';
+
+  @override
+  String get mifare_classic_standard_phase_writing => 'Localized writing phase';
+
+  @override
+  String get mifare_classic_standard_phase_verifying =>
+      'Localized verifying phase';
+
+  @override
+  String mifare_classic_standard_progress(
+          String phase, int completed, int total) =>
+      'Localized progress: $phase $completed/$total';
 
   @override
   String get mifare_classic_standard_no_usable_saved_dumps =>
@@ -140,10 +163,11 @@ void main() {
 
     expect(find.text('Localized writer title'), findsOneWidget);
     expect(find.text('Localized safe blocks note'), findsOneWidget);
-    expect(find.text('Localized select BIN'), findsOneWidget);
+    expect(find.text('Localized load file'), findsOneWidget);
+    expect(find.text('Localized or'), findsOneWidget);
     expect(find.text('Localized select saved card'), findsOneWidget);
     expect(find.text('Localized select profile'), findsOneWidget);
-    expect(find.text('Localized run preflight'), findsOneWidget);
+    expect(find.text('Localized start'), findsOneWidget);
 
     await tester.tap(find.text('Localized select saved card'));
     await tester.pumpAndSettle();
@@ -185,12 +209,15 @@ void main() {
       'Select a complete Mini,',
       'Only data blocks are written.',
       'Select .bin dump',
+      'Load file',
+      'OR',
       'No usable saved MIFARE Classic dumps',
       'Unverified legacy dump',
       'predates completeness tracking',
       'Use saved dump',
       'Select key profile',
       'Run preflight',
+      'Start',
       'Preflight is running.',
       'Preflight passed:',
       'I confirm this is my card',

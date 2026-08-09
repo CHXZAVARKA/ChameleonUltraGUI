@@ -5,6 +5,7 @@ import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/import_image.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -28,13 +29,9 @@ class _StandardMifareClassicWritePanelState
   String? _imageName;
   MifareClassicGeometry? _geometry;
   String? _profileId;
-  MifareClassicMaintenancePlan? _plan;
-  MifareClassicMaintenance? _maintenance;
-  ConnectedDeviceSession? _maintenanceSession;
   MifareClassicMaintenanceReport? _report;
   MifareClassicMaintenanceProgress? _progress;
   bool _busy = false;
-  bool _authorized = false;
   String? _error;
   bool _cancelled = false;
 
@@ -54,11 +51,7 @@ class _StandardMifareClassicWritePanelState
   }
 
   void _discardPlan() {
-    _plan = null;
-    _maintenance = null;
-    _maintenanceSession = null;
     _progress = null;
-    _authorized = false;
   }
 
   void _invalidatePlan() {
@@ -115,6 +108,9 @@ class _StandardMifareClassicWritePanelState
         if (error.writeOutcome == MifareClassicWriteOutcome.unknown)
           localizations.mifare_classic_standard_unknown_write_outcome,
       ].join(' ');
+    }
+    if (error is FormatException) {
+      return localizations.mifare_classic_maintenance_invalid_image;
     }
     return localizations.error;
   }
@@ -174,23 +170,34 @@ class _StandardMifareClassicWritePanelState
     });
   }
 
-  Future<void> _pickBinaryDump() async {
+  void _clearImage() {
+    setState(() {
+      _invalidatePlan();
+      _image = null;
+      _imageName = null;
+      _geometry = null;
+    });
+  }
+
+  Future<void> _pickDumpFile() async {
     final appState = context.read<ChameleonGUIState>();
     try {
-      final picked = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['bin'],
-      );
+      final picked = await FilePicker.pickFile();
       if (picked == null) {
         return;
       }
-      final bytes = Uint8List.fromList(
+      if (!mounted) {
+        return;
+      }
+      _clearImage();
+      final contents = Uint8List.fromList(
         await picked.readAsByteStream().expand((chunk) => chunk).toList(),
       );
       if (!mounted) {
         return;
       }
-      _selectImage(bytes, picked.name);
+      final imported = importMifareClassicImage(contents);
+      _selectImage(imported.bytes, picked.name);
     } catch (error, stackTrace) {
       _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
@@ -286,7 +293,7 @@ class _StandardMifareClassicWritePanelState
     closeSearch(context, selected.name);
   }
 
-  Future<void> _runPreflight() async {
+  Future<void> _start() async {
     final appState = context.read<ChameleonGUIState>();
     final profiles = _profiles(appState);
     MifareClassicKeyProfile? profile;
@@ -302,7 +309,14 @@ class _StandardMifareClassicWritePanelState
     }
     final selectedProfile = profile;
 
-    setState(_invalidatePlan);
+    setState(() {
+      _invalidatePlan();
+      _progress = MifareClassicMaintenanceProgress(
+        phase: MifareClassicMaintenancePhase.preflight,
+        completed: 0,
+        total: _geometry?.sectorCount ?? 1,
+      );
+    });
     _setBusy(true);
     try {
       final result = await appState.runSessionBoundForeground((session) async {
@@ -321,61 +335,16 @@ class _StandardMifareClassicWritePanelState
                 setState(() => _progress = progress);
               }
             });
-        return (maintenance: maintenance, plan: plan);
-      });
-      final value = result.value;
-      if (!result.executed || value == null) {
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _maintenance = value.maintenance;
-          _maintenanceSession = result.session;
-          _plan = value.plan;
-        });
-      }
-    } catch (error, stackTrace) {
-      _logMaintenanceError(appState, error, stackTrace);
-      if (mounted) {
-        setState(() => _error = _safeMaintenanceError(error));
-      }
-    } finally {
-      _setBusy(false);
-    }
-  }
-
-  Future<void> _writeAndVerify() async {
-    final plan = _plan;
-    final maintenance = _maintenance;
-    final maintenanceSession = _maintenanceSession;
-    if (plan == null ||
-        maintenance == null ||
-        maintenanceSession == null ||
-        !_authorized) {
-      return;
-    }
-    final appState = context.read<ChameleonGUIState>();
-
-    setState(() {
-      _error = null;
-      _report = null;
-    });
-    _setBusy(true);
-    try {
-      final result = await appState.runSessionBoundForeground((session) async {
-        if (_cancelled ||
-            !identical(session.connector, maintenanceSession.connector) ||
-            !identical(session.communicator, maintenanceSession.communicator)) {
-          return null;
-        }
-        return maintenance.execute(plan,
-            shouldCancel: () => _cancelled,
-            isSessionCurrent: () => session.isCurrent,
-            onProgress: (progress) {
-              if (mounted) {
-                setState(() => _progress = progress);
-              }
-            });
+        return maintenance.execute(
+          plan,
+          shouldCancel: () => _cancelled,
+          isSessionCurrent: () => session.isCurrent,
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() => _progress = progress);
+            }
+          },
+        );
       });
       final report = result.value;
       if (!result.executed || report == null) {
@@ -419,6 +388,17 @@ class _StandardMifareClassicWritePanelState
     final selectedProfileExists =
         profiles.any((profile) => profile.id == _profileId);
     final progress = _progress;
+    final progressPhase = switch (progress?.phase) {
+      MifareClassicMaintenancePhase.preflight =>
+        localizations.mifare_classic_standard_phase_preflight,
+      MifareClassicMaintenancePhase.revalidating =>
+        localizations.mifare_classic_standard_phase_revalidating,
+      MifareClassicMaintenancePhase.writing =>
+        localizations.mifare_classic_standard_phase_writing,
+      MifareClassicMaintenancePhase.verifying =>
+        localizations.mifare_classic_standard_phase_verifying,
+      null => '',
+    };
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -454,23 +434,42 @@ class _StandardMifareClassicWritePanelState
                 ),
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _pickBinaryDump,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final loadFile = OutlinedButton.icon(
+                    onPressed: _busy ? null : _pickDumpFile,
                     icon: const Icon(Icons.file_open),
                     label: Text(
-                      localizations.mifare_classic_standard_select_bin_dump,
+                      localizations.mifare_classic_standard_load_file,
                     ),
-                  ),
-                  OutlinedButton.icon(
+                  );
+                  final selectSavedCard = OutlinedButton.icon(
                     onPressed: _busy ? null : _pickSavedDump,
                     icon: const Icon(Icons.inventory_2_outlined),
                     label: Text(localizations.select_saved_card),
-                  ),
-                ],
+                  );
+                  final separator = Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      localizations.mifare_classic_standard_or,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  );
+                  if (constraints.maxWidth < 520) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [loadFile, separator, selectSavedCard],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: loadFile),
+                      separator,
+                      Expanded(child: selectSavedCard),
+                    ],
+                  );
+                },
               ),
               if (_imageName != null) ...[
                 const SizedBox(height: 8),
@@ -517,11 +516,11 @@ class _StandardMifareClassicWritePanelState
                         _image != null &&
                         selectedProfileExists &&
                         appState.communicator != null
-                    ? _runPreflight
+                    ? _start
                     : null,
-                icon: const Icon(Icons.fact_check_outlined),
+                icon: const Icon(Icons.play_arrow),
                 label: Text(
-                  localizations.mifare_classic_standard_run_preflight,
+                  localizations.mifare_classic_standard_start,
                 ),
               ),
               if (_busy && progress != null) ...[
@@ -533,45 +532,10 @@ class _StandardMifareClassicWritePanelState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  progress.phase == MifareClassicMaintenancePhase.preflight
-                      ? localizations.mifare_classic_standard_preflight_running
-                      : localizations.mifare_classic_standard_keep_card_stable,
-                ),
-              ],
-              if (_plan != null && !_busy) ...[
-                const SizedBox(height: 16),
-                Card(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      localizations.mifare_classic_standard_preflight_ready(
-                        _plan!.changedBlocks,
-                        _plan!.unchangedBlocks,
-                      ),
-                    ),
-                  ),
-                ),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _authorized,
-                  onChanged: (value) =>
-                      setState(() => _authorized = value ?? false),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(
-                    localizations
-                        .mifare_classic_standard_authorized_confirmation,
-                  ),
-                ),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  ),
-                  onPressed: _authorized ? _writeAndVerify : null,
-                  icon: const Icon(Icons.system_update_alt),
-                  label: Text(
-                    localizations.mifare_classic_standard_write_and_verify,
+                  localizations.mifare_classic_standard_progress(
+                    progressPhase,
+                    progress.completed,
+                    progress.total,
                   ),
                 ),
               ],

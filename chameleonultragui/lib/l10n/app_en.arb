@@ -350,6 +350,14 @@
   "@mifare_classic_standard_select_bin_dump": {
     "description": "Action that selects a MIFARE Classic BIN dump for the Standard writer"
   },
+  "mifare_classic_standard_load_file": "Load file",
+  "@mifare_classic_standard_load_file": {
+    "description": "Action that loads a supported single-card MIFARE Classic dump file for the Standard writer"
+  },
+  "mifare_classic_standard_or": "OR",
+  "@mifare_classic_standard_or": {
+    "description": "Separator between loading a dump file and choosing a saved card"
+  },
   "mifare_classic_standard_no_usable_saved_dumps": "No usable saved MIFARE Classic dumps",
   "@mifare_classic_standard_no_usable_saved_dumps": {
     "description": "Error shown when Saved Cards contains no complete or confirmable MIFARE Classic dump"
@@ -373,6 +381,44 @@
   "mifare_classic_standard_run_preflight": "Run preflight",
   "@mifare_classic_standard_run_preflight": {
     "description": "Action that checks a standard MIFARE Classic card before writing"
+  },
+  "mifare_classic_standard_start": "Start",
+  "@mifare_classic_standard_start": {
+    "description": "Action that checks, writes, and verifies a standard MIFARE Classic card"
+  },
+  "mifare_classic_standard_phase_preflight": "Checking the card",
+  "@mifare_classic_standard_phase_preflight": {
+    "description": "Progress phase while the Standard writer checks the card and builds its change plan"
+  },
+  "mifare_classic_standard_phase_revalidating": "Revalidating the card",
+  "@mifare_classic_standard_phase_revalidating": {
+    "description": "Progress phase while the Standard writer confirms that checked data has not changed"
+  },
+  "mifare_classic_standard_phase_writing": "Writing changed blocks",
+  "@mifare_classic_standard_phase_writing": {
+    "description": "Progress phase while the Standard writer writes changed data blocks"
+  },
+  "mifare_classic_standard_phase_verifying": "Verifying written blocks",
+  "@mifare_classic_standard_phase_verifying": {
+    "description": "Progress phase while the Standard writer reads back a written data block"
+  },
+  "mifare_classic_standard_progress": "{phase}: {completed}/{total}",
+  "@mifare_classic_standard_progress": {
+    "description": "Current Standard writer phase and completed work count",
+    "placeholders": {
+      "phase": {
+        "type": "String",
+        "example": "Checking the card"
+      },
+      "completed": {
+        "type": "int",
+        "example": "4"
+      },
+      "total": {
+        "type": "int",
+        "example": "16"
+      }
+    }
   },
   "mifare_classic_standard_preflight_running": "Preflight is running. Nothing is written until it completes.",
   "@mifare_classic_standard_preflight_running": {
@@ -438,7 +484,7 @@
       }
     }
   },
-  "mifare_classic_standard_unknown_write_outcome": "The outcome of the last write is unknown. Run preflight again before writing.",
+  "mifare_classic_standard_unknown_write_outcome": "The outcome of the last write is unknown. Start again before writing.",
   "@mifare_classic_standard_unknown_write_outcome": {
     "description": "Warning shown when Standard writer cannot determine whether the last block write changed the card"
   },
@@ -492,7 +538,7 @@
   "@mifare_classic_maintenance_communication_lost": {
     "description": "Safe failure shown when communication is lost during Standard writer maintenance"
   },
-  "mifare_classic_maintenance_stale_plan": "The card check expired. Run preflight again.",
+  "mifare_classic_maintenance_stale_plan": "The card check expired. Start again.",
   "@mifare_classic_maintenance_stale_plan": {
     "description": "Safe failure shown when a Standard writer preflight plan can no longer be used"
   },

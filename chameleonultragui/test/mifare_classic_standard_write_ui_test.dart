@@ -186,8 +186,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('EV1 card keys (1 key)'), findsOneWidget);
     expect(find.text('Own card keys (1 key)'), findsNothing);
-    expect(find.text('Run preflight'), findsOneWidget);
+    expect(find.text('Load file'), findsOneWidget);
+    expect(find.text('OR'), findsOneWidget);
+    expect(find.text('Start'), findsOneWidget);
     expect(find.text('Write and verify'), findsNothing);
+    expect(find.byType(CheckboxListTile), findsNothing);
   });
 
   testWidgets('editing an incomplete dump keeps it unavailable for writing',
@@ -341,7 +344,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Safe keys (1 key)').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Run preflight'));
+      await tester.tap(find.text('Start'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining(diagnostics), findsNothing);
@@ -373,7 +376,7 @@ void main() {
   );
 
   testWidgets(
-    'BIN picker failure hides diagnostics from the user and logs them',
+    'file picker failure hides diagnostics from the user and logs them',
     (tester) async {
       const diagnostics = 'PICKER_DIAGNOSTIC_17_8C4F';
       const filePickerChannel = MethodChannel(
@@ -415,7 +418,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Select .bin dump'));
+      await tester.tap(find.text('Load file'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining(diagnostics), findsNothing);
@@ -497,7 +500,7 @@ void main() {
       await blocker.future;
     });
     await tester.pump();
-    await tester.tap(find.text('Run preflight'));
+    await tester.tap(find.text('Start'));
     await tester.pump();
     expect(oldCommunicator.readerModeCalls, 0);
 
@@ -511,118 +514,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(oldCommunicator.readerModeCalls, 0);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('queued Standard execute stays bound to its preflight session',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final preferences = SharedPreferencesProvider();
-    await preferences.load();
-    const key = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-    final targetBlocks = _miniTargetBlocks();
-    preferences.setMifareClassicKeyProfiles([
-      MifareClassicKeyProfile(
-        id: 'mini-profile',
-        name: 'Mini keys',
-        cardType: 'mini',
-        sectorCount: 5,
-        assignments: List.generate(
-          5,
-          (sector) => MifareClassicKeyAssignment(
-            sector: sector,
-            keyA: Uint8List.fromList(key),
-          ),
-        ),
-      ),
-    ]);
-    preferences.setCards([
-      CardSave(
-        id: 'mini-card',
-        uid: '01020304',
-        name: 'Mini dump',
-        tag: TagType.mifareMini,
-        extraData: CardSaveExtra(mifareClassicDumpComplete: true),
-        data: targetBlocks,
-      ),
-    ]);
-    final logger = Logger(output: MemoryOutput());
-    addTearDown(logger.close);
-    final connector = _TestSerial(log: logger)..connected = true;
-    final communicator = _MiniMaintenanceCommunicator(
-      logger,
-      [
-        for (var block = 0; block < 20; block++)
-          Uint8List.fromList(targetBlocks[block]),
-      ]..[1] = Uint8List(16),
-    );
-    final appState = ChameleonGUIState(preferences)
-      ..log = logger
-      ..connector = connector
-      ..communicator = communicator;
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<ChameleonGUIState>.value(
-        value: appState,
-        child: MaterialApp(
-          locale: const Locale('en'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const Scaffold(body: StandardMifareClassicWritePanel()),
-        ),
-      ),
-    );
-    await tester.tap(find.text('Select saved card'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini dump'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Select key profile'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini keys (5 keys)').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Run preflight'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile));
-    await tester.pump();
-
-    final readerModeBaseline = communicator.readerModeCalls;
-    final blocker = Completer<void>();
-    final background = appState.rfOperations.tryRunBackground(() async {
-      await blocker.future;
-    });
-    await tester.pump();
-    final writeAndVerify = find.text('Write and verify');
-    await tester.ensureVisible(writeAndVerify);
-    await tester.tap(writeAndVerify);
-    await tester.pump();
-
-    connector.connected = false;
-    appState
-      ..connector = (_TestSerial(log: logger)..connected = true)
-      ..communicator = _ReaderModeCommunicator(logger)
-      ..changesMade();
-    blocker.complete();
-    await background;
-    await tester.pumpAndSettle();
-
-    expect(communicator.readerModeCalls, readerModeBaseline);
-    expect(communicator.writeCalls, 0);
-    expect(find.text('Write and verify'), findsNothing);
-    expect(find.byType(CheckboxListTile), findsNothing);
-    expect(
-      find.text(
-        'Operation stopped: The card check expired. Run preflight again.',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Run preflight'),
-          )
-          .onPressed,
-      isNotNull,
-    );
     expect(tester.takeException(), isNull);
   });
 
@@ -645,9 +536,9 @@ void main() {
       ..communicator = communicator;
     await _prepareStandardMiniPanel(tester, appState);
 
-    final writeAndVerify = find.text('Write and verify');
-    await tester.ensureVisible(writeAndVerify);
-    await tester.tap(writeAndVerify);
+    final start = find.text('Start');
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pumpAndSettle();
 
     expect(
@@ -682,9 +573,9 @@ void main() {
       ..communicator = communicator;
     await _prepareStandardMiniPanel(tester, appState);
 
-    final writeAndVerify = find.text('Write and verify');
-    await tester.ensureVisible(writeAndVerify);
-    await tester.tap(writeAndVerify);
+    final start = find.text('Start');
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pumpAndSettle();
 
     expect(
@@ -695,7 +586,7 @@ void main() {
     );
     expect(
       find.textContaining(
-        'The outcome of the last write is unknown. Run preflight again before writing.',
+        'The outcome of the last write is unknown. Start again before writing.',
       ),
       findsOneWidget,
     );
@@ -728,11 +619,30 @@ void main() {
       ..communicator = communicator;
     await _prepareStandardMiniPanel(tester, appState);
 
-    final writeAndVerify = find.text('Write and verify');
-    await tester.ensureVisible(writeAndVerify);
-    await tester.tap(writeAndVerify);
+    final start = find.text('Start');
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pump();
     await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
+    await tester.pump();
+
+    expect(find.text('Writing changed blocks: 0/2'), findsOneWidget);
+    for (final button in tester.widgetList<OutlinedButton>(
+      find.byType(OutlinedButton),
+    )) {
+      expect(button.onPressed, isNull);
+    }
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.descendant(
+              of: find.byType(DropdownButtonFormField<String>),
+              matching: find.byType(DropdownButton<String>),
+            ),
+          )
+          .onChanged,
+      isNull,
+    );
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
     communicator.allowWriteResponse!.complete();
@@ -771,9 +681,9 @@ void main() {
       ..communicator = communicator;
     await _prepareStandardMiniPanel(tester, appState);
 
-    final writeAndVerify = find.text('Write and verify');
-    await tester.ensureVisible(writeAndVerify);
-    await tester.tap(writeAndVerify);
+    final start = find.text('Start');
+    await tester.ensureVisible(start);
+    await tester.tap(start);
     await tester.pump();
     await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
 
@@ -869,10 +779,6 @@ Future<void> _prepareStandardMiniPanel(
   await tester.pumpAndSettle();
   await tester.tap(find.text('Mini keys (5 keys)').last);
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Run preflight'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byType(CheckboxListTile));
-  await tester.pump();
 }
 
 class _FailingPreflightCommunicator extends ChameleonCommunicator {
