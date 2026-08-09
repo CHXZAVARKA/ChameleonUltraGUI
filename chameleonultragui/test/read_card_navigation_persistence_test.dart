@@ -124,12 +124,16 @@ void main() {
     expect(find.textContaining('01 02 03 04'), findsOneWidget);
   });
 
-  testWidgets('queued manual HF read does not cross a reconnect', (
+  testWidgets('canceled queued HF read does not clear its replacement', (
     tester,
   ) async {
-    final fixture = await _ReadCardFixture.mount(tester);
-    await fixture.openReadCard();
-    final replacement = _ContinuousHFCommunicator(
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      physicalSize: const Size(799, 1600),
+      directReadCard: true,
+    );
+    final readCardState = await fixture.openReadCard();
+    final replacement = _PendingHFCommunicator(
       fixture.logger,
       port: fixture.connector,
     );
@@ -141,16 +145,100 @@ void main() {
 
     await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
     await tester.pump();
-    expect(replacement.scanCalls, 0);
+    expect(readCardState.scanInProgress, isTrue);
 
     fixture.appState
       ..communicator = replacement
       ..changesMade();
+    await tester.pump();
+
+    expect(readCardState.scanInProgress, isFalse);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+    await tester.pump();
+    expect(readCardState.scanInProgress, isTrue);
+
     foregroundBlocker.complete();
     await background;
     await tester.pump();
 
-    expect(replacement.scanCalls, 0);
+    expect(replacement.scanStarted.isCompleted, isTrue);
+    expect(readCardState.scanInProgress, isTrue);
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Read').first,
+          )
+          .onPressed,
+      isNull,
+    );
+
+    replacement.completeScan(null);
+    await tester.pump();
+
+    expect(readCardState.scanInProgress, isFalse);
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Read').first,
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('queued manual LF read becomes actionable after reconnect', (
+    tester,
+  ) async {
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      physicalSize: const Size(799, 1600),
+      directReadCard: true,
+    );
+    final readCardState = await fixture.openReadCard();
+    final replacement = _PendingLFCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    final foregroundBlocker = Completer<void>();
+    final background = fixture.appState.rfOperations.tryRunBackground(() async {
+      await foregroundBlocker.future;
+    });
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
+    await tester.pump();
+    expect(readCardState.scanInProgress, isTrue);
+
+    fixture.appState
+      ..communicator = replacement
+      ..changesMade();
+    await tester.pump();
+
+    expect(readCardState.scanInProgress, isFalse);
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Read').last,
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    foregroundBlocker.complete();
+    await background;
+    await tester.pump();
+
+    expect(replacement.readStarted.isCompleted, isFalse);
+    expect(readCardState.scanInProgress, isFalse);
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Read').last,
+          )
+          .onPressed,
+      isNotNull,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -742,6 +830,8 @@ class _ReadCardFixture {
     WidgetTester tester, {
     _CommunicatorFactory? communicatorFactory,
     _ConfigurePreferences? configurePreferences,
+    Size physicalSize = const Size(3000, 1600),
+    bool directReadCard = false,
   }) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -764,14 +854,22 @@ class _ReadCardFixture {
       ..connector = connector
       ..communicator = communicator;
 
-    tester.view.physicalSize = const Size(3000, 1600);
+    tester.view.physicalSize = physicalSize;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
         value: appState,
-        child: MainPage(sharedPreferencesProvider: preferences),
+        child: directReadCard
+            ? MaterialApp(
+                locale: preferences.getLocale(),
+                localizationsDelegates:
+                    AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                home: const ReadCardPage(),
+              )
+            : MainPage(sharedPreferencesProvider: preferences),
       ),
     );
     await tester.pump();
@@ -786,6 +884,9 @@ class _ReadCardFixture {
   }
 
   Future<ReadCardPageState> openReadCard() async {
+    if (find.byType(ReadCardPage).evaluate().isNotEmpty) {
+      return tester.state<ReadCardPageState>(find.byType(ReadCardPage));
+    }
     await tester.tap(find.byIcon(Icons.sensors));
     await tester.pumpAndSettle();
     return tester.state<ReadCardPageState>(find.byType(ReadCardPage));

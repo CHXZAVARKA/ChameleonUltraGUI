@@ -48,6 +48,7 @@ class ReadCardPageState extends State<ReadCardPage> {
   bool isContinuousHFScan = false;
   bool isContinuousLFScan = false;
   bool scanInProgress = false;
+  ConnectedDeviceSession? _manualReadSession;
   Timer? hfScanTimer;
   Timer? lfScanTimer;
 
@@ -57,6 +58,14 @@ class ReadCardPageState extends State<ReadCardPage> {
     _appState = Provider.of<ChameleonGUIState>(context, listen: false);
     _session = _appState.readCardSession;
     mfcInfo.recovery?.update = updateMifareClassicRecovery;
+
+    final activeSession = _manualReadSession;
+    if (activeSession != null &&
+        (!identical(activeSession.appState, _appState) ||
+            !activeSession.isCurrent)) {
+      _manualReadSession = null;
+      scanInProgress = false;
+    }
   }
 
   void updateMifareClassicRecovery() {
@@ -78,8 +87,7 @@ class ReadCardPageState extends State<ReadCardPage> {
   }
 
   bool _commitHFInfo((HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
-      ConnectedDeviceSession session,
-      {bool scanFinished = false}) {
+      ConnectedDeviceSession session) {
     if (!mounted || !session.isCurrent) {
       return false;
     }
@@ -88,16 +96,12 @@ class ReadCardPageState extends State<ReadCardPage> {
       hfInfo = info.$1;
       mfcInfo = info.$2;
       mfuInfo = info.$3;
-      if (scanFinished) {
-        scanInProgress = false;
-      }
     });
     return true;
   }
 
   Future<bool> _readAndCommitHFInfoUnderLease({
     required ConnectedDeviceSession session,
-    bool scanFinished = false,
   }) async {
     if (!mounted || !session.isCurrent) {
       return false;
@@ -110,18 +114,41 @@ class ReadCardPageState extends State<ReadCardPage> {
     return _commitHFInfo(
       info,
       session,
-      scanFinished: scanFinished,
     );
   }
 
-  Future<bool> _readAndCommitHFInfo({bool scanFinished = false}) async {
+  Future<bool> _readAndCommitHFInfo() async {
     final result = await _appState.runSessionBoundForeground(
       (session) => _readAndCommitHFInfoUnderLease(
         session: session,
-        scanFinished: scanFinished,
       ),
     );
     return result.executed && result.value == true;
+  }
+
+  Future<void> _runManualRead(Future<bool> Function() read) async {
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (!mounted || scanInProgress || session == null) {
+      return;
+    }
+
+    setState(() {
+      _manualReadSession = session;
+      scanInProgress = true;
+    });
+
+    try {
+      await read();
+    } finally {
+      if (identical(_manualReadSession, session)) {
+        _manualReadSession = null;
+        if (mounted) {
+          setState(() {
+            scanInProgress = false;
+          });
+        }
+      }
+    }
   }
 
   Future<bool> _readLFInfoUnderLease(ConnectedDeviceSession session) async {
@@ -179,12 +206,10 @@ class ReadCardPageState extends State<ReadCardPage> {
     if (card != null) {
       setState(() {
         lfInfo.card = card;
-        scanInProgress = false;
       });
     } else {
       setState(() {
         lfInfo.cardExist = false;
-        scanInProgress = false;
       });
     }
     return true;
@@ -333,6 +358,7 @@ class ReadCardPageState extends State<ReadCardPage> {
 
   @override
   void dispose() {
+    _manualReadSession = null;
     hfScanTimer?.cancel();
     hfScanTimer = null;
     lfScanTimer?.cancel();
@@ -620,11 +646,8 @@ class ReadCardPageState extends State<ReadCardPage> {
                                         : () async {
                                             if (appState.connector!.device ==
                                                 ChameleonDevice.ultra) {
-                                              setState(() {
-                                                scanInProgress = true;
-                                              });
-                                              await _readAndCommitHFInfo(
-                                                scanFinished: true,
+                                              await _runManualRead(
+                                                _readAndCommitHFInfo,
                                               );
                                             } else if (appState
                                                     .connector!.device ==
@@ -892,10 +915,7 @@ class ReadCardPageState extends State<ReadCardPage> {
                                         : () async {
                                             if (appState.connector!.device ==
                                                 ChameleonDevice.ultra) {
-                                              setState(() {
-                                                scanInProgress = true;
-                                              });
-                                              await readLFInfo();
+                                              await _runManualRead(readLFInfo);
                                             } else if (appState
                                                     .connector!.device ==
                                                 ChameleonDevice.lite) {
