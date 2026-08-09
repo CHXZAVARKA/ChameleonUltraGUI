@@ -1,6 +1,7 @@
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -111,59 +112,189 @@ class HomePageState extends State<HomePage> {
     if (status == null) {
       return Scaffold(appBar: AppBar(title: Text(localizations.home)));
     }
+    final preferences = appState.sharedPreferencesProvider;
     return Scaffold(
       appBar: _ConnectedDeviceAppBar(
         appState: appState,
         status: status,
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _FirmwarePill(status: status),
-              ),
-            ),
-            const SizedBox(height: 8),
-            HomeSlotGrid(status: status),
-            Expanded(
-              child: FractionallySizedBox(
-                widthFactor: 0.4,
-                child: Image.asset(
-                  status.snapshot.identity.device == ChameleonDevice.ultra
-                      ? 'assets/black-ultra-standing-front.webp'
-                      : 'assets/black-lite-standing-front.webp',
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Row(
-                children: [
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: _DeviceModeControl(status: status),
+      body: ListenableBuilder(
+        listenable: preferences,
+        builder: (context, _) {
+          final slotLayout = preferences.getSlotLayout();
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _FirmwarePill(status: status),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: IconButton(
-                      tooltip: localizations.settings,
-                      onPressed: () => showDialog<String>(
-                        context: context,
-                        builder: (_) => const ChameleonSettings(),
-                      ),
-                      icon: const Icon(Icons.settings),
+                ),
+                const SizedBox(height: 8),
+                HomeSlotGrid(status: status, layout: slotLayout),
+                Expanded(
+                  child: FractionallySizedBox(
+                    widthFactor: 0.4,
+                    child: Image.asset(
+                      status.snapshot.identity.device == ChameleonDevice.ultra
+                          ? 'assets/black-ultra-standing-front.webp'
+                          : 'assets/black-lite-standing-front.webp',
+                      fit: BoxFit.contain,
                     ),
                   ),
-                ],
+                ),
+                _HomeControls(
+                  status: status,
+                  preferences: preferences,
+                  layout: slotLayout,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HomeControls extends StatelessWidget {
+  const _HomeControls({
+    required this.status,
+    required this.preferences,
+    required this.layout,
+  });
+
+  final ConnectedDeviceStatus status;
+  final SharedPreferencesProvider preferences;
+  final SlotLayout layout;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    final layoutControl = _SlotLayoutControl(
+      preferences: preferences,
+      layout: layout,
+    );
+    final modeAndSettings = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _DeviceModeControl(status: status),
+        const SizedBox(width: 2),
+        IconButton(
+          tooltip: localizations.settings,
+          onPressed: () => showDialog<String>(
+            context: context,
+            builder: (_) => const ChameleonSettings(),
+          ),
+          icon: const Icon(Icons.settings),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 560) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: layoutControl,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: modeAndSettings,
+                ),
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: layoutControl,
+            ),
+            const Spacer(),
+            modeAndSettings,
+            const SizedBox(width: 8),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SlotLayoutControl extends StatelessWidget {
+  const _SlotLayoutControl({
+    required this.preferences,
+    required this.layout,
+  });
+
+  final SharedPreferencesProvider preferences;
+  final SlotLayout layout;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    final dotStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          height: 0.72,
+          letterSpacing: -0.9,
+          fontWeight: FontWeight.w700,
+        );
+    return Semantics(
+      key: const Key('home-slot-layout-control'),
+      container: true,
+      label: localizations.slot_layout,
+      child: SegmentedButton<SlotLayout>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment<SlotLayout>(
+            value: SlotLayout.eightAcross,
+            tooltip: localizations.slot_layout_eight_across,
+            label: Semantics(
+              label: localizations.slot_layout_eight_across,
+              excludeSemantics: true,
+              child: Text(
+                '••••••••',
+                key: const Key('home-slot-layout-eight-across'),
+                style: dotStyle,
               ),
             ),
-          ],
+          ),
+          ButtonSegment<SlotLayout>(
+            value: SlotLayout.twoByFour,
+            tooltip: localizations.slot_layout_two_by_four,
+            label: Semantics(
+              label: localizations.slot_layout_two_by_four,
+              excludeSemantics: true,
+              child: Text(
+                '••••\n••••',
+                key: const Key('home-slot-layout-two-by-four'),
+                textAlign: TextAlign.center,
+                style: dotStyle,
+              ),
+            ),
+          ),
+        ],
+        selected: {layout},
+        onSelectionChanged: (selection) {
+          preferences.setSlotLayout(selection.single);
+        },
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+          tapTargetSize: MaterialTapTargetSize.padded,
+          padding: WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 7),
+          ),
         ),
       ),
     );
@@ -480,6 +611,7 @@ class _DeviceModeControl extends StatelessWidget {
         final enabled = mode.availability == ModeAvailability.available &&
             mode.pendingMode == null;
         final control = SegmentedButton<ConnectedDeviceMode>(
+          showSelectedIcon: false,
           segments: [
             ButtonSegment(
               value: ConnectedDeviceMode.emulator,
@@ -495,6 +627,13 @@ class _DeviceModeControl extends StatelessWidget {
           selected:
               mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
           emptySelectionAllowed: mode.confirmedMode == null,
+          style: const ButtonStyle(
+            minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+            tapTargetSize: MaterialTapTargetSize.padded,
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 8),
+            ),
+          ),
           onSelectionChanged: enabled
               ? (selection) async {
                   final outcome = await status.switchMode(selection.single);

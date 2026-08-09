@@ -25,6 +25,236 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/firmware_catalog_stub.dart';
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await SharedPreferencesProvider().load();
+  });
+
+  test('slot layout defaults globally and survives preferences reload',
+      () async {
+    final preferences = SharedPreferencesProvider();
+    var notifications = 0;
+    void listener() => notifications++;
+    preferences.addListener(listener);
+    addTearDown(() => preferences.removeListener(listener));
+
+    expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
+
+    preferences.setSlotLayout(SlotLayout.twoByFour);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+    expect(notifications, 1);
+
+    await preferences.load();
+    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+
+    final stored = await SharedPreferences.getInstance();
+    expect(stored.getKeys(), contains('slot_layout'));
+    expect(
+      stored.getKeys(),
+      isNot(contains(matches(RegExp('model|port|serial|connection')))),
+    );
+  });
+
+  test('slot layout falls back to eight across for an invalid preference',
+      () async {
+    SharedPreferences.setMockInitialValues({'slot_layout': 37});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+
+    expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
+  });
+
+  testWidgets('Home uses a named Material segmented slot layout selector',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final preferences = SharedPreferencesProvider();
+    final appState = _connectedState(_SlotCommunicator());
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final selector = find.byKey(const Key('home-slot-layout-control'));
+    expect(selector, findsOneWidget);
+    expect(
+      find.descendant(
+        of: selector,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SegmentedButton<SlotLayout>,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('••••••••'), findsOneWidget);
+    expect(find.text('••••\n••••'), findsOneWidget);
+    expect(find.byTooltip('Eight slots in one row'), findsOneWidget);
+    expect(find.byTooltip('Two rows of four slots'), findsOneWidget);
+    expect(tester.getSize(selector).height, greaterThanOrEqualTo(48));
+    final selectorLabel = tester.getSemantics(selector).label;
+    expect(selectorLabel, contains('Slot layout'));
+    expect(selectorLabel, isNot(contains('•')));
+    expect(
+      find.bySemanticsLabel('Eight slots in one row'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('Two rows of four slots'),
+      findsOneWidget,
+    );
+    expect(
+        find.byKey(const Key('home-slot-grid-eight-across')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('home-slot-layout-two-by-four')));
+    await tester.pumpAndSettle();
+
+    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('two-by-four keeps row-major slots tappable at 360px',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final semantics = tester.ensureSemantics();
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-slot-layout-two-by-four')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final rects = [
+      for (var slot = 1; slot <= 8; slot++)
+        tester.getRect(find.byKey(Key('home-slot-$slot'))),
+    ];
+    for (var index = 0; index < 8; index++) {
+      expect(rects[index].width, greaterThanOrEqualTo(48));
+      expect(rects[index].height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSemantics(find.byKey(Key('home-slot-${index + 1}'))).label,
+        startsWith('Slot ${index + 1}.'),
+      );
+    }
+    expect(rects.take(4).map((rect) => rect.center.dy).toSet(), hasLength(1));
+    expect(rects.skip(4).map((rect) => rect.center.dy).toSet(), hasLength(1));
+    expect(rects[4].center.dy, greaterThan(rects[0].center.dy));
+    expect(rects[4].center.dx, closeTo(rects[0].center.dx, 0.1));
+    for (final rowStart in [0, 4]) {
+      for (var index = rowStart + 1; index < rowStart + 4; index++) {
+        expect(rects[index].center.dx, greaterThan(rects[index - 1].center.dx));
+      }
+    }
+
+    await tester.tap(find.byKey(const Key('home-slot-6')));
+    await tester.pumpAndSettle();
+    expect(communicator.activations, [5]);
+    expect(find.byKey(const Key('home-active-slot-6')), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('slot layout survives remount and a different device session',
+      (tester) async {
+    final preferences = SharedPreferencesProvider();
+    final appState = _connectedState(_SlotCommunicator());
+    preferences.setSlotLayout(SlotLayout.twoByFour);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+
+    await _pumpPage(tester, appState, const SizedBox.shrink());
+    appState
+      ..connector = (_TestSerial(log: Logger())
+        ..connected = true
+        ..device = ChameleonDevice.lite
+        ..connectionType = ConnectionType.ble
+        ..portName = 'different-device'
+        ..activeDevicePort = 'different-device')
+      ..communicator = _SlotCommunicator()
+      ..changesMade();
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(
+      appState.connectedDeviceStatus!.snapshot.identity.device,
+      ChameleonDevice.lite,
+    );
+    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+    final selector = tester.widget<SegmentedButton<SlotLayout>>(
+      find.byWidgetPredicate(
+        (widget) => widget is SegmentedButton<SlotLayout>,
+      ),
+    );
+    expect(selector.selected, {SlotLayout.twoByFour});
+  });
+
+  testWidgets('layout switch keeps slot focus and keyboard activation',
+      (tester) async {
+    final preferences = SharedPreferencesProvider();
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
+    for (var attempt = 0;
+        attempt < 12 &&
+            !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
+        attempt++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+
+    preferences.setSlotLayout(SlotLayout.twoByFour);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(communicator.activations, [1]);
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+  });
+
+  for (final layout in SlotLayout.values) {
+    testWidgets('${layout.name} blocks duplicate activation while pending',
+        (tester) async {
+      final gate = Completer<void>();
+      final preferences = SharedPreferencesProvider();
+      preferences.setSlotLayout(layout);
+      final communicator = _SlotCommunicator()..activationGate = gate;
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('home-slot-6')));
+      await tester.pump();
+      expect(communicator.activations, [5]);
+      expect(find.byKey(const Key('home-slot-6-progress')), findsOneWidget);
+      expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('home-slot-7')));
+      await tester.pump();
+      expect(communicator.activations, [5]);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('home-slot-6-progress')), findsNothing);
+      expect(find.byKey(const Key('home-active-slot-6')), findsOneWidget);
+    });
+  }
+
   testWidgets('Home shows eight numbered HF and LF slot columns',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 900);

@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
@@ -360,8 +361,10 @@ Future<void> _pumpHome(
   ChameleonGUIState appState, {
   ThemeData? theme,
   Locale locale = const Locale('en'),
-}) {
-  return tester.pumpWidget(
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  await appState.sharedPreferencesProvider.load();
+  await tester.pumpWidget(
     ChangeNotifierProvider<ChameleonGUIState>.value(
       value: appState,
       child: MaterialApp(

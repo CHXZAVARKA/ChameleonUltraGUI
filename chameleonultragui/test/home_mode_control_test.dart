@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('Home shows the confirmed device mode in a segmented control',
@@ -26,7 +27,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byWidgetPredicate((widget) => widget is SegmentedButton),
+      find.byWidgetPredicate(
+        (widget) => widget is SegmentedButton<ConnectedDeviceMode>,
+      ),
       findsOneWidget,
     );
     expect(find.text('Emulator'), findsOneWidget);
@@ -486,8 +489,10 @@ SegmentedButton<ConnectedDeviceMode> _modeControl(WidgetTester tester) =>
 Future<void> _pumpHome(
   WidgetTester tester,
   ChameleonGUIState appState,
-) {
-  return tester.pumpWidget(
+) async {
+  SharedPreferences.setMockInitialValues({});
+  await appState.sharedPreferencesProvider.load();
+  await tester.pumpWidget(
     ChangeNotifierProvider<ChameleonGUIState>.value(
       value: appState,
       child: MaterialApp(

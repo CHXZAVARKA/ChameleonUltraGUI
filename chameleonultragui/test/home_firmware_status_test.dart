@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('Home shows firmware Checking independently of other facets',
@@ -576,8 +577,10 @@ void main() {
 }
 
 Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
-    {ThemeData? theme}) {
-  return tester.pumpWidget(
+    {ThemeData? theme}) async {
+  SharedPreferences.setMockInitialValues({});
+  await appState.sharedPreferencesProvider.load();
+  await tester.pumpWidget(
     ChangeNotifierProvider<ChameleonGUIState>.value(
       value: appState,
       child: MaterialApp(

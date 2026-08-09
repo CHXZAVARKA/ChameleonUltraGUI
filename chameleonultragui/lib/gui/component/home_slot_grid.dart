@@ -3,14 +3,20 @@ import 'dart:math' as math;
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class HomeSlotGrid extends StatefulWidget {
-  const HomeSlotGrid({super.key, required this.status});
+  const HomeSlotGrid({
+    super.key,
+    required this.status,
+    this.layout = SlotLayout.eightAcross,
+  });
 
   final ConnectedDeviceStatus status;
+  final SlotLayout layout;
 
   @override
   State<HomeSlotGrid> createState() => _HomeSlotGridState();
@@ -134,14 +140,64 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           0.0,
                           constraints.maxWidth - labelWidth,
                         );
+                        final columns =
+                            widget.layout == SlotLayout.twoByFour ? 4 : 8;
                         final slotWidth = math.max(
                           48.0,
-                          availableSlotsWidth / 8,
+                          availableSlotsWidth / columns,
                         );
                         final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
-                        final slotsWidth = slotWidth * 8;
                         final gridHeight = markSize * 2 + 44;
+                        Widget buildSlot(int index) => SizedBox(
+                              key: _slotKeys[index],
+                              width: slotWidth,
+                              height: gridHeight,
+                              child: _SlotColumn(
+                                index: index,
+                                slot: slots.slots[index],
+                                markSize: markSize,
+                                loading: slots.availability ==
+                                    SlotsAvailability.loading,
+                                active: activeSlot == index &&
+                                    slots.activeSlot.isConfirmed,
+                                activating: slots.pendingActivation == index,
+                                focused: _hasFocus && _focusedSlot == index,
+                                blocked: slots.pendingActivation != null,
+                                onTap: () => _activate(index),
+                              ),
+                            );
+                        Widget buildRow(int firstSlot) => SizedBox(
+                              width: labelWidth + slotWidth * columns,
+                              height: gridHeight,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _FrequencyLabels(markSize: markSize),
+                                  for (var offset = 0;
+                                      offset < columns;
+                                      offset++)
+                                    buildSlot(firstSlot + offset),
+                                ],
+                              ),
+                            );
+
+                        if (widget.layout == SlotLayout.twoByFour) {
+                          return SizedBox(
+                            key: const Key('home-slot-grid-two-by-four'),
+                            width: labelWidth + slotWidth * columns,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                buildRow(0),
+                                const SizedBox(height: 12),
+                                buildRow(4),
+                              ],
+                            ),
+                          );
+                        }
+
                         return Row(
+                          key: const Key('home-slot-grid-eight-across'),
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -153,32 +209,14 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                                 key: const Key('home-slot-grid-scroll'),
                                 scrollDirection: Axis.horizontal,
                                 child: SizedBox(
-                                  width: slotsWidth,
+                                  width: slotWidth * columns,
                                   height: gridHeight,
                                   child: Row(
                                     children: [
-                                      for (var index = 0; index < 8; index++)
-                                        SizedBox(
-                                          key: _slotKeys[index],
-                                          width: slotWidth,
-                                          child: _SlotColumn(
-                                            index: index,
-                                            slot: slots.slots[index],
-                                            markSize: markSize,
-                                            loading: slots.availability ==
-                                                SlotsAvailability.loading,
-                                            active: activeSlot == index &&
-                                                slots.activeSlot.isConfirmed,
-                                            activating:
-                                                slots.pendingActivation ==
-                                                    index,
-                                            focused: _hasFocus &&
-                                                _focusedSlot == index,
-                                            blocked:
-                                                slots.pendingActivation != null,
-                                            onTap: () => _activate(index),
-                                          ),
-                                        ),
+                                      for (var index = 0;
+                                          index < columns;
+                                          index++)
+                                        buildSlot(index),
                                     ],
                                   ),
                                 ),

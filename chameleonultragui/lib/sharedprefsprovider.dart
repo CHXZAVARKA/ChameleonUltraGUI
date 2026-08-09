@@ -393,6 +393,8 @@ class CardSaveExtra {
         ultralightCounters = ultralightCounters ?? <int>[];
 }
 
+enum SlotLayout { eightAcross, twoByFour }
+
 class SharedPreferencesProvider extends ChangeNotifier {
   SharedPreferencesProvider._privateConstructor();
 
@@ -407,6 +409,23 @@ class SharedPreferencesProvider extends ChangeNotifier {
 
   Future<void> load() async {
     _sharedPreferences = await SharedPreferences.getInstance();
+  }
+
+  SlotLayout getSlotLayout() {
+    final stored = _sharedPreferences.get('slot_layout');
+    final saved = stored is String ? stored : null;
+    return SlotLayout.values
+            .where((layout) => layout.name == saved)
+            .firstOrNull ??
+        SlotLayout.eightAcross;
+  }
+
+  void setSlotLayout(SlotLayout layout) {
+    if (getSlotLayout() == layout) {
+      return;
+    }
+    _sharedPreferences.setString('slot_layout', layout.name);
+    notifyListeners();
   }
 
   ThemeMode getTheme() {
