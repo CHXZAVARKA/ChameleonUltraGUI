@@ -183,6 +183,73 @@ void main() {
     ]);
   });
 
+  for (final response in <List<int>>[
+    const [],
+    const [0x00],
+  ]) {
+    test(
+        'Ultralight stops after one destructive command when ACK is '
+        '${response.isEmpty ? 'missing' : 'invalid'}', () async {
+      final logger = Logger(output: MemoryOutput());
+      addTearDown(logger.close);
+      final communicator = _UltralightWriteCommunicator(
+        logger,
+        afterRawCommand: () {},
+        response: response,
+      );
+      final helper = BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: () => true,
+      )..key = '';
+
+      final result = await helper.writeData(_ultralightCard(), (_) {});
+
+      expect(result, isFalse);
+      expect(communicator.rawCommands, [
+        [0xA2, 0x00, 0x00, 0x00, 0x00, 0x00],
+      ]);
+    });
+  }
+
+  test('Ultralight preserves a valid write acknowledgement', () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _UltralightWriteCommunicator(
+      logger,
+      afterRawCommand: () {},
+      response: const [0x0A],
+    );
+    final helper = BaseMifareUltralightWriteHelper(
+      communicator,
+      operationCanContinue: () => true,
+    )..key = '';
+
+    final result = await helper.writeData(_ultralightCard(), (_) {});
+
+    expect(result, isTrue);
+    expect(communicator.rawCommands, [
+      [0xA2, 0x00, 0x00, 0x00, 0x00, 0x00],
+    ]);
+  });
+
+  test('Ultralight pre-issue rejection sends no destructive command', () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    final communicator = _UltralightWriteCommunicator(
+      logger,
+      afterRawCommand: () {},
+    );
+    final helper = BaseMifareUltralightWriteHelper(
+      communicator,
+      operationCanContinue: () => false,
+    )..key = '';
+
+    final result = await helper.writeData(_ultralightCard(), (_) {});
+
+    expect(result, isFalse);
+    expect(communicator.rawCommands, isEmpty);
+  });
+
   testWidgets('card selection waits for the RF FIFO before probing the card',
       (tester) async {
     final fixture = await _pumpWriter(tester, _PreflightCommunicator.new);
@@ -511,9 +578,14 @@ class _ClassicWriteCommunicator extends ChameleonCommunicator {
 }
 
 class _UltralightWriteCommunicator extends ChameleonCommunicator {
-  _UltralightWriteCommunicator(super.log, {required this.afterRawCommand});
+  _UltralightWriteCommunicator(
+    super.log, {
+    required this.afterRawCommand,
+    this.response = const [],
+  });
 
   final void Function() afterRawCommand;
+  final List<int> response;
   final List<List<int>> rawCommands = [];
 
   @override
@@ -541,7 +613,7 @@ class _UltralightWriteCommunicator extends ChameleonCommunicator {
   }) async {
     rawCommands.add(data.toList());
     afterRawCommand();
-    return Uint8List(0);
+    return Uint8List.fromList(response);
   }
 }
 

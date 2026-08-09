@@ -168,7 +168,11 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
               checkResponseCrc: false,
               autoSelect: block == 0 || block == 3);
           if (!operationCanContinue) return false;
-          if (write.isEmpty || write[0] != 0x0A || block == 2) {
+          if (write.length != 1 || write.single != 0x0A) {
+            return false;
+          }
+
+          if (block == 2) {
             await communicator.send14ARaw(Uint8List(1)); // reset
             if (!operationCanContinue) return false;
 
@@ -177,11 +181,6 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
                   Uint8List.fromList([0x1B, ...hexToBytes(key!)]),
                   keepRfField: true);
               if (!operationCanContinue) return false;
-            }
-
-            if (block > 2) {
-              // block is not UID
-              failedBlocks.add(block);
             }
           }
 
