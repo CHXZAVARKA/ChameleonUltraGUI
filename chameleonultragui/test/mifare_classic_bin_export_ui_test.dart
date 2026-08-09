@@ -1,4 +1,7 @@
+// ignore_for_file: non_constant_identifier_names
+
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/generated/i18n/app_localizations_en.dart';
 import 'package:chameleonultragui/gui/component/mifare/classic.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
@@ -9,6 +12,27 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _DumpIntegrityLocalizations extends AppLocalizationsEn {
+  @override
+  String get mifare_classic_partial_bin_export_blocked =>
+      'Localized complete-dump warning';
+}
+
+class _DumpIntegrityLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
+  const _DumpIntegrityLocalizationsDelegate();
+
+  @override
+  bool isSupported(Locale locale) => true;
+
+  @override
+  Future<AppLocalizations> load(Locale locale) =>
+      Future.value(_DumpIntegrityLocalizations());
+
+  @override
+  bool shouldReload(_DumpIntegrityLocalizationsDelegate old) => false;
+}
 
 class _BinExportTestHarness {
   _BinExportTestHarness._({
@@ -79,6 +103,7 @@ class _BinExportTestHarness {
     required bool dumpComplete,
     required List<Uint8List> cardData,
     bool isEV1 = false,
+    bool useDumpIntegrityLocalizations = false,
   }) async {
     final recovery = MifareClassicRecovery(
       appState: appState,
@@ -100,7 +125,11 @@ class _BinExportTestHarness {
         value: appState,
         child: MaterialApp(
           locale: const Locale('en'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+            if (useDumpIntegrityLocalizations)
+              const _DumpIntegrityLocalizationsDelegate(),
+            ...AppLocalizations.localizationsDelegates,
+          ],
           supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: SingleChildScrollView(
@@ -142,6 +171,7 @@ void main() {
             ? Uint8List.fromList(List.filled(16, block))
             : Uint8List(0),
       ),
+      useDumpIntegrityLocalizations: true,
     );
 
     await tester.tap(find.text('Save as .bin'));
@@ -149,10 +179,7 @@ void main() {
 
     expect(harness.filePickerCalls, isEmpty);
     expect(
-      find.text(
-        'BIN export requires a complete MIFARE Classic dump. '
-        'Save this partial recovery in the app instead.',
-      ),
+      find.text('Localized complete-dump warning'),
       findsOneWidget,
     );
   });

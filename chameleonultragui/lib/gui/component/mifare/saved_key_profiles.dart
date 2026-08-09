@@ -1,7 +1,6 @@
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/element_button.dart';
-import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/component/mifare/key_profile_file.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -21,7 +20,7 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
 
   Future<void> _importProfile(BuildContext context) async {
     final appState = context.read<ChameleonGUIState>();
-    final strings = MifareClassicFeatureStrings.of(context);
+    final localizations = AppLocalizations.of(context)!;
     try {
       final profile = await pickProfile();
       if (profile == null) {
@@ -31,13 +30,23 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
       appState.changesMade();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(strings.keyProfileImported)),
+          SnackBar(
+            content: Text(localizations.mifare_classic_key_profile_imported),
+          ),
         );
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      (appState.log ?? appState.communicator?.log)?.e(
+        'Failed to import MIFARE Classic key profile',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${strings.keyProfileImportFailed}: $error')),
+          SnackBar(
+            content:
+                Text(localizations.mifare_classic_key_profile_import_failed),
+          ),
         );
       }
     }
@@ -73,19 +82,30 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
     appState.changesMade();
   }
 
-  String _description(MifareClassicKeyProfile profile) {
+  String _description(
+    AppLocalizations localizations,
+    MifareClassicKeyProfile profile,
+  ) {
     final cardLabel = profile.geometry?.label ?? profile.cardType;
-    final uid = profile.uid == null ? '' : ' · UID ${profile.uid}';
-    return '$cardLabel · ${profile.keyCount} keys$uid';
+    final uid = profile.uid;
+    return uid == null
+        ? localizations.mifare_classic_key_profile_summary(
+            cardLabel,
+            profile.keyCount,
+          )
+        : localizations.mifare_classic_key_profile_summary_with_uid(
+            cardLabel,
+            profile.keyCount,
+            uid,
+          );
   }
 
-  String _sectors(List<int> sectors, MifareClassicFeatureStrings strings) =>
-      sectors.isEmpty ? strings.noAssignedSectors : sectors.join(', ');
+  String _sectors(List<int> sectors, AppLocalizations localizations) =>
+      sectors.isEmpty ? localizations.none : sectors.join(', ');
 
   Future<void> _inspectProfile(
       BuildContext context, MifareClassicKeyProfile profile) {
     final localizations = AppLocalizations.of(context)!;
-    final strings = MifareClassicFeatureStrings.of(context);
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -97,9 +117,11 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_description(profile)),
+                Text(_description(localizations, profile)),
                 const SizedBox(height: 12),
-                Text(strings.keyProfilePlaintextWarning),
+                Text(
+                  localizations.mifare_classic_key_profile_plaintext_warning,
+                ),
                 const Divider(height: 32),
                 for (final usage in profile.keyUsages) ...[
                   SelectableText(
@@ -107,14 +129,12 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'RobotoMono'),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '${strings.keyASectors}: '
-                    '${_sectors(usage.keyASectors, strings)}',
-                  ),
-                  Text(
-                    '${strings.keyBSectors}: '
-                    '${_sectors(usage.keyBSectors, strings)}',
-                  ),
+                  Text(localizations.mifare_classic_key_a_sectors(
+                    _sectors(usage.keyASectors, localizations),
+                  )),
+                  Text(localizations.mifare_classic_key_b_sectors(
+                    _sectors(usage.keyBSectors, localizations),
+                  )),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -132,9 +152,9 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
   }
 
   Widget _header(BuildContext context, bool isCompact) {
-    final strings = MifareClassicFeatureStrings.of(context);
+    final localizations = AppLocalizations.of(context)!;
     final title = Text(
-      strings.assignedKeyProfiles,
+      localizations.mifare_classic_assigned_key_profiles,
       textAlign: TextAlign.center,
       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
     );
@@ -147,7 +167,7 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
                 Expanded(child: title),
                 IconButton(
                   onPressed: () => _importProfile(context),
-                  tooltip: strings.importKeyProfile,
+                  tooltip: localizations.mifare_classic_import_key_profile,
                   icon: const Icon(Icons.file_upload),
                 ),
               ],
@@ -159,7 +179,7 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<ChameleonGUIState>();
-    final strings = MifareClassicFeatureStrings.of(context);
+    final localizations = AppLocalizations.of(context)!;
     final profiles = appState.sharedPreferencesProvider
         .getMifareClassicKeyProfiles()
       ..sort((first, second) => first.name.compareTo(second.name));
@@ -179,7 +199,7 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
                   onPressed: () => _importProfile(context),
                   style: customCardButtonStyle(appState),
                   icon: const Icon(Icons.file_upload),
-                  label: Text(strings.importKeyProfile),
+                  label: Text(localizations.mifare_classic_import_key_profile),
                 ),
               ),
             ),
@@ -202,18 +222,20 @@ class MifareClassicKeyProfilesCard extends StatelessWidget {
                     icon: Icons.vpn_key_outlined,
                     iconColor: Colors.deepOrange,
                     firstLine: profile.name,
-                    secondLine: _description(profile),
+                    secondLine: _description(localizations, profile),
                     itemIndex: index,
                     onPressed: () => _inspectProfile(context, profile),
                     children: [
                       IconButton(
                         onPressed: () => _exportProfile(context, profile),
-                        tooltip: strings.exportKeyProfile,
+                        tooltip:
+                            localizations.mifare_classic_export_key_profile,
                         icon: const Icon(Icons.download),
                       ),
                       IconButton(
                         onPressed: () => _deleteProfile(context, profile),
-                        tooltip: strings.deleteKeyProfile,
+                        tooltip:
+                            localizations.mifare_classic_delete_key_profile,
                         icon: const Icon(Icons.delete_outline),
                       ),
                     ],

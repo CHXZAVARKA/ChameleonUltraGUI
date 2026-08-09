@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/key_check_marks.dart';
-import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/component/mifare/key_profile_file.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
 import 'package:chameleonultragui/helpers/card_info.dart';
@@ -148,21 +147,20 @@ class CardReaderState extends State<MifareClassicHelper> {
 
   Future<String?> _getKeyProfileName() async {
     final localizations = AppLocalizations.of(context)!;
-    final featureStrings = MifareClassicFeatureStrings.of(context);
     final controller = TextEditingController(
         text: widget.hfInfo.uid.replaceAll(RegExp(r'[^0-9a-fA-F]'), ''));
 
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(featureStrings.enterKeyProfileName),
+        title: Text(localizations.mifare_classic_enter_key_profile_name),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(controller: controller, autofocus: true),
             const SizedBox(height: 12),
             Text(
-              featureStrings.keyProfilePlaintextWarning,
+              localizations.mifare_classic_key_profile_plaintext_warning,
               style: Theme.of(dialogContext).textTheme.bodySmall,
             ),
           ],
@@ -199,7 +197,6 @@ class CardReaderState extends State<MifareClassicHelper> {
 
   Future<void> saveKeyProfile() async {
     final localizations = AppLocalizations.of(context)!;
-    final featureStrings = MifareClassicFeatureStrings.of(context);
     final name = await _getKeyProfileName();
     if (name == null || !mounted) {
       return;
@@ -213,8 +210,9 @@ class CardReaderState extends State<MifareClassicHelper> {
     final exportToFile = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(featureStrings.saveKeyProfile),
-        content: Text(featureStrings.keyProfilePlaintextWarning),
+        title: Text(localizations.mifare_classic_save_key_profile),
+        content:
+            Text(localizations.mifare_classic_key_profile_plaintext_warning),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -222,11 +220,12 @@ class CardReaderState extends State<MifareClassicHelper> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(featureStrings.saveKeyProfileInApp),
+            child: Text(localizations.mifare_classic_save_key_profile_in_app),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(featureStrings.exportKeyProfileToFile),
+            child:
+                Text(localizations.mifare_classic_export_key_profile_to_file),
           ),
         ],
       ),
@@ -247,7 +246,7 @@ class CardReaderState extends State<MifareClassicHelper> {
       _storeKeyProfile(profile);
       setState(() {});
     }
-    _showMessage(featureStrings.keyProfileSaved);
+    _showMessage(localizations.mifare_classic_key_profile_saved);
   }
 
   Future<bool> _confirmSelectedProfileUid() async {
@@ -259,12 +258,12 @@ class CardReaderState extends State<MifareClassicHelper> {
     }
 
     final localizations = AppLocalizations.of(context)!;
-    final featureStrings = MifareClassicFeatureStrings.of(context);
     return await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: Text(featureStrings.keyProfileUidMismatch),
-            content: Text(featureStrings.keyProfileUidMismatchDescription),
+            title: Text(localizations.mifare_classic_key_profile_uid_mismatch),
+            content: Text(localizations
+                .mifare_classic_key_profile_uid_mismatch_description),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -272,7 +271,7 @@ class CardReaderState extends State<MifareClassicHelper> {
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(featureStrings.useKeyProfile),
+                child: Text(localizations.mifare_classic_use_key_profile),
               ),
             ],
           ),
@@ -303,8 +302,7 @@ class CardReaderState extends State<MifareClassicHelper> {
           !recovery.dumpComplete ||
           geometry == null ||
           !geometry.matchesBlockData(recovery.cardData)) {
-        _showMessage(
-            MifareClassicFeatureStrings.of(context).partialBinExportBlocked);
+        _showMessage(localizations.mifare_classic_partial_bin_export_blocked);
         return;
       }
     }
@@ -348,7 +346,6 @@ class CardReaderState extends State<MifareClassicHelper> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     var localizations = AppLocalizations.of(context)!;
-    final featureStrings = MifareClassicFeatureStrings.of(context);
     final isSmallScreen = screenSize.width < 800;
 
     double checkmarkFontSize = isSmallScreen ? 12 : 16;
@@ -437,7 +434,7 @@ class CardReaderState extends State<MifareClassicHelper> {
           TextButton.icon(
             onPressed: saveKeyProfile,
             icon: const Icon(Icons.key),
-            label: Text(featureStrings.saveKeyProfile),
+            label: Text(localizations.mifare_classic_save_key_profile),
           ),
         ],
         if (widget.mfcInfo.recovery?.error != "") ...[
@@ -581,7 +578,7 @@ class CardReaderState extends State<MifareClassicHelper> {
                           controlAffinity: ListTileControlAffinity.leading,
                         ))),
                 const SizedBox(height: 8),
-                Text(featureStrings.assignedKeyProfile),
+                Text(localizations.mifare_classic_assigned_key_profile),
                 const SizedBox(height: 4),
                 Wrap(
                   alignment: WrapAlignment.center,
@@ -603,8 +600,18 @@ class CardReaderState extends State<MifareClassicHelper> {
                             (profile) => DropdownMenuItem<String>(
                               value: profile.id,
                               child: Text(
-                                '${profile.name} (${profile.keyCount} ${localizations.keys.toLowerCase()})'
-                                '${profile.uid == null ? '' : ' · UID ${profile.uid}'}',
+                                profile.uid == null
+                                    ? localizations
+                                        .mifare_classic_key_profile_option(
+                                        profile.name,
+                                        profile.keyCount,
+                                      )
+                                    : localizations
+                                        .mifare_classic_key_profile_option_with_uid(
+                                        profile.name,
+                                        profile.keyCount,
+                                        profile.uid!,
+                                      ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
