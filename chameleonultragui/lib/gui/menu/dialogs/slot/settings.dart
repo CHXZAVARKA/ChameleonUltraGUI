@@ -1,6 +1,7 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,37 +33,73 @@ class SlotSettingsState extends State<SlotSettings> {
   }
 
   Future<void> fetchInfo() async {
-    var appState = context.read<ChameleonGUIState>();
-    var localizations = AppLocalizations.of(context)!;
+    final appState = context.read<ChameleonGUIState>();
+    final localizations = AppLocalizations.of(context)!;
+    await appState.runSessionBoundForeground((session) async {
+      bool canContinue() => mounted && session.isCurrent;
+      if (!canContinue()) return;
+      await session.communicator.activateSlot(widget.slot);
+      if (!canContinue()) return;
 
-    await appState.communicator!.activateSlot(widget.slot);
-
-    try {
-      String name = (await appState.communicator!
-              .getSlotTagName(widget.slot, TagFrequency.hf))
-          .trim();
-      if (name.isEmpty) {
-        names.hf = localizations.empty;
-      } else {
-        names.hf = name;
+      var hfName = localizations.empty;
+      try {
+        hfName = (await session.communicator
+                .getSlotTagName(widget.slot, TagFrequency.hf))
+            .trim();
+        if (!canContinue()) return;
+        if (hfName.isEmpty) hfName = localizations.empty;
+      } catch (_) {
+        if (!canContinue()) return;
       }
-    } catch (_) {}
 
-    try {
-      String name = (await appState.communicator!
-              .getSlotTagName(widget.slot, TagFrequency.lf))
-          .trim();
-      if (name.isEmpty) {
-        names.lf = localizations.empty;
-      } else {
-        names.lf = name;
+      var lfName = localizations.empty;
+      try {
+        lfName = (await session.communicator
+                .getSlotTagName(widget.slot, TagFrequency.lf))
+            .trim();
+        if (!canContinue()) return;
+        if (lfName.isEmpty) lfName = localizations.empty;
+      } catch (_) {
+        if (!canContinue()) return;
       }
-    } catch (_) {}
 
-    enabledSlot = (await appState.communicator!.getEnabledSlots())[widget.slot];
-    slotTypes = (await appState.communicator!.getSlotTagTypes())[widget.slot];
+      final nextEnabledSlots = await session.communicator.getEnabledSlots();
+      if (!canContinue()) return;
+      final nextSlotTypes = await session.communicator.getSlotTagTypes();
+      if (!canContinue()) return;
 
-    setState(() {});
+      setState(() {
+        names = SlotNames(hf: hfName, lf: lfName);
+        enabledSlot = nextEnabledSlots[widget.slot];
+        slotTypes = nextSlotTypes[widget.slot];
+      });
+    });
+  }
+
+  Future<bool> _runForegroundCommand(
+    Future<void> Function(ConnectedDeviceSession session) command,
+  ) async {
+    final appState = context.read<ChameleonGUIState>();
+    final result = await appState.runSessionBoundForeground((session) async {
+      if (!mounted || !session.isCurrent) return false;
+      await command(session);
+      return mounted && session.isCurrent;
+    });
+    return result.executed && result.value == true;
+  }
+
+  Future<bool> _deleteSlot(TagFrequency frequency) {
+    final emptyName = AppLocalizations.of(context)!.empty;
+    return _runForegroundCommand((session) async {
+      await session.communicator.activateSlot(widget.slot);
+      if (!mounted || !session.isCurrent) return;
+      await session.communicator.deleteSlotInfo(widget.slot, frequency);
+      if (!mounted || !session.isCurrent) return;
+      await session.communicator
+          .setSlotTagName(widget.slot, emptyName, frequency);
+      if (!mounted || !session.isCurrent) return;
+      await session.communicator.saveSlotData();
+    });
   }
 
   void updateSlot(String name, TagFrequency frequency, TagType type) {
@@ -113,6 +150,7 @@ class SlotSettingsState extends State<SlotSettings> {
                                   context: context,
                                   builder: (BuildContext context) =>
                                       SlotExportMenu(
+                                          slot: widget.slot,
                                           names: names,
                                           enabledSlotInfo: enabledSlot,
                                           slotTypes: slotTypes));
@@ -163,13 +201,9 @@ class SlotSettingsState extends State<SlotSettings> {
                                   return;
                                 }
                               }
-                              await appState.communicator!
-                                  .deleteSlotInfo(widget.slot, TagFrequency.hf);
-                              await appState.communicator!.setSlotTagName(
-                                  widget.slot,
-                                  localizations.empty,
-                                  TagFrequency.hf);
-                              await appState.communicator!.saveSlotData();
+                              if (!await _deleteSlot(TagFrequency.hf)) {
+                                return;
+                              }
 
                               setState(() {
                                 names.hf = localizations.empty;
@@ -183,8 +217,14 @@ class SlotSettingsState extends State<SlotSettings> {
                           Switch(
                             value: enabledSlot.hf,
                             onChanged: (bool value) async {
-                              await appState.communicator!.enableSlot(
-                                  widget.slot, TagFrequency.hf, value);
+                              if (!await _runForegroundCommand(
+                                  (session) => session.communicator.enableSlot(
+                                        widget.slot,
+                                        TagFrequency.hf,
+                                        value,
+                                      ))) {
+                                return;
+                              }
 
                               setState(() {
                                 enabledSlot.hf = value;
@@ -248,13 +288,9 @@ class SlotSettingsState extends State<SlotSettings> {
                                   return;
                                 }
                               }
-                              await appState.communicator!
-                                  .deleteSlotInfo(widget.slot, TagFrequency.lf);
-                              await appState.communicator!.setSlotTagName(
-                                  widget.slot,
-                                  localizations.empty,
-                                  TagFrequency.lf);
-                              await appState.communicator!.saveSlotData();
+                              if (!await _deleteSlot(TagFrequency.lf)) {
+                                return;
+                              }
 
                               setState(() {
                                 names.lf = localizations.empty;
@@ -268,8 +304,14 @@ class SlotSettingsState extends State<SlotSettings> {
                           Switch(
                             value: enabledSlot.lf,
                             onChanged: (bool value) async {
-                              await appState.communicator!.enableSlot(
-                                  widget.slot, TagFrequency.lf, value);
+                              if (!await _runForegroundCommand(
+                                  (session) => session.communicator.enableSlot(
+                                        widget.slot,
+                                        TagFrequency.lf,
+                                        value,
+                                      ))) {
+                                return;
+                              }
 
                               setState(() {
                                 enabledSlot.lf = value;

@@ -1,6 +1,8 @@
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/gui/menu/pages/mfkey32.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
@@ -13,6 +15,10 @@ import 'package:chameleonultragui/main.dart';
 
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+
+class _SlotOperationCanceled implements Exception {
+  const _SlotOperationCanceled();
+}
 
 class SlotEditMenu extends StatefulWidget {
   final String name;
@@ -76,23 +82,80 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     }
   }
 
+  bool _canContinue(ConnectedDeviceSession session) =>
+      mounted && session.isCurrent;
+
+  Future<T> _awaitTransport<T>(
+    ConnectedDeviceSession session,
+    Future<T> Function() operation,
+  ) async {
+    if (!_canContinue(session)) throw const _SlotOperationCanceled();
+    final result = await operation();
+    if (!_canContinue(session)) throw const _SlotOperationCanceled();
+    return result;
+  }
+
+  Future<bool> _runSlotOperation(
+    Future<void> Function(ConnectedDeviceSession session) operation,
+  ) async {
+    final appState = context.read<ChameleonGUIState>();
+    final result = await appState.runSessionBoundForeground((session) async {
+      try {
+        if (!_canContinue(session)) return false;
+        await operation(session);
+        return _canContinue(session);
+      } on _SlotOperationCanceled {
+        return false;
+      }
+    });
+    return result.executed && result.value == true;
+  }
+
+  Future<bool> _runCommand(
+    Future<void> Function(ChameleonCommunicator communicator) command,
+  ) {
+    return _runSlotOperation((session) async {
+      await _awaitTransport(
+        session,
+        () => command(session.communicator),
+      );
+    });
+  }
+
+  Future<T?> _runReadCommand<T>(
+    Future<T> Function(ChameleonCommunicator communicator) command,
+  ) async {
+    T? value;
+    final completed = await _runSlotOperation((session) async {
+      value = await _awaitTransport(
+        session,
+        () => command(session.communicator),
+      );
+    });
+    return completed ? value : null;
+  }
+
   Future<void> updateInfo() async {
-    var appState = context.watch<ChameleonGUIState>();
     if (previousTagType == selectedType ||
         isMifareClassic(previousTagType) && isMifareClassic(selectedType!)) {
       return;
     }
+    await _runSlotOperation(_updateInfo);
+  }
 
-    await appState.communicator!.activateSlot(widget.slot);
+  Future<void> _updateInfo(ConnectedDeviceSession session) async {
+    await _awaitTransport(
+        session, () => session.communicator.activateSlot(widget.slot));
 
     if (isEM410X(selectedType!)) {
       try {
-        uidController.text =
-            bytesToHexSpace(await appState.communicator!.getEM410XEmulatorID());
+        uidController.text = bytesToHexSpace(await _awaitTransport(
+            session, session.communicator.getEM410XEmulatorID));
       } catch (_) {}
     } else if (selectedType! == TagType.hidProx) {
       try {
-        HIDCard hidCard = await appState.communicator!.getHIDProxEmulatorID();
+        HIDCard hidCard = await _awaitTransport(
+            session, session.communicator.getHIDProxEmulatorID);
         uidController.text = bytesToHexSpace(hidCard.uid);
         hidTypeController.text = hidCard.hidType.toString();
         facilityCodeController.text = hidCard.facilityCode.toString();
@@ -101,57 +164,60 @@ class SlotEditMenuState extends State<SlotEditMenu> {
       } catch (_) {}
     } else if (selectedType! == TagType.viking) {
       try {
-        VikingCard vikingCard =
-            await appState.communicator!.getVikingEmulatorID();
+        VikingCard vikingCard = await _awaitTransport(
+            session, session.communicator.getVikingEmulatorID);
         uidController.text = bytesToHexSpace(vikingCard.uid);
       } catch (_) {}
     } else if (selectedType! == TagType.pac) {
       try {
-        PacCard pacCard = await appState.communicator!.getPacEmulatorID();
+        PacCard pacCard = await _awaitTransport(
+            session, session.communicator.getPacEmulatorID);
         uidController.text = bytesToHexSpace(pacCard.uid);
       } catch (_) {}
     } else if (selectedType! == TagType.ioProx) {
       try {
-        IoProxCard ioProxCard =
-            await appState.communicator!.getIoProxEmulatorID();
+        IoProxCard ioProxCard = await _awaitTransport(
+            session, session.communicator.getIoProxEmulatorID);
         uidController.text = bytesToHexSpace(ioProxCard.uid);
       } catch (_) {}
     } else if (selectedType! == TagType.idteck) {
       try {
-        IdteckCard idteckCard =
-            await appState.communicator!.getIdteckEmulatorID();
+        IdteckCard idteckCard = await _awaitTransport(
+            session, session.communicator.getIdteckEmulatorID);
         uidController.text = bytesToHexSpace(idteckCard.uid);
       } catch (_) {}
     } else if (isMifareClassic(selectedType!) ||
         isMifareUltralight(selectedType!)) {
       try {
-        CardData data = await appState.communicator!.mf1GetAntiCollData();
+        CardData data = await _awaitTransport(
+            session, session.communicator.mf1GetAntiCollData);
         uidController.text = bytesToHexSpace(data.uid);
         sakController.text = bytesToHex(u8ToBytes(data.sak));
         atqaController.text = bytesToHexSpace(data.atqa);
         atsController.text = bytesToHexSpace(data.ats);
 
         if (isMifareClassic(selectedType!)) {
-          emulatorSettings =
-              await appState.communicator!.getMf1EmulatorSettings();
+          emulatorSettings = await _awaitTransport(
+              session, session.communicator.getMf1EmulatorSettings);
 
           if (emulatorSettings!.isDetectionEnabled) {
-            detectionCount =
-                await appState.communicator!.getMf1DetectionCount();
+            detectionCount = await _awaitTransport(
+                session, session.communicator.getMf1DetectionCount);
           }
 
           try {
-            mf1PrngType = await appState.communicator!.getMf1PrngType();
+            mf1PrngType = await _awaitTransport(
+                session, session.communicator.getMf1PrngType);
           } catch (_) {
             mf1PrngType = null;
           }
         } else if (isMifareUltralight(selectedType!)) {
-          Uint8List version =
-              await appState.communicator!.mf0EmulatorGetVersionData();
+          Uint8List version = await _awaitTransport(
+              session, session.communicator.mf0EmulatorGetVersionData);
           ultralightVersionController.text = bytesToHexSpace(version);
 
-          Uint8List signature =
-              await appState.communicator!.mf0EmulatorGetSignatureData();
+          Uint8List signature = await _awaitTransport(
+              session, session.communicator.mf0EmulatorGetSignatureData);
           ultralightSignatureController.text = bytesToHexSpace(signature);
 
           if (mfUltralightHasCounters(selectedType!)) {
@@ -160,35 +226,40 @@ class SlotEditMenuState extends State<SlotEditMenu> {
 
             for (int i = 0; i < counterCount; i++) {
               TextEditingController controller = TextEditingController();
-              var counterData =
-                  await appState.communicator!.mf0EmulatorGetCounterData(i);
+              var counterData = await _awaitTransport(session,
+                  () => session.communicator.mf0EmulatorGetCounterData(i));
               controller.text = counterData.$1.toString();
               ultralightCounterControllers.add(controller);
             }
           }
 
-          emulatorSettings =
-              await appState.communicator!.mf0NtagGetEmulatorConfig();
+          emulatorSettings = await _awaitTransport(
+              session, session.communicator.mf0NtagGetEmulatorConfig);
 
           if (emulatorSettings!.isDetectionEnabled) {
-            detectionCount =
-                await appState.communicator!.mf0NtagGetDetectionCount();
+            detectionCount = await _awaitTransport(
+                session, session.communicator.mf0NtagGetDetectionCount);
           }
         }
       } catch (_) {}
     }
 
+    if (!_canContinue(session)) return;
     setState(() {
       previousTagType = selectedType!;
     });
   }
 
-  Future<void> save() async {
-    var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+  Future<bool> save() {
+    return _runSlotOperation(_save);
+  }
 
-    await appState.communicator!.activateSlot(widget.slot);
+  Future<void> _save(ConnectedDeviceSession session) async {
+    await _awaitTransport(
+        session, () => session.communicator.activateSlot(widget.slot));
     if (widget.slotType != selectedType) {
-      await appState.communicator!.setSlotType(widget.slot, selectedType!);
+      await _awaitTransport(session,
+          () => session.communicator.setSlotType(widget.slot, selectedType!));
       bool oldIsClassic = isMifareClassic(widget.slotType);
       bool newIsClassic = isMifareClassic(selectedType!);
       bool oldIsUltralight = isMifareUltralight(widget.slotType);
@@ -196,14 +267,18 @@ class SlotEditMenuState extends State<SlotEditMenu> {
 
       if (!((oldIsClassic && newIsClassic) ||
           (oldIsUltralight && newIsUltralight))) {
-        await appState.communicator!
-            .setDefaultDataToSlot(widget.slot, selectedType!);
+        await _awaitTransport(
+            session,
+            () => session.communicator
+                .setDefaultDataToSlot(widget.slot, selectedType!));
       }
     }
 
     if (isEM410X(selectedType!)) {
-      await appState.communicator!
-          .setEM410XEmulatorID(hexToBytes(uidController.text));
+      await _awaitTransport(
+          session,
+          () => session.communicator
+              .setEM410XEmulatorID(hexToBytes(uidController.text)));
     } else if (selectedType! == TagType.hidProx) {
       try {
         int hidType = int.parse(hidTypeController.text);
@@ -221,18 +296,28 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           oem: oem,
         );
 
-        await appState.communicator!
-            .setHIDProxEmulatorID(hexToBytes(hidCard.toString()));
+        await _awaitTransport(
+            session,
+            () => session.communicator
+                .setHIDProxEmulatorID(hexToBytes(hidCard.toString())));
+      } on _SlotOperationCanceled {
+        rethrow;
       } catch (_) {}
     } else if (selectedType! == TagType.pac) {
-      await appState.communicator!.setPacEmulatorID(
-          hexToBytes(uidController.text.replaceAll(' ', '')));
+      await _awaitTransport(
+          session,
+          () => session.communicator.setPacEmulatorID(
+              hexToBytes(uidController.text.replaceAll(' ', ''))));
     } else if (selectedType! == TagType.ioProx) {
-      await appState.communicator!.setIoProxEmulatorID(
-          hexToBytes(uidController.text.replaceAll(' ', '')));
+      await _awaitTransport(
+          session,
+          () => session.communicator.setIoProxEmulatorID(
+              hexToBytes(uidController.text.replaceAll(' ', ''))));
     } else if (selectedType! == TagType.idteck) {
-      await appState.communicator!.setIdteckEmulatorID(
-          hexToBytes(uidController.text.replaceAll(' ', '')));
+      await _awaitTransport(
+          session,
+          () => session.communicator.setIdteckEmulatorID(
+              hexToBytes(uidController.text.replaceAll(' ', ''))));
     } else if (isMifareClassic(selectedType!) ||
         isMifareUltralight(selectedType!)) {
       var cardData = CardData(
@@ -240,30 +325,39 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           atqa: hexToBytes(atqaController.text),
           sak: bytesToU8(hexToBytes(sakController.text)),
           ats: hexToBytes(atsController.text));
-      await appState.communicator!.setMf1AntiCollision(cardData);
+      await _awaitTransport(
+          session, () => session.communicator.setMf1AntiCollision(cardData));
 
       // Save Ultralight-specific data
       if (isMifareUltralight(selectedType!)) {
-        await appState.communicator!.mf0EmulatorSetVersionData(
-            hexToBytes(ultralightVersionController.text));
+        await _awaitTransport(
+            session,
+            () => session.communicator.mf0EmulatorSetVersionData(
+                hexToBytes(ultralightVersionController.text)));
 
-        await appState.communicator!.mf0EmulatorSetSignatureData(
-            hexToBytes(ultralightSignatureController.text));
+        await _awaitTransport(
+            session,
+            () => session.communicator.mf0EmulatorSetSignatureData(
+                hexToBytes(ultralightSignatureController.text)));
 
         if (mfUltralightHasCounters(selectedType!)) {
           for (int i = 0; i < ultralightCounterControllers.length; i++) {
             int counterValue =
                 int.tryParse(ultralightCounterControllers[i].text) ?? 0;
-            await appState.communicator!
-                .mf0EmulatorSetCounterData(i, counterValue, true);
+            await _awaitTransport(
+                session,
+                () => session.communicator
+                    .mf0EmulatorSetCounterData(i, counterValue, true));
           }
         }
       }
     }
 
-    await appState.communicator!
-        .setSlotTagName(widget.slot, nameController.text, widget.frequency);
-    await appState.communicator!.saveSlotData();
+    await _awaitTransport(
+        session,
+        () => session.communicator.setSlotTagName(
+            widget.slot, nameController.text, widget.frequency));
+    await _awaitTransport(session, session.communicator.saveSlotData);
 
     widget.update(nameController.text, widget.frequency, selectedType);
   }
@@ -480,10 +574,11 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .setMf1Gen1aMode(index == 0
-                                                        ? true
-                                                        : false);
+                                                await _runCommand(
+                                                    (communicator) =>
+                                                        communicator
+                                                            .setMf1Gen1aMode(
+                                                                index == 0));
                                               }),
                                           const SizedBox(height: 8),
                                           Text(localizations.mode_gen2),
@@ -498,10 +593,11 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .setMf1Gen2Mode(index == 0
-                                                        ? true
-                                                        : false);
+                                                await _runCommand(
+                                                    (communicator) =>
+                                                        communicator
+                                                            .setMf1Gen2Mode(
+                                                                index == 0));
                                               }),
                                           if (mf1PrngType != null) ...[
                                             const SizedBox(height: 8),
@@ -521,8 +617,11 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                   setState(() {
                                                     mf1PrngType = nextType;
                                                   });
-                                                  await appState.communicator!
-                                                      .setMf1PrngType(nextType);
+                                                  await _runCommand(
+                                                      (communicator) =>
+                                                          communicator
+                                                              .setMf1PrngType(
+                                                                  nextType));
                                                 }),
                                           ],
                                           const SizedBox(height: 8),
@@ -538,11 +637,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .setMf1UseFirstBlockColl(
-                                                        index == 0
-                                                            ? true
-                                                            : false);
+                                                await _runCommand(
+                                                    (communicator) => communicator
+                                                        .setMf1UseFirstBlockColl(
+                                                            index == 0));
                                               }),
                                           const SizedBox(height: 8),
                                           Text(localizations
@@ -558,11 +656,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                   ? 0
                                                   : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .setMf1DetectionStatus(
-                                                        index == 0
-                                                            ? true
-                                                            : false);
+                                                await _runCommand(
+                                                    (communicator) => communicator
+                                                        .setMf1DetectionStatus(
+                                                            index == 0));
                                               }),
                                           ...(emulatorSettings!
                                                   .isDetectionEnabled)
@@ -634,27 +731,13 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               selectedValue: emulatorSettings!
                                                   .writeMode.value,
                                               onChange: (int index) async {
-                                                if (index == 0) {
-                                                  await appState.communicator!
-                                                      .setMf1WriteMode(
-                                                          MifareWriteMode
-                                                              .normal);
-                                                } else if (index == 1) {
-                                                  await appState.communicator!
-                                                      .setMf1WriteMode(
-                                                          MifareWriteMode
-                                                              .denied);
-                                                } else if (index == 2) {
-                                                  await appState.communicator!
-                                                      .setMf1WriteMode(
-                                                          MifareWriteMode
-                                                              .deceive);
-                                                } else if (index == 3) {
-                                                  await appState.communicator!
-                                                      .setMf1WriteMode(
-                                                          MifareWriteMode
-                                                              .shadow);
-                                                }
+                                                await _runCommand(
+                                                    (communicator) =>
+                                                        communicator
+                                                            .setMf1WriteMode(
+                                                                MifareWriteMode
+                                                                        .values[
+                                                                    index]));
                                               }),
                                         ]),
                                       if (isMifareUltralight(selectedType!) &&
@@ -680,10 +763,11 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .mf0SetMagicMode(index == 0
-                                                        ? true
-                                                        : false);
+                                                await _runCommand(
+                                                    (communicator) =>
+                                                        communicator
+                                                            .mf0SetMagicMode(
+                                                                index == 0));
                                               }),
                                           const SizedBox(height: 8),
                                           Text(
@@ -699,11 +783,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                   ? 0
                                                   : 1,
                                               onChange: (int index) async {
-                                                await appState.communicator!
-                                                    .mf0NtagSetDetectionEnable(
-                                                        index == 0
-                                                            ? true
-                                                            : false);
+                                                await _runCommand(
+                                                    (communicator) => communicator
+                                                        .mf0NtagSetDetectionEnable(
+                                                            index == 0));
                                               }),
                                           ...(emulatorSettings!
                                                   .isDetectionEnabled)
@@ -739,14 +822,14 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                                 TextButton(
                                                                     onPressed:
                                                                         () async {
-                                                                      List<String>
-                                                                          passwords =
-                                                                          await appState
-                                                                              .communicator!
-                                                                              .mf0NtagGetDetectionLog(0);
+                                                                      final passwords =
+                                                                          await _runReadCommand((communicator) =>
+                                                                              communicator.mf0NtagGetDetectionLog(0));
 
-                                                                      if (!context
-                                                                          .mounted) {
+                                                                      if (passwords ==
+                                                                              null ||
+                                                                          !context
+                                                                              .mounted) {
                                                                         return;
                                                                       }
 
@@ -821,27 +904,13 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               selectedValue: emulatorSettings!
                                                   .writeMode.value,
                                               onChange: (int index) async {
-                                                if (index == 0) {
-                                                  await appState.communicator!
-                                                      .mf0NtagSetWriteMode(
-                                                          MifareWriteMode
-                                                              .normal);
-                                                } else if (index == 1) {
-                                                  await appState.communicator!
-                                                      .mf0NtagSetWriteMode(
-                                                          MifareWriteMode
-                                                              .denied);
-                                                } else if (index == 2) {
-                                                  await appState.communicator!
-                                                      .mf0NtagSetWriteMode(
-                                                          MifareWriteMode
-                                                              .deceive);
-                                                } else if (index == 3) {
-                                                  await appState.communicator!
-                                                      .mf0NtagSetWriteMode(
-                                                          MifareWriteMode
-                                                              .shadow);
-                                                }
+                                                await _runCommand(
+                                                    (communicator) =>
+                                                        communicator
+                                                            .mf0NtagSetWriteMode(
+                                                                MifareWriteMode
+                                                                        .values[
+                                                                    index]));
                                               }),
                                         ]),
                                     ],
@@ -931,7 +1000,9 @@ class SlotEditMenuState extends State<SlotEditMenu> {
               return;
             }
 
-            await save();
+            if (!await save()) {
+              return;
+            }
 
             if (context.mounted) {
               Navigator.pop(context);

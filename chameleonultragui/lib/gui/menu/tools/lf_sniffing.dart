@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/hex_viewer.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/lf_sniff.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
@@ -54,26 +55,19 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
 
   Future<void> _loadCapabilities() async {
     final appState = context.read<ChameleonGUIState>();
-    if (appState.communicator == null) {
+    final result = await appState.runSessionBoundForegroundCatching(
+      (session) async {
+        final capabilities = await session.communicator.getDeviceCapabilities();
+        return capabilities.contains(ChameleonCommand.lfSniff.value);
+      },
+    );
+    final session = result.session;
+    if (!result.executed || session == null || !mounted || !session.isCurrent) {
       return;
     }
-    try {
-      final capabilities = await appState.communicator!.getDeviceCapabilities();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported =
-            capabilities.contains(ChameleonCommand.lfSniff.value);
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported = null;
-      });
-    }
+    setState(() {
+      _capabilitySupported = result.error == null ? result.value : null;
+    });
   }
 
   bool _isDeviceConnected() {
@@ -96,15 +90,51 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
     });
 
     try {
-      if (!await appState.communicator!.isReaderDeviceMode()) {
-        await appState.communicator!.setReaderDeviceMode(true);
-      }
+      final result =
+          await appState.runSessionBoundForegroundCatching((session) async {
+        if (!mounted || !session.isCurrent) {
+          return null;
+        }
 
-      final samples =
-          await appState.communicator!.lfSniff(timeoutMs: timeoutMs);
-      if (!mounted) {
+        if (!await session.communicator.isReaderDeviceMode()) {
+          if (!mounted || !session.isCurrent) {
+            return null;
+          }
+          await session.communicator.setReaderDeviceMode(true);
+        }
+        if (!mounted || !session.isCurrent) {
+          return null;
+        }
+
+        final samples =
+            await session.communicator.lfSniff(timeoutMs: timeoutMs);
+        return mounted && session.isCurrent ? samples : null;
+      });
+      final session = result.session;
+      final samples = result.value;
+      if (!result.executed ||
+          session == null ||
+          !mounted ||
+          !session.isCurrent) {
         return;
       }
+
+      final error = result.error;
+      if (error != null) {
+        final errorText = error.toString();
+        final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
+        setState(() {
+          if (firmwareUnsupported) {
+            _capabilitySupported = false;
+            _statusMessage = null;
+            _errorMessage = null;
+          } else {
+            _errorMessage = errorText;
+          }
+        });
+        return;
+      }
+      if (samples == null) return;
 
       if (samples.isEmpty) {
         setState(() {
@@ -125,22 +155,6 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         _decodeError = decodeOutcome.error;
         _statusMessage =
             localizations.lf_sniff_capture_done(capture.summary.sampleCount);
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      final errorText = error.toString();
-      final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
-      setState(() {
-        if (firmwareUnsupported) {
-          _capabilitySupported = false;
-          _statusMessage = null;
-          _errorMessage = null;
-        } else {
-          _errorMessage = errorText;
-        }
       });
     } finally {
       if (mounted) {
@@ -221,8 +235,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.lf_sniff_load_failed(localizations.lf_sniff_no_samples);
+        _errorMessage = localizations
+            .lf_sniff_load_failed(localizations.lf_sniff_no_samples);
       });
       return;
     }
@@ -245,8 +259,8 @@ class _LfSniffingMenuState extends State<LfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.lf_sniff_load_failed(localizations.lf_sniff_no_samples);
+        _errorMessage = localizations
+            .lf_sniff_load_failed(localizations.lf_sniff_no_samples);
       });
       return;
     }

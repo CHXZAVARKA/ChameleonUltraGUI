@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -202,6 +203,21 @@ class HomePageState extends State<HomePage> {
   Future<bool> isReaderDeviceMode() async {
     var appState = context.read<ChameleonGUIState>();
     return await appState.communicator!.isReaderDeviceMode();
+  }
+
+  Future<void> _setReaderDeviceMode(bool readerMode) async {
+    final appState = context.read<ChameleonGUIState>();
+    await appState.runSessionBoundForeground((session) async {
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      await session.communicator.setReaderDeviceMode(readerMode);
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      setState(() {});
+      appState.changesMade();
+    });
   }
 
   @override
@@ -539,10 +555,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(false);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(false);
                                     },
                                     tooltip: localizations.emulator_mode,
                                     icon: const Icon(Icons.nfc_sharp),
@@ -552,10 +565,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(true);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(true);
                                     },
                                     tooltip: localizations.reader_mode,
                                     icon: const Icon(Icons.barcode_reader),
