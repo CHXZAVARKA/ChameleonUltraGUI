@@ -190,24 +190,24 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                             .textTheme
                             .labelSmall
                             ?.copyWith(fontWeight: FontWeight.w700);
-                        double measureWidth(String text, TextStyle? style) {
+                        Size measureText(String text, TextStyle? style) {
                           final painter = TextPainter(
                             text: TextSpan(text: text, style: style),
                             textDirection: textDirection,
                             textScaler: textScaler,
                           )..layout();
-                          final width = painter.width;
+                          final size = painter.size;
                           painter.dispose();
-                          return width;
+                          return size;
                         }
 
+                        final hfLabelSize =
+                            measureText(localizations.hf, frequencyStyle);
+                        final lfLabelSize =
+                            measureText(localizations.lf, frequencyStyle);
                         final labelWidth = math.max(
                           28.0,
-                          math.max(
-                                measureWidth(localizations.hf, frequencyStyle),
-                                measureWidth(localizations.lf, frequencyStyle),
-                              ) +
-                              4,
+                          math.max(hfLabelSize.width, lfLabelSize.width) + 4,
                         );
                         final availableSlotsWidth = math.max(
                           0.0,
@@ -220,6 +220,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           availableSlotsWidth / columns,
                         );
                         final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
+                        final markRowHeight = math.max(
+                          markSize,
+                          math.max(hfLabelSize.height, lfLabelSize.height),
+                        );
                         final slotNumberPainter = TextPainter(
                           text: TextSpan(
                             text: '8',
@@ -230,7 +234,8 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                         )..layout();
                         final slotNumberHeight = slotNumberPainter.height;
                         slotNumberPainter.dispose();
-                        final gridHeight = markSize * 2 + 29 + slotNumberHeight;
+                        final gridHeight =
+                            markRowHeight * 2 + 29 + slotNumberHeight;
                         Widget buildSlot(int index) => SizedBox(
                               key: _slotKeys[index],
                               width: slotWidth,
@@ -239,6 +244,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                                 index: index,
                                 slot: slots.slots[index],
                                 markSize: markSize,
+                                markRowHeight: markRowHeight,
                                 loading: slots.availability ==
                                     SlotsAvailability.loading,
                                 active: activeSlot == index &&
@@ -256,8 +262,9 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   _FrequencyLabels(
-                                    markSize: markSize,
+                                    rowHeight: markRowHeight,
                                     width: labelWidth,
+                                    rowStart: firstSlot,
                                   ),
                                   for (var offset = 0;
                                       offset < columns;
@@ -288,8 +295,9 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _FrequencyLabels(
-                              markSize: markSize,
+                              rowHeight: markRowHeight,
                               width: labelWidth,
+                              rowStart: 0,
                             ),
                             SizedBox(
                               key: const Key('home-slot-grid-scroll'),
@@ -335,10 +343,15 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
 }
 
 class _FrequencyLabels extends StatelessWidget {
-  const _FrequencyLabels({required this.markSize, required this.width});
+  const _FrequencyLabels({
+    required this.rowHeight,
+    required this.width,
+    required this.rowStart,
+  });
 
-  final double markSize;
+  final double rowHeight;
   final double width;
+  final int rowStart;
 
   @override
   Widget build(BuildContext context) {
@@ -354,7 +367,8 @@ class _FrequencyLabels extends StatelessWidget {
         child: Column(
           children: [
             SizedBox(
-              height: markSize,
+              key: Key('home-frequency-label-hf-box-$rowStart'),
+              height: rowHeight,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(localizations.hf, style: style),
@@ -362,7 +376,8 @@ class _FrequencyLabels extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: markSize,
+              key: Key('home-frequency-label-lf-box-$rowStart'),
+              height: rowHeight,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(localizations.lf, style: style),
@@ -389,6 +404,7 @@ class _SlotColumn extends StatelessWidget {
     required this.index,
     required this.slot,
     required this.markSize,
+    required this.markRowHeight,
     required this.loading,
     required this.active,
     required this.activating,
@@ -400,6 +416,7 @@ class _SlotColumn extends StatelessWidget {
   final int index;
   final DeviceSlotStatus slot;
   final double markSize;
+  final double markRowHeight;
   final bool loading;
   final bool active;
   final bool activating;
@@ -508,22 +525,32 @@ class _SlotColumn extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _SlotStatusMark(
-                        key: Key(
-                          'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                      SizedBox(
+                        height: markRowHeight,
+                        child: Center(
+                          child: _SlotStatusMark(
+                            key: Key(
+                              'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                            ),
+                            frequency: TagFrequency.hf,
+                            state: _markState(slot.hf),
+                            size: markSize,
+                          ),
                         ),
-                        frequency: TagFrequency.hf,
-                        state: _markState(slot.hf),
-                        size: markSize,
                       ),
                       const SizedBox(height: 8),
-                      _SlotStatusMark(
-                        key: Key(
-                          'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                      SizedBox(
+                        height: markRowHeight,
+                        child: Center(
+                          child: _SlotStatusMark(
+                            key: Key(
+                              'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                            ),
+                            frequency: TagFrequency.lf,
+                            state: _markState(slot.lf),
+                            size: markSize,
+                          ),
                         ),
-                        frequency: TagFrequency.lf,
-                        state: _markState(slot.lf),
-                        size: markSize,
                       ),
                       const SizedBox(height: 4),
                       Text(

@@ -242,7 +242,6 @@ class _HomeControls extends StatelessWidget {
       builder: (context, constraints) => SingleChildScrollView(
         key: const Key('home-controls-scroll'),
         scrollDirection: Axis.horizontal,
-        reverse: true,
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: constraints.maxWidth),
           child: IntrinsicWidth(

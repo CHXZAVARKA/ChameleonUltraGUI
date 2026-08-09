@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
-import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
@@ -1564,9 +1563,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (enabled == null) {
       return _preservedOrUnavailable(previous);
     }
-    final connector = _session.connector;
-    if (connector is EmulatorSerial &&
-        !connector.isSlotEnabledStateKnown(slotIndex, frequency)) {
+    if (!_session.connector.slotEnabledStateCertainty.isConfirmed(
+      slotIndex,
+      highFrequency: frequency == TagFrequency.hf,
+    )) {
       return const SlotField<bool>.unavailable();
     }
     return SlotField.confirmed(enabled);

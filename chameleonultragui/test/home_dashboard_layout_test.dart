@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
@@ -13,12 +14,45 @@ import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('slot certainty stays behind the abstract connector contract', () {
+    final physical = _DashboardSerial(log: Logger());
+    final demo = EmulatorSerial(log: Logger());
+
+    expect(
+      physical.slotEnabledStateCertainty.isConfirmed(
+        6,
+        highFrequency: true,
+      ),
+      isTrue,
+    );
+    expect(
+      demo.slotEnabledStateCertainty.isConfirmed(
+        6,
+        highFrequency: true,
+      ),
+      isFalse,
+    );
+    expect(
+      demo.slotEnabledStateCertainty.isConfirmed(
+        6,
+        highFrequency: false,
+      ),
+      isTrue,
+    );
+
+    final statusSource =
+        File('lib/status/connected_device_status.dart').readAsStringSync();
+    expect(statusSource, isNot(contains('connector/serial_emulator.dart')));
+    expect(statusSource, isNot(contains('EmulatorSerial')));
+  });
+
   testWidgets('Home uses the approved bottom-anchored dashboard hierarchy',
       (tester) async {
     await _setViewport(tester, const Size(360, 800));
@@ -159,6 +193,130 @@ void main() {
       }
     } finally {
       semantics.dispose();
+    }
+  });
+
+  testWidgets(
+      'large text keeps frequency rows aligned and every Home action reachable',
+      (tester) async {
+    for (final brightness in Brightness.values) {
+      for (final layout in SlotLayout.values) {
+        await _setViewport(tester, const Size(360, 800));
+        final fixture = await _mountDashboard(
+          tester,
+          brightness: brightness,
+          layout: layout,
+          textScaler: TextScaler.linear(2.5),
+        );
+        await tester.pumpAndSettle();
+
+        final reason = '${brightness.name} ${layout.name}';
+        final rowStarts = layout == SlotLayout.eightAcross ? [0] : [0, 4];
+        for (final rowStart in rowStarts) {
+          for (final frequency in ['hf', 'lf']) {
+            final labelText = find.descendant(
+              of: find.byKey(
+                Key('home-frequency-label-$frequency-box-$rowStart'),
+              ),
+              matching: find.byType(Text),
+            );
+            final labelBox = find.byKey(
+              Key('home-frequency-label-$frequency-box-$rowStart'),
+            );
+            final mark = find.byKey(
+              Key(
+                'home-slot-${rowStart + 1}-$frequency-mark-'
+                '${frequency == 'hf' ? 'enabled' : 'empty'}',
+              ),
+            );
+            expect(labelText, findsOneWidget, reason: reason);
+            final paragraph = tester.renderObject<RenderParagraph>(labelText);
+            final textRect = tester.getRect(labelText);
+            final boxRect = tester.getRect(labelBox);
+            final markRect = tester.getRect(mark);
+            expect(paragraph.hasSize, isTrue, reason: reason);
+            expect(textRect.left, greaterThanOrEqualTo(boxRect.left),
+                reason: reason);
+            expect(textRect.top, greaterThanOrEqualTo(boxRect.top),
+                reason: reason);
+            expect(textRect.right, lessThanOrEqualTo(boxRect.right),
+                reason: reason);
+            expect(textRect.bottom, lessThanOrEqualTo(boxRect.bottom),
+                reason: reason);
+            expect(textRect.right, lessThan(markRect.left), reason: reason);
+            expect(
+              (textRect.center.dy - markRect.center.dy).abs(),
+              lessThanOrEqualTo(2),
+              reason: reason,
+            );
+          }
+          final hfRect = tester.getRect(
+            find.byKey(Key('home-frequency-label-hf-box-$rowStart')),
+          );
+          final lfRect = tester.getRect(
+            find.byKey(Key('home-frequency-label-lf-box-$rowStart')),
+          );
+          expect(hfRect.bottom, lessThanOrEqualTo(lfRect.top), reason: reason);
+        }
+
+        final controlsSurface = find.byKey(const Key('home-controls-scroll'));
+        final layoutControl = find.byKey(
+          const Key('home-slot-layout-control'),
+        );
+        expect(controlsSurface, findsOneWidget, reason: reason);
+        final controlsScrollable = tester.state<ScrollableState>(
+          find.descendant(
+            of: controlsSurface,
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(
+          controlsScrollable.position.maxScrollExtent,
+          greaterThan(0),
+          reason: reason,
+        );
+        expect(layoutControl.hitTestable(), findsOneWidget, reason: reason);
+        expect(
+          tester.getSize(layoutControl).height,
+          greaterThanOrEqualTo(48),
+          reason: reason,
+        );
+        final alternateLayout = layout == SlotLayout.eightAcross
+            ? find.byKey(const Key('home-slot-layout-two-by-four'))
+            : find.byKey(const Key('home-slot-layout-eight-across'));
+        await tester.tap(alternateLayout);
+        await tester.pumpAndSettle();
+        expect(
+          fixture.appState.sharedPreferencesProvider.getSlotLayout(),
+          isNot(layout),
+          reason: reason,
+        );
+
+        controlsScrollable.position.jumpTo(
+          controlsScrollable.position.maxScrollExtent,
+        );
+        await tester.pumpAndSettle();
+        final mode = find.byKey(const Key('home-mode-control'));
+        final readerAction = find.text('Reader');
+        final settings = find.byKey(const Key('home-device-settings'));
+        expect(readerAction.hitTestable(), findsOneWidget, reason: reason);
+        expect(settings.hitTestable(), findsOneWidget, reason: reason);
+        expect(tester.getSize(mode).height, greaterThanOrEqualTo(48),
+            reason: reason);
+        expect(tester.getSize(settings).height, greaterThanOrEqualTo(48),
+            reason: reason);
+        await tester.tap(readerAction);
+        await tester.pumpAndSettle();
+        expect(fixture.communicator.readerMode, isTrue, reason: reason);
+        await tester.tap(settings);
+        await tester.pumpAndSettle();
+        expect(find.byType(ChameleonSettings), findsOneWidget, reason: reason);
+        expect(_takeExceptions(tester), isEmpty, reason: reason);
+
+        fixture.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
     }
   });
 
@@ -536,6 +694,7 @@ class _DashboardCommunicator extends ChameleonCommunicator {
   final _DashboardScenario scenario;
   final Completer<void> _pending = Completer<void>();
   bool failSlots = false;
+  bool readerMode = false;
 
   Future<void> _waitIfLoading() async {
     if (scenario == _DashboardScenario.loading) {
@@ -566,7 +725,12 @@ class _DashboardCommunicator extends ChameleonCommunicator {
   Future<bool> isReaderDeviceMode() async {
     await _waitIfLoading();
     _throwIfError();
-    return false;
+    return readerMode;
+  }
+
+  @override
+  Future<void> setReaderDeviceMode(bool readerMode) async {
+    this.readerMode = readerMode;
   }
 
   @override

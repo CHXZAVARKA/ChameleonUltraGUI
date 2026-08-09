@@ -5,6 +5,25 @@ enum ChameleonDevice { none, ultra, lite }
 
 enum ConnectionType { none, usb, ble }
 
+@immutable
+class SlotEnabledStateCertainty {
+  const SlotEnabledStateCertainty({
+    this.unconfirmedHighFrequencySlotMask = 0,
+    this.unconfirmedLowFrequencySlotMask = 0,
+  });
+
+  final int unconfirmedHighFrequencySlotMask;
+  final int unconfirmedLowFrequencySlotMask;
+
+  bool isConfirmed(int slotIndex, {required bool highFrequency}) {
+    assert(slotIndex >= 0 && slotIndex < 8);
+    final mask = highFrequency
+        ? unconfirmedHighFrequencySlotMask
+        : unconfirmedLowFrequencySlotMask;
+    return mask & (1 << slotIndex) == 0;
+  }
+}
+
 class Chameleon {
   final dynamic port;
   final ChameleonDevice device;
@@ -32,6 +51,9 @@ abstract class AbstractSerial {
   VoidCallback? connectionStateCallback;
 
   AbstractSerial({required this.log});
+
+  SlotEnabledStateCertainty get slotEnabledStateCertainty =>
+      const SlotEnabledStateCertainty();
 
   Future<bool> performConnect() async {
     return false;
