@@ -430,19 +430,26 @@ class ChameleonCommunicator {
   Future<Uint8List> mf1ReadBlock(int block, int keyType, Uint8List key) async {
     // Read block
     // keyType 0x60 if A key, 0x61 B key
+    return (await mf1ReadBlockResult(block, keyType, key)).data;
+  }
+
+  Future<ChameleonMessage> mf1ReadBlockResult(
+      int block, int keyType, Uint8List key) async {
     return (await sendCmd(ChameleonCommand.mf1ReadBlock,
-            data: Uint8List.fromList([keyType, block, ...key])))!
-        .data;
+        data: Uint8List.fromList([keyType, block, ...key])))!;
   }
 
   Future<bool> mf1WriteBlock(
       int block, int keyType, Uint8List key, Uint8List data) async {
     // Write block
     // keyType 0x60 if A key, 0x61 B key
+    return (await mf1WriteBlockResult(block, keyType, key, data)).status == 0;
+  }
+
+  Future<ChameleonMessage> mf1WriteBlockResult(
+      int block, int keyType, Uint8List key, Uint8List data) async {
     return (await sendCmd(ChameleonCommand.mf1WriteBlock,
-                data: Uint8List.fromList([keyType, block, ...key, ...data])))!
-            .status ==
-        0;
+        data: Uint8List.fromList([keyType, block, ...key, ...data])))!;
   }
 
   Future<void> activateSlot(int slot) async {

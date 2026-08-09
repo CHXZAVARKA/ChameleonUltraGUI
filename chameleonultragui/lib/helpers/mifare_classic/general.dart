@@ -88,6 +88,7 @@ class MifareClassicGeometry {
   });
 
   int get imageSize => blockCount * 16;
+  int get dataBlockCount => blockCount - sectorCount - 1;
   String get cardType => type.name;
 
   String get label {
