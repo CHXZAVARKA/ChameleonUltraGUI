@@ -5,9 +5,12 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
@@ -16,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/firmware_catalog_stub.dart';
 
@@ -1138,6 +1142,341 @@ void main() {
     expect(slots.staleFacets, contains(SlotFacet.activeSlot));
     expect(slots.availability, SlotsAvailability.stale);
   });
+
+  testWidgets(
+      'slot mutation reconciles one shared snapshot across Home and Slot Manager',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(
+      tester,
+      appState,
+      const Column(
+        children: [
+          Expanded(child: HomePage()),
+          Expanded(child: SlotManagerPage()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+    final initialReads = communicator.slotTypeReads;
+
+    await status.mutateSlots((mutation) async {
+      await mutation.run(
+        (communicator) => communicator.setSlotTagName(
+          0,
+          'Workshop',
+          TagFrequency.hf,
+        ),
+      );
+    });
+    await tester.pump();
+
+    expect(communicator.slotTypeReads, initialReads + 1);
+    expect(status.snapshot.slots.slots.first.hf.name.value, 'Workshop');
+    expect(
+      tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
+      contains('Workshop'),
+    );
+    expect(find.textContaining('Workshop'), findsOneWidget);
+  });
+
+  testWidgets('partial slot mutation failure still reconciles device state',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    final initialReads = communicator.slotTypeReads;
+    final mutationError = StateError('write failed after changing the name');
+
+    Object? thrown;
+    try {
+      await status.mutateSlots((mutation) async {
+        await mutation.run(
+          (communicator) => communicator.setSlotTagName(
+            0,
+            'Partially written',
+            TagFrequency.hf,
+          ),
+        );
+        throw mutationError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, same(mutationError));
+    expect(communicator.slotTypeReads, initialReads + 1);
+    expect(
+      status.snapshot.slots.slots.first.hf.name.value,
+      'Partially written',
+    );
+  });
+
+  testWidgets(
+      'slot reconciliation failure keeps primary error and confirmed cache stale',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    final confirmed = status.snapshot.slots;
+    final mutationError = StateError('primary mutation failure');
+    communicator.failAll = true;
+
+    Object? thrown;
+    try {
+      await status.mutateSlots<void>((_) async {
+        throw mutationError;
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, same(mutationError));
+    final stale = status.snapshot.slots;
+    expect(stale.availability, SlotsAvailability.stale);
+    expect(stale.staleFacets, SlotFacet.values.toSet());
+    expect(stale.slots, confirmed.slots);
+    expect(stale.activeSlot, confirmed.activeSlot);
+  });
+
+  testWidgets('slot mutation reconciles actual mode when workflow changes it',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshMode();
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    final initialModeReads = communicator.modeReads;
+
+    await status.mutateSlots(
+      (mutation) => mutation.run(
+        (communicator) => communicator.setReaderDeviceMode(true),
+      ),
+      reconcileMode: true,
+    );
+
+    expect(communicator.modeReads, initialModeReads + 1);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+  });
+
+  testWidgets('queued slot mutation never starts after connection replacement',
+      (tester) async {
+    final oldCommunicator = _SlotCommunicator();
+    final appState = _connectedState(oldCommunicator);
+    final status = appState.connectedDeviceStatus!;
+    final foregroundGate = Completer<void>();
+    final foregroundStarted = Completer<void>();
+    final foreground = appState.rfOperations.runForeground(() async {
+      foregroundStarted.complete();
+      await foregroundGate.future;
+    });
+    await foregroundStarted.future;
+    var mutationStarted = false;
+    final result = status.mutateSlots<void>((_) async {
+      mutationStarted = true;
+    }).then<Object?>((_) => null, onError: (Object error) => error);
+
+    _replaceConnection(appState, _SlotCommunicator());
+    foregroundGate.complete();
+    await foreground;
+
+    expect(await result, isA<SlotMutationConnectionChanged>());
+    expect(mutationStarted, isFalse);
+    expect(oldCommunicator.slotTypeReads, 0);
+  });
+
+  testWidgets(
+      'running slot mutation stops later steps and publication after replacement',
+      (tester) async {
+    final oldCommunicator = _SlotCommunicator();
+    final appState = _connectedState(oldCommunicator);
+    final status = appState.connectedDeviceStatus!;
+    final firstStepGate = Completer<void>();
+    final firstStepStarted = Completer<void>();
+    final result = status.mutateSlots<void>((mutation) async {
+      await mutation.run((_) async {
+        firstStepStarted.complete();
+        await firstStepGate.future;
+      });
+      await mutation.run(
+        (communicator) => communicator.setSlotTagName(
+          0,
+          'Must not run',
+          TagFrequency.hf,
+        ),
+      );
+    }).then<Object?>((_) => null, onError: (Object error) => error);
+    await firstStepStarted.future;
+
+    _replaceConnection(appState, _SlotCommunicator());
+    firstStepGate.complete();
+
+    expect(await result, isA<SlotMutationConnectionChanged>());
+    expect(oldCommunicator.commandEvents,
+        isNot(contains(contains('Must not run'))));
+    expect(oldCommunicator.slotTypeReads, 0);
+    expect(oldCommunicator.enabledSlotReads, 0);
+    expect(oldCommunicator.slotNameReads, 0);
+    expect(oldCommunicator.activeSlotReads, 0);
+  });
+
+  testWidgets('Slot Manager upload owns RF and reconciles slots and mode once',
+      (tester) async {
+    final modeGate = Completer<void>();
+    final modeStarted = Completer<void>();
+    final communicator = _SlotCommunicator()
+      ..modeWriteGate = modeGate
+      ..modeWriteStarted = modeStarted;
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+    final initialTypeReads = communicator.slotTypeReads;
+    final state = tester.state<SlotManagerPageState>(
+      find.byType(SlotManagerPage),
+    );
+    final localizations = AppLocalizations.of(
+      tester.element(find.byType(SlotManagerPage)),
+    )!;
+
+    final upload = state.onTap(
+      CardSave(uid: '01 02 03 04 05', name: 'Badge', tag: TagType.em410X),
+      (_, __) {},
+      localizations,
+    );
+    await modeStarted.future;
+    await status.refreshBattery();
+    expect(communicator.batteryReads, 0);
+
+    modeGate.complete();
+    await upload;
+    await tester.pump();
+
+    expect(
+      communicator.commandEvents,
+      containsAllInOrder([
+        'mode:false',
+        'enable:0:lf:true',
+        'activate:0',
+        'type:0:em410X',
+        'default:0:em410X',
+        'em410x',
+        'name:0:lf:Badge',
+        'save-slots',
+      ]),
+    );
+    expect(communicator.slotTypeReads, initialTypeReads + 1);
+    expect(status.snapshot.slots.slots.first.lf.name.value, 'Badge');
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+  });
+
+  testWidgets('Slot Settings enable and delete paths reconcile shared slots',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'confirm_delete': false});
+    await SharedPreferencesProvider().load();
+    final communicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+      );
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    communicator.commandEvents.clear();
+    final initialTypeReads = communicator.slotTypeReads;
+
+    await tester.tap(find.byKey(const Key('slot-settings-enable-hf')));
+    await tester.pumpAndSettle();
+    expect(communicator.commandEvents, contains('enable:0:hf:false'));
+    expect(status.snapshot.slots.slots.first.hf.enabled.value, isFalse);
+    expect(communicator.slotTypeReads, initialTypeReads + 1);
+
+    communicator.commandEvents.clear();
+    await tester.tap(find.byKey(const Key('slot-settings-delete-lf')));
+    await tester.pumpAndSettle();
+    expect(
+      communicator.commandEvents,
+      containsAllInOrder([
+        'delete:0:lf',
+        'name:0:lf:Empty',
+        'save-slots',
+      ]),
+    );
+    expect(status.snapshot.slots.slots.first.lf.type.value, TagType.unknown);
+    expect(status.snapshot.slots.slots.first.lf.name.value, 'Empty');
+  });
+
+  testWidgets('Slot Edit save reconciles renamed slot through shared status',
+      (tester) async {
+    final communicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0 ? SlotTypes(lf: TagType.em410X) : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) => index == 0 ? SlotNames(lf: 'Garage') : SlotNames(),
+      );
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    await _pumpPage(
+      tester,
+      appState,
+      const SlotEditMenu(
+        name: 'Garage',
+        isEnabled: true,
+        slotType: TagType.em410X,
+        frequency: TagFrequency.lf,
+        slot: 0,
+      ),
+    );
+    await tester.pumpAndSettle();
+    communicator.commandEvents.clear();
+    final initialTypeReads = communicator.slotTypeReads;
+
+    await tester.enterText(find.byType(TextFormField).first, 'Renamed');
+    await tester.tap(find.byKey(const Key('slot-edit-save')));
+    await tester.pumpAndSettle();
+
+    expect(
+      communicator.commandEvents,
+      containsAllInOrder([
+        'activate:0',
+        'em410x',
+        'name:0:lf:Renamed',
+        'save-slots',
+      ]),
+    );
+    expect(communicator.slotTypeReads, initialTypeReads + 1);
+    expect(status.snapshot.slots.slots.first.lf.name.value, 'Renamed');
+  });
 }
 
 Future<void> _pumpPage(
@@ -1205,6 +1544,8 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Completer<void>? activationGate;
   bool failActivation = false;
   bool readerMode = false;
+  Completer<void>? modeWriteGate;
+  Completer<void>? modeWriteStarted;
   int activeSlot = 0;
   final List<int> activations = [];
   final List<Object> scriptedActiveSlotReads = [];
@@ -1292,6 +1633,88 @@ class _SlotCommunicator extends ChameleonCommunicator {
       throw StateError('slot activation unavailable');
     }
     activeSlot = slot;
+  }
+
+  @override
+  Future<void> setSlotTagName(
+    int slot,
+    String name,
+    TagFrequency frequency,
+  ) async {
+    commandEvents.add('name:$slot:${frequency.name}:$name');
+    slotNames ??= List.generate(
+      8,
+      (index) => SlotNames(hf: index == 0 ? this.name : ''),
+    );
+    if (frequency == TagFrequency.hf) {
+      slotNames![slot].hf = name;
+    } else {
+      slotNames![slot].lf = name;
+    }
+  }
+
+  @override
+  Future<void> enableSlot(
+    int slot,
+    TagFrequency frequency,
+    bool enabled,
+  ) async {
+    commandEvents.add('enable:$slot:${frequency.name}:$enabled');
+    enabledSlots ??= List.generate(8, (_) => EnabledSlotInfo());
+    if (frequency == TagFrequency.hf) {
+      enabledSlots![slot].hf = enabled;
+    } else {
+      enabledSlots![slot].lf = enabled;
+    }
+  }
+
+  @override
+  Future<void> setSlotType(int slot, TagType type) async {
+    commandEvents.add('type:$slot:${type.name}');
+    slotTypes ??= List.generate(8, (_) => SlotTypes());
+    if (chameleonTagToFrequency(type) == TagFrequency.hf) {
+      slotTypes![slot].hf = type;
+    } else {
+      slotTypes![slot].lf = type;
+    }
+  }
+
+  @override
+  Future<void> setDefaultDataToSlot(int slot, TagType type) async {
+    commandEvents.add('default:$slot:${type.name}');
+  }
+
+  @override
+  Future<void> setEM410XEmulatorID(Uint8List uid) async {
+    commandEvents.add('em410x');
+  }
+
+  @override
+  Future<Uint8List> getEM410XEmulatorID() async =>
+      Uint8List.fromList([1, 2, 3, 4, 5]);
+
+  @override
+  Future<void> deleteSlotInfo(int slot, TagFrequency frequency) async {
+    commandEvents.add('delete:$slot:${frequency.name}');
+    slotTypes ??= List.generate(8, (_) => SlotTypes());
+    if (frequency == TagFrequency.hf) {
+      slotTypes![slot].hf = TagType.unknown;
+    } else {
+      slotTypes![slot].lf = TagType.unknown;
+    }
+  }
+
+  @override
+  Future<void> saveSlotData() async {
+    commandEvents.add('save-slots');
+  }
+
+  @override
+  Future<void> setReaderDeviceMode(bool readerMode) async {
+    commandEvents.add('mode:$readerMode');
+    modeWriteStarted?.complete();
+    await modeWriteGate?.future;
+    this.readerMode = readerMode;
   }
 
   @override

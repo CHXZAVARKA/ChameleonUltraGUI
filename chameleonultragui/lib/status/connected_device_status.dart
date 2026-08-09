@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -514,6 +515,36 @@ class StatusPresence {
     final onDispose = _onDispose;
     _onDispose = null;
     onDispose?.call();
+  }
+}
+
+class SlotMutationConnectionChanged implements Exception {
+  const SlotMutationConnectionChanged();
+
+  @override
+  String toString() => 'The connected-device session changed';
+}
+
+class SlotMutationScope {
+  const SlotMutationScope._(this._session);
+
+  final ConnectedDeviceSession _session;
+
+  bool get isCurrent => _session.isCurrent;
+
+  void ensureCurrent() {
+    if (!isCurrent) {
+      throw const SlotMutationConnectionChanged();
+    }
+  }
+
+  Future<T> run<T>(
+    Future<T> Function(ChameleonCommunicator communicator) operation,
+  ) async {
+    ensureCurrent();
+    final result = await operation(_session.communicator);
+    ensureCurrent();
+    return result;
   }
 }
 
@@ -1090,6 +1121,75 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _slotsRefresh = null;
       }
     });
+  }
+
+  Future<T> mutateSlots<T>(
+    Future<T> Function(SlotMutationScope mutation) operation, {
+    bool reconcileMode = false,
+  }) {
+    return _rfOperations.runForeground(() async {
+      final mutation = SlotMutationScope._(_session);
+      mutation.ensureCurrent();
+      late T result;
+      Object? mutationError;
+      StackTrace? mutationStackTrace;
+      try {
+        result = await operation(mutation);
+        mutation.ensureCurrent();
+      } catch (error, stackTrace) {
+        mutationError = error;
+        mutationStackTrace = stackTrace;
+      }
+
+      if (_canPublish) {
+        try {
+          final slots = await _readSlots(_snapshot.slots);
+          ModeStatus? mode;
+          if (reconcileMode && _canPublish) {
+            mode = await _readModeAfterSlotMutation();
+          }
+          if (_canPublish && slots != null) {
+            _publish(_snapshot.copyWith(slots: slots, mode: mode));
+          }
+        } catch (error, stackTrace) {
+          _session.appState.log?.w(
+            'Unable to reconcile connected-device slots after mutation',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (_canPublish) {
+            _publish(
+              _snapshot.copyWith(slots: _failedSlots(_snapshot.slots)),
+            );
+          }
+        }
+      }
+
+      if (mutationError != null) {
+        Error.throwWithStackTrace(mutationError, mutationStackTrace!);
+      }
+      mutation.ensureCurrent();
+      return result;
+    });
+  }
+
+  Future<ModeStatus?> _readModeAfterSlotMutation() async {
+    try {
+      final isReader = await _session.communicator.isReaderDeviceMode();
+      if (!_canPublish) {
+        return null;
+      }
+      return ModeStatus.available(
+        isReader ? ConnectedDeviceMode.reader : ConnectedDeviceMode.emulator,
+      );
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to reconcile connected-device mode after slot mutation',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
   }
 
   Future<void> _refreshSlots() async {
