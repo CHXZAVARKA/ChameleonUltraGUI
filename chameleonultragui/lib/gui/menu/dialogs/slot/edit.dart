@@ -2,11 +2,11 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/gui/menu/pages/mfkey32.dart';
-import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:flutter/services.dart';
@@ -16,26 +16,22 @@ import 'package:chameleonultragui/main.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
-class _SlotOperationCanceled implements Exception {
-  const _SlotOperationCanceled();
-}
-
 class SlotEditMenu extends StatefulWidget {
+  final ConnectedDeviceStatus? status;
   final String name;
   final bool isEnabled;
   final TagType slotType;
   final TagFrequency frequency;
   final int slot;
-  final dynamic update;
 
   const SlotEditMenu(
       {super.key,
+      this.status,
       required this.name,
       required this.isEnabled,
       required this.slotType,
       required this.frequency,
-      required this.slot,
-      required this.update});
+      required this.slot});
 
   @override
   SlotEditMenuState createState() => SlotEditMenuState();
@@ -63,12 +59,37 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   EmulatorSettings? emulatorSettings;
   Mf1PrngType? mf1PrngType;
   int detectionCount = 0;
+  ConnectedDeviceStatus? _status;
+  bool _statusCaptured = false;
 
   @override
   void initState() {
     super.initState();
     selectedType = widget.slotType;
     nameController.text = widget.name;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_statusCaptured) {
+      return;
+    }
+    _status = widget.status ??
+        context.read<ChameleonGUIState>().connectedDeviceStatus;
+    _statusCaptured = true;
+  }
+
+  ConnectedDeviceStatus _requireCurrentStatus() {
+    final status = _status;
+    if (status == null ||
+        !identical(
+          status,
+          context.read<ChameleonGUIState>().connectedDeviceStatus,
+        )) {
+      throw const SlotMutationConnectionChanged();
+    }
+    return status;
   }
 
   String getMf1PrngLabel(Mf1PrngType type, AppLocalizations localizations) {
@@ -82,135 +103,69 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     }
   }
 
-  bool _canContinue(ConnectedDeviceSession session) =>
-      mounted && session.isCurrent;
-
-  Future<T> _awaitTransport<T>(
-    ConnectedDeviceSession session,
-    Future<T> Function() operation,
-  ) async {
-    if (!_canContinue(session)) {
-      throw const _SlotOperationCanceled();
-    }
-    final result = await operation();
-    if (!_canContinue(session)) {
-      throw const _SlotOperationCanceled();
-    }
-    return result;
-  }
-
-  Future<bool> _runSlotOperation(
-    Future<void> Function(ConnectedDeviceSession session) operation,
-  ) async {
-    final appState = context.read<ChameleonGUIState>();
-    final result = await appState.runSessionBoundForeground((session) async {
-      try {
-        if (!_canContinue(session)) {
-          return false;
-        }
-        await operation(session);
-        return _canContinue(session);
-      } on _SlotOperationCanceled {
-        return false;
-      }
-    });
-    return result.executed && result.value == true;
-  }
-
-  Future<bool> _runCommand(
-    Future<void> Function(ChameleonCommunicator communicator) command,
-  ) {
-    return _runSlotOperation((session) async {
-      await _awaitTransport(
-        session,
-        () => command(session.communicator),
-      );
-    });
-  }
-
   Future<void> updateInfo() async {
+    final status = _requireCurrentStatus();
     if (previousTagType == selectedType ||
         isMifareClassic(previousTagType) && isMifareClassic(selectedType!)) {
       return;
     }
-
-    await _runSlotOperation((session) async {
-      final communicator = session.communicator;
-      await _awaitTransport(
-        session,
-        () => communicator.activateSlot(widget.slot),
+    await status.mutateSlots((mutation) async {
+      await mutation.run(
+        (communicator) => communicator.activateSlot(widget.slot),
       );
 
       if (isEM410X(selectedType!)) {
         try {
-          final uid = await _awaitTransport(
-            session,
-            communicator.getEM410XEmulatorID,
+          uidController.text = bytesToHexSpace(
+            await mutation.run(
+              (communicator) => communicator.getEM410XEmulatorID(),
+            ),
           );
-          uidController.text = bytesToHexSpace(uid);
-        } on _SlotOperationCanceled {
-          rethrow;
         } catch (_) {}
       } else if (selectedType! == TagType.hidProx) {
         try {
-          final card = await _awaitTransport(
-            session,
-            communicator.getHIDProxEmulatorID,
+          HIDCard hidCard = await mutation.run(
+            (communicator) => communicator.getHIDProxEmulatorID(),
           );
-          uidController.text = bytesToHexSpace(card.uid);
-          hidTypeController.text = card.hidType.toString();
-          facilityCodeController.text = card.facilityCode.toString();
-          issueLevelController.text = card.issueLevel.toString();
-          oemController.text = card.oem.toString();
-        } on _SlotOperationCanceled {
-          rethrow;
+          uidController.text = bytesToHexSpace(hidCard.uid);
+          hidTypeController.text = hidCard.hidType.toString();
+          facilityCodeController.text = hidCard.facilityCode.toString();
+          issueLevelController.text = hidCard.issueLevel.toString();
+          oemController.text = hidCard.oem.toString();
         } catch (_) {}
       } else if (selectedType! == TagType.viking) {
         try {
-          final card = await _awaitTransport(
-            session,
-            communicator.getVikingEmulatorID,
+          VikingCard vikingCard = await mutation.run(
+            (communicator) => communicator.getVikingEmulatorID(),
           );
-          uidController.text = bytesToHexSpace(card.uid);
-        } on _SlotOperationCanceled {
-          rethrow;
+          uidController.text = bytesToHexSpace(vikingCard.uid);
         } catch (_) {}
       } else if (selectedType! == TagType.pac) {
         try {
-          final card = await _awaitTransport(
-            session,
-            communicator.getPacEmulatorID,
+          PacCard pacCard = await mutation.run(
+            (communicator) => communicator.getPacEmulatorID(),
           );
-          uidController.text = bytesToHexSpace(card.uid);
-        } on _SlotOperationCanceled {
-          rethrow;
+          uidController.text = bytesToHexSpace(pacCard.uid);
         } catch (_) {}
       } else if (selectedType! == TagType.ioProx) {
         try {
-          final card = await _awaitTransport(
-            session,
-            communicator.getIoProxEmulatorID,
+          IoProxCard ioProxCard = await mutation.run(
+            (communicator) => communicator.getIoProxEmulatorID(),
           );
-          uidController.text = bytesToHexSpace(card.uid);
-        } on _SlotOperationCanceled {
-          rethrow;
+          uidController.text = bytesToHexSpace(ioProxCard.uid);
         } catch (_) {}
       } else if (selectedType! == TagType.idteck) {
         try {
-          final card = await _awaitTransport(
-            session,
-            communicator.getIdteckEmulatorID,
+          IdteckCard idteckCard = await mutation.run(
+            (communicator) => communicator.getIdteckEmulatorID(),
           );
-          uidController.text = bytesToHexSpace(card.uid);
-        } on _SlotOperationCanceled {
-          rethrow;
+          uidController.text = bytesToHexSpace(idteckCard.uid);
         } catch (_) {}
       } else if (isMifareClassic(selectedType!) ||
           isMifareUltralight(selectedType!)) {
         try {
-          final data = await _awaitTransport(
-            session,
-            communicator.mf1GetAntiCollData,
+          CardData data = await mutation.run(
+            (communicator) => communicator.mf1GetAntiCollData(),
           );
           uidController.text = bytesToHexSpace(data.uid);
           sakController.text = bytesToHex(u8ToBytes(data.sak));
@@ -218,165 +173,171 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           atsController.text = bytesToHexSpace(data.ats);
 
           if (isMifareClassic(selectedType!)) {
-            emulatorSettings = await _awaitTransport(
-              session,
-              communicator.getMf1EmulatorSettings,
+            emulatorSettings = await mutation.run(
+              (communicator) => communicator.getMf1EmulatorSettings(),
             );
+
             if (emulatorSettings!.isDetectionEnabled) {
-              detectionCount = await _awaitTransport(
-                session,
-                communicator.getMf1DetectionCount,
+              detectionCount = await mutation.run(
+                (communicator) => communicator.getMf1DetectionCount(),
               );
             }
+
             try {
-              mf1PrngType = await _awaitTransport(
-                session,
-                communicator.getMf1PrngType,
+              mf1PrngType = await mutation.run(
+                (communicator) => communicator.getMf1PrngType(),
               );
-            } on _SlotOperationCanceled {
-              rethrow;
             } catch (_) {
               mf1PrngType = null;
             }
-          } else {
-            final version = await _awaitTransport(
-              session,
-              communicator.mf0EmulatorGetVersionData,
+          } else if (isMifareUltralight(selectedType!)) {
+            Uint8List version = await mutation.run(
+              (communicator) => communicator.mf0EmulatorGetVersionData(),
             );
             ultralightVersionController.text = bytesToHexSpace(version);
-            final signature = await _awaitTransport(
-              session,
-              communicator.mf0EmulatorGetSignatureData,
+
+            Uint8List signature = await mutation.run(
+              (communicator) => communicator.mf0EmulatorGetSignatureData(),
             );
             ultralightSignatureController.text = bytesToHexSpace(signature);
 
             if (mfUltralightHasCounters(selectedType!)) {
               ultralightCounterControllers.clear();
-              final counterCount = mfUltralightGetCounterCount(selectedType!);
-              for (var i = 0; i < counterCount; i++) {
-                final counterData = await _awaitTransport(
-                  session,
-                  () => communicator.mf0EmulatorGetCounterData(i),
+              int counterCount = mfUltralightGetCounterCount(selectedType!);
+
+              for (int i = 0; i < counterCount; i++) {
+                TextEditingController controller = TextEditingController();
+                var counterData = await mutation.run(
+                  (communicator) => communicator.mf0EmulatorGetCounterData(i),
                 );
-                ultralightCounterControllers.add(
-                  TextEditingController(text: counterData.$1.toString()),
-                );
+                controller.text = counterData.$1.toString();
+                ultralightCounterControllers.add(controller);
               }
             }
 
-            emulatorSettings = await _awaitTransport(
-              session,
-              communicator.mf0NtagGetEmulatorConfig,
+            emulatorSettings = await mutation.run(
+              (communicator) => communicator.mf0NtagGetEmulatorConfig(),
             );
+
             if (emulatorSettings!.isDetectionEnabled) {
-              detectionCount = await _awaitTransport(
-                session,
-                communicator.mf0NtagGetDetectionCount,
+              detectionCount = await mutation.run(
+                (communicator) => communicator.mf0NtagGetDetectionCount(),
               );
             }
           }
-        } on _SlotOperationCanceled {
-          rethrow;
         } catch (_) {}
       }
+    });
 
+    if (mounted) {
       setState(() {
         previousTagType = selectedType!;
       });
-    });
+    }
   }
 
-  Future<bool> save() async {
-    return _runSlotOperation((session) async {
-      final communicator = session.communicator;
-      Future<T> command<T>(Future<T> Function() operation) =>
-          _awaitTransport(session, operation);
+  Future<void> save() async {
+    final status = _requireCurrentStatus();
 
-      await command(() => communicator.activateSlot(widget.slot));
+    await status.mutateSlots((mutation) async {
+      await mutation.run(
+        (communicator) => communicator.activateSlot(widget.slot),
+      );
       if (widget.slotType != selectedType) {
-        await command(
-          () => communicator.setSlotType(widget.slot, selectedType!),
+        await mutation.run(
+          (communicator) =>
+              communicator.setSlotType(widget.slot, selectedType!),
         );
-        final oldIsClassic = isMifareClassic(widget.slotType);
-        final newIsClassic = isMifareClassic(selectedType!);
-        final oldIsUltralight = isMifareUltralight(widget.slotType);
-        final newIsUltralight = isMifareUltralight(selectedType!);
+        bool oldIsClassic = isMifareClassic(widget.slotType);
+        bool newIsClassic = isMifareClassic(selectedType!);
+        bool oldIsUltralight = isMifareUltralight(widget.slotType);
+        bool newIsUltralight = isMifareUltralight(selectedType!);
+
         if (!((oldIsClassic && newIsClassic) ||
             (oldIsUltralight && newIsUltralight))) {
-          await command(
-            () => communicator.setDefaultDataToSlot(widget.slot, selectedType!),
+          await mutation.run(
+            (communicator) =>
+                communicator.setDefaultDataToSlot(widget.slot, selectedType!),
           );
         }
       }
 
       if (isEM410X(selectedType!)) {
-        await command(
-          () => communicator.setEM410XEmulatorID(
+        await mutation.run(
+          (communicator) => communicator.setEM410XEmulatorID(
             hexToBytes(uidController.text),
           ),
         );
       } else if (selectedType! == TagType.hidProx) {
         try {
-          final card = HIDCard(
-            hidType: int.parse(hidTypeController.text),
-            facilityCode: int.parse(facilityCodeController.text),
-            uid: hexToBytes(uidController.text.replaceAll(' ', '')),
-            issueLevel: int.parse(issueLevelController.text),
-            oem: int.parse(oemController.text),
+          int hidType = int.parse(hidTypeController.text);
+          int facilityCode = int.parse(facilityCodeController.text);
+          int issueLevel = int.parse(issueLevelController.text);
+          int oem = int.parse(oemController.text);
+
+          Uint8List uid = hexToBytes(uidController.text.replaceAll(' ', ''));
+
+          HIDCard hidCard = HIDCard(
+            hidType: hidType,
+            facilityCode: facilityCode,
+            uid: uid,
+            issueLevel: issueLevel,
+            oem: oem,
           );
-          await command(
-            () => communicator.setHIDProxEmulatorID(
-              hexToBytes(card.toString()),
+
+          await mutation.run(
+            (communicator) => communicator.setHIDProxEmulatorID(
+              hexToBytes(hidCard.toString()),
             ),
           );
-        } on _SlotOperationCanceled {
-          rethrow;
         } catch (_) {}
       } else if (selectedType! == TagType.pac) {
-        await command(
-          () => communicator.setPacEmulatorID(
+        await mutation.run(
+          (communicator) => communicator.setPacEmulatorID(
             hexToBytes(uidController.text.replaceAll(' ', '')),
           ),
         );
       } else if (selectedType! == TagType.ioProx) {
-        await command(
-          () => communicator.setIoProxEmulatorID(
+        await mutation.run(
+          (communicator) => communicator.setIoProxEmulatorID(
             hexToBytes(uidController.text.replaceAll(' ', '')),
           ),
         );
       } else if (selectedType! == TagType.idteck) {
-        await command(
-          () => communicator.setIdteckEmulatorID(
+        await mutation.run(
+          (communicator) => communicator.setIdteckEmulatorID(
             hexToBytes(uidController.text.replaceAll(' ', '')),
           ),
         );
       } else if (isMifareClassic(selectedType!) ||
           isMifareUltralight(selectedType!)) {
-        final cardData = CardData(
-          uid: hexToBytes(uidController.text),
-          atqa: hexToBytes(atqaController.text),
-          sak: bytesToU8(hexToBytes(sakController.text)),
-          ats: hexToBytes(atsController.text),
+        var cardData = CardData(
+            uid: hexToBytes(uidController.text),
+            atqa: hexToBytes(atqaController.text),
+            sak: bytesToU8(hexToBytes(sakController.text)),
+            ats: hexToBytes(atsController.text));
+        await mutation.run(
+          (communicator) => communicator.setMf1AntiCollision(cardData),
         );
-        await command(() => communicator.setMf1AntiCollision(cardData));
 
         if (isMifareUltralight(selectedType!)) {
-          await command(
-            () => communicator.mf0EmulatorSetVersionData(
+          await mutation.run(
+            (communicator) => communicator.mf0EmulatorSetVersionData(
               hexToBytes(ultralightVersionController.text),
             ),
           );
-          await command(
-            () => communicator.mf0EmulatorSetSignatureData(
+          await mutation.run(
+            (communicator) => communicator.mf0EmulatorSetSignatureData(
               hexToBytes(ultralightSignatureController.text),
             ),
           );
+
           if (mfUltralightHasCounters(selectedType!)) {
-            for (var i = 0; i < ultralightCounterControllers.length; i++) {
-              final counterValue =
+            for (int i = 0; i < ultralightCounterControllers.length; i++) {
+              int counterValue =
                   int.tryParse(ultralightCounterControllers[i].text) ?? 0;
-              await command(
-                () => communicator.mf0EmulatorSetCounterData(
+              await mutation.run(
+                (communicator) => communicator.mf0EmulatorSetCounterData(
                   i,
                   counterValue,
                   true,
@@ -387,24 +348,34 @@ class SlotEditMenuState extends State<SlotEditMenu> {
         }
       }
 
-      await command(
-        () => communicator.setSlotTagName(
+      await mutation.run(
+        (communicator) => communicator.setSlotTagName(
           widget.slot,
           nameController.text,
           widget.frequency,
         ),
       );
-      await command(communicator.saveSlotData);
-      widget.update(nameController.text, widget.frequency, selectedType);
+      await mutation.run((communicator) => communicator.saveSlotData());
     });
+  }
+
+  Future<void> _mutateSetting(
+    Future<void> Function(ChameleonCommunicator communicator) command,
+  ) async {
+    final status = _requireCurrentStatus();
+    await status.mutateSlots(
+      (mutation) => mutation.run(command),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
+    final connectionChanged =
+        _status == null || !identical(_status, appState.connectedDeviceStatus);
 
-    return AlertDialog(
+    final dialog = AlertDialog(
       title: Text(localizations.edit_slot_data),
       content: SingleChildScrollView(
         child: Form(
@@ -439,7 +410,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                 },
               ),
               FutureBuilder(
-                  future: updateInfo(),
+                  future: connectionChanged ? null : updateInfo(),
                   builder: (BuildContext context, AsyncSnapshot snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !(previousTagType == selectedType ||
@@ -448,7 +419,6 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                       return const Column(
                           children: [CircularProgressIndicator()]);
                     } else if (snapshot.hasError) {
-                      appState.connector!.performDisconnect();
                       return ErrorPage(errorMessage: snapshot.error.toString());
                     } else {
                       return Visibility(
@@ -602,6 +572,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.mode_gen1a),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-gen1a'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -611,7 +583,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .setMf1Gen1aMode(
                                                     index == 0,
@@ -622,6 +594,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.mode_gen2),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-gen2'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -631,7 +605,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .setMf1Gen2Mode(
                                                     index == 0,
@@ -643,6 +617,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                             Text(localizations.prng_type),
                                             const SizedBox(height: 8),
                                             ToggleButtonsWrapper(
+                                                key: const Key(
+                                                    'slot-edit-setting-prng'),
                                                 items: Mf1PrngType.values
                                                     .map((type) =>
                                                         getMf1PrngLabel(type,
@@ -653,23 +629,24 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                 onChange: (int index) async {
                                                   Mf1PrngType nextType =
                                                       Mf1PrngType.values[index];
-                                                  if (await _runCommand(
+                                                  setState(() {
+                                                    mf1PrngType = nextType;
+                                                  });
+                                                  await _mutateSetting(
                                                     (communicator) =>
                                                         communicator
                                                             .setMf1PrngType(
                                                       nextType,
                                                     ),
-                                                  )) {
-                                                    setState(() {
-                                                      mf1PrngType = nextType;
-                                                    });
-                                                  }
+                                                  );
                                                 }),
                                           ],
                                           const SizedBox(height: 8),
                                           Text(localizations.use_from_block),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-anticollision'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -679,7 +656,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .setMf1UseFirstBlockColl(
                                                     index == 0,
@@ -691,6 +668,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               .collect_nonces('Mfkey32')),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-detection'),
                                               items: [
                                                 localizations.yes,
                                                 localizations.no
@@ -700,7 +679,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                   ? 0
                                                   : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .setMf1DetectionStatus(
                                                     index == 0,
@@ -768,6 +747,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                           Text(localizations.write_mode),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                              key: const Key(
+                                                  'slot-edit-setting-write-mode'),
                                               items: [
                                                 localizations.normal,
                                                 localizations.decline,
@@ -777,12 +758,15 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               selectedValue: emulatorSettings!
                                                   .writeMode.value,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                final mode = [
+                                                  MifareWriteMode.normal,
+                                                  MifareWriteMode.denied,
+                                                  MifareWriteMode.deceive,
+                                                  MifareWriteMode.shadow,
+                                                ][index];
+                                                await _mutateSetting(
                                                   (communicator) => communicator
-                                                      .setMf1WriteMode(
-                                                    MifareWriteMode
-                                                        .values[index],
-                                                  ),
+                                                      .setMf1WriteMode(mode),
                                                 );
                                               }),
                                         ]),
@@ -809,7 +793,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                       ? 0
                                                       : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .mf0SetMagicMode(
                                                     index == 0,
@@ -830,7 +814,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                   ? 0
                                                   : 1,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .mf0NtagSetDetectionEnable(
                                                     index == 0,
@@ -871,21 +855,14 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                                 TextButton(
                                                                     onPressed:
                                                                         () async {
-                                                                      List<String>?
-                                                                          passwords;
-                                                                      final completed =
-                                                                          await _runSlotOperation((session) async {
-                                                                        passwords =
-                                                                            await _awaitTransport(
-                                                                          session,
-                                                                          () =>
-                                                                              session.communicator.mf0NtagGetDetectionLog(0),
-                                                                        );
-                                                                      });
+                                                                      List<String>
+                                                                          passwords =
+                                                                          await appState
+                                                                              .communicator!
+                                                                              .mf0NtagGetDetectionLog(0);
 
-                                                                      if (!completed ||
-                                                                          !context
-                                                                              .mounted) {
+                                                                      if (!context
+                                                                          .mounted) {
                                                                         return;
                                                                       }
 
@@ -898,7 +875,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                                           TextEditingController
                                                                               passwordController =
                                                                               TextEditingController();
-                                                                          passwordController.text = passwords!
+                                                                          passwordController.text = passwords
                                                                               .join('\n')
                                                                               .toUpperCase();
 
@@ -960,12 +937,16 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                               selectedValue: emulatorSettings!
                                                   .writeMode.value,
                                               onChange: (int index) async {
-                                                await _runCommand(
+                                                final mode = [
+                                                  MifareWriteMode.normal,
+                                                  MifareWriteMode.denied,
+                                                  MifareWriteMode.deceive,
+                                                  MifareWriteMode.shadow,
+                                                ][index];
+                                                await _mutateSetting(
                                                   (communicator) => communicator
                                                       .mf0NtagSetWriteMode(
-                                                    MifareWriteMode
-                                                        .values[index],
-                                                  ),
+                                                          mode),
                                                 );
                                               }),
                                         ]),
@@ -1051,20 +1032,45 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           child: Text(localizations.cancel),
         ),
         TextButton(
-          onPressed: () async {
-            if (!_formKey.currentState!.validate()) {
-              return;
-            }
+          key: const Key('slot-edit-save'),
+          onPressed: connectionChanged
+              ? null
+              : () async {
+                  if (!_formKey.currentState!.validate()) {
+                    return;
+                  }
 
-            if (!await save()) {
-              return;
-            }
+                  await save();
 
-            if (context.mounted) {
-              Navigator.pop(context);
-            }
-          },
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                },
           child: Text(localizations.save),
+        ),
+      ],
+    );
+
+    if (!connectionChanged) {
+      return dialog;
+    }
+
+    return AlertDialog(
+      title: Text(localizations.edit_slot_data),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ErrorPage(
+            errorMessage: const SlotMutationConnectionChanged().toString(),
+          ),
+          Offstage(offstage: true, child: dialog),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('slot-edit-connection-changed-close'),
+          onPressed: () => Navigator.pop(context),
+          child: Text(localizations.cancel),
         ),
       ],
     );

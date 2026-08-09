@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-import 'package:chameleonultragui/gui/component/slot_changer.dart';
 import 'package:chameleonultragui/gui/menu/tools/hf_sniffing.dart';
 import 'package:chameleonultragui/gui/menu/tools/lf_sniffing.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
@@ -57,6 +56,15 @@ void main() {
     );
 
     fixture.communicator.allowMode.complete();
+    await fixture.communicator.readerModeStarted.future.timeout(
+      const Duration(seconds: 2),
+    );
+    expect(
+      (await fixture.appState.rfOperations.tryRunBackground(() async {}))
+          .acquired,
+      isFalse,
+    );
+    fixture.communicator.allowReaderMode.complete();
     await upload;
     expect(
       fixture.communicator.operations,
@@ -69,6 +77,11 @@ void main() {
         'em410x:0102030405',
         'name:0:lf:LF',
         'save',
+        'slot-types',
+        'enabled-slots',
+        'slot-names',
+        'active-slot',
+        'reader-mode',
       ],
     );
     expect(
@@ -232,7 +245,13 @@ void main() {
 
     expect(
       fixture.communicator.operations,
-      ['slot-types', 'enabled-slots', 'slot-names', 'after-metadata'],
+      [
+        'after-metadata',
+        'slot-types',
+        'enabled-slots',
+        'slot-names',
+        'active-slot',
+      ],
     );
   });
 
@@ -242,56 +261,6 @@ void main() {
     addTearDown(fixture.dispose);
 
     await fixture.mount(tester, const SlotManagerPage());
-    await tester.pump();
-    await fixture.communicator.slotTypesStarted.future.timeout(
-      const Duration(seconds: 2),
-    );
-    final replacement = _WorkflowCommunicator(
-      fixture.logger,
-      port: fixture.connector,
-    );
-    fixture.appState.communicator = replacement;
-    fixture.communicator.allowSlotTypes.complete();
-    await tester.pumpAndSettle();
-
-    expect(fixture.communicator.operations, ['slot-types']);
-    expect(replacement.operations, isEmpty);
-  });
-
-  testWidgets('Slot Changer metadata waits for its foreground FIFO turn',
-      (tester) async {
-    final fixture = await _WorkflowFixture.create();
-    addTearDown(fixture.dispose);
-    final gate = Completer<void>();
-    final blocker = fixture.appState.rfOperations.runForeground(
-      () => gate.future,
-    );
-
-    await fixture.mount(tester, const SlotChanger());
-    await tester.pump();
-    await tester.pump();
-    expect(fixture.communicator.operations, isEmpty);
-
-    final afterMetadata = fixture.appState.rfOperations.runForeground(() async {
-      fixture.communicator.operations.add('after-metadata');
-    });
-    gate.complete();
-    await blocker;
-    await afterMetadata;
-    await tester.pumpAndSettle();
-
-    expect(
-      fixture.communicator.operations,
-      ['slot-types', 'active-slot', 'after-metadata'],
-    );
-  });
-
-  testWidgets('Slot Changer metadata stops after communicator replacement',
-      (tester) async {
-    final fixture = await _WorkflowFixture.create(holdSlotTypes: true);
-    addTearDown(fixture.dispose);
-
-    await fixture.mount(tester, const SlotChanger());
     await tester.pump();
     await fixture.communicator.slotTypesStarted.future.timeout(
       const Duration(seconds: 2),

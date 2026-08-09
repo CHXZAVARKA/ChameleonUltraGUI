@@ -1,377 +1,440 @@
-import 'package:chameleonultragui/gui/component/error_page.dart';
+import 'dart:async';
+
+import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
-import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/main.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:chameleonultragui/main.dart';
-import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
-
-// Localizations
-import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 class SlotSettings extends StatefulWidget {
-  final int slot;
-  final dynamic refresh;
+  const SlotSettings({super.key, required this.slot});
 
-  const SlotSettings({super.key, required this.slot, required this.refresh});
+  final int slot;
 
   @override
   SlotSettingsState createState() => SlotSettingsState();
 }
 
 class SlotSettingsState extends State<SlotSettings> {
-  EnabledSlotInfo enabledSlot = EnabledSlotInfo();
-  SlotTypes slotTypes = SlotTypes();
-  SlotNames names = SlotNames();
-  TagFrequency exportFrequency = TagFrequency.hf;
+  ConnectedDeviceStatus? _status;
+  bool _ready = false;
+  Object? _loadError;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final status = context.watch<ChameleonGUIState>().connectedDeviceStatus;
+    if (identical(status, _status)) {
+      return;
+    }
+    _status = status;
+    _ready = false;
+    _loadError = null;
+    if (status != null) {
+      unawaited(_activateSlot(status));
+    }
   }
 
-  Future<void> fetchInfo() async {
-    final appState = context.read<ChameleonGUIState>();
-    final localizations = AppLocalizations.of(context)!;
-    await appState.runSessionBoundForeground((session) async {
-      bool canContinue() => mounted && session.isCurrent;
-      if (!canContinue()) {
-        return;
-      }
-      await session.communicator.activateSlot(widget.slot);
-      if (!canContinue()) {
-        return;
-      }
-
-      var hfName = localizations.empty;
-      try {
-        hfName = (await session.communicator.getSlotTagName(
-          widget.slot,
-          TagFrequency.hf,
-        ))
-            .trim();
-        if (!canContinue()) {
-          return;
-        }
-        if (hfName.isEmpty) {
-          hfName = localizations.empty;
-        }
-      } catch (_) {
-        if (!canContinue()) {
-          return;
-        }
-      }
-
-      var lfName = localizations.empty;
-      try {
-        lfName = (await session.communicator.getSlotTagName(
-          widget.slot,
-          TagFrequency.lf,
-        ))
-            .trim();
-        if (!canContinue()) {
-          return;
-        }
-        if (lfName.isEmpty) {
-          lfName = localizations.empty;
-        }
-      } catch (_) {
-        if (!canContinue()) {
-          return;
-        }
-      }
-
-      final nextEnabledSlots = await session.communicator.getEnabledSlots();
-      if (!canContinue()) {
-        return;
-      }
-      final nextSlotTypes = await session.communicator.getSlotTagTypes();
-      if (!canContinue()) {
-        return;
-      }
-
-      setState(() {
-        names = SlotNames(hf: hfName, lf: lfName);
-        enabledSlot = nextEnabledSlots[widget.slot];
-        slotTypes = nextSlotTypes[widget.slot];
-      });
-    });
-  }
-
-  Future<bool> _runForegroundCommand(
-    Future<void> Function(ConnectedDeviceSession session) command,
-  ) async {
-    final appState = context.read<ChameleonGUIState>();
-    final result = await appState.runSessionBoundForeground((session) async {
-      if (!mounted || !session.isCurrent) {
-        return false;
-      }
-      await command(session);
-      return mounted && session.isCurrent;
-    });
-    return result.executed && result.value == true;
-  }
-
-  Future<bool> _deleteSlot(TagFrequency frequency) {
-    final emptyName = AppLocalizations.of(context)!.empty;
-    return _runForegroundCommand((session) async {
-      await session.communicator.activateSlot(widget.slot);
-      if (!mounted || !session.isCurrent) {
-        return;
-      }
-      await session.communicator.deleteSlotInfo(widget.slot, frequency);
-      if (!mounted || !session.isCurrent) {
-        return;
-      }
-      await session.communicator.setSlotTagName(
-        widget.slot,
-        emptyName,
-        frequency,
+  Future<void> _activateSlot(ConnectedDeviceStatus status) async {
+    try {
+      await status.mutateSlots(
+        (mutation) => mutation.run(
+          (communicator) => communicator.activateSlot(widget.slot),
+        ),
       );
-      if (!mounted || !session.isCurrent) {
-        return;
+      if (mounted && identical(status, _status)) {
+        setState(() => _ready = true);
       }
-      await session.communicator.saveSlotData();
-    });
+    } catch (error) {
+      if (mounted && identical(status, _status)) {
+        setState(() => _loadError = error);
+      }
+    }
   }
 
-  void updateSlot(String name, TagFrequency frequency, TagType type) {
-    if (frequency == TagFrequency.hf) {
-      names.hf = name;
-      slotTypes.hf = type;
-    } else if (frequency == TagFrequency.lf) {
-      names.lf = name;
-      slotTypes.lf = type;
+  Future<void> _deleteFrequency(
+    ConnectedDeviceStatus status,
+    ChameleonGUIState appState,
+    TagFrequency frequency,
+    String name,
+    AppLocalizations localizations,
+  ) async {
+    if (appState.sharedPreferencesProvider.getConfirmDelete()) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => ConfirmDeletionMenu(thingBeingDeleted: name),
+      );
+      if (confirm != true) {
+        return;
+      }
     }
 
-    widget.refresh();
-
-    setState(() {});
+    await status.mutateSlots((mutation) async {
+      await mutation.run(
+        (communicator) => communicator.deleteSlotInfo(widget.slot, frequency),
+      );
+      await mutation.run(
+        (communicator) => communicator.setSlotTagName(
+          widget.slot,
+          localizations.empty,
+          frequency,
+        ),
+      );
+      await mutation.run((communicator) => communicator.saveSlotData());
+    });
   }
+
+  Future<void> _setFrequencyEnabled(
+    ConnectedDeviceStatus status,
+    TagFrequency frequency,
+    bool enabled,
+  ) =>
+      status.mutateSlots(
+        (mutation) => mutation.run(
+          (communicator) => communicator.enableSlot(
+            widget.slot,
+            frequency,
+            enabled,
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<ChameleonGUIState>();
-    var localizations = AppLocalizations.of(context)!;
+    final appState = context.read<ChameleonGUIState>();
+    final localizations = AppLocalizations.of(context)!;
+    final status = _status;
+    if (status == null) {
+      return AlertDialog(
+        title: Text(localizations.slot_settings),
+        content: Text(localizations.unavailable),
+      );
+    }
+    if (!_ready) {
+      return AlertDialog(
+        title: Text(localizations.slot_settings),
+        content: _loadError == null
+            ? const CircularProgressIndicator()
+            : Text(localizations.unavailable),
+      );
+    }
 
-    return FutureBuilder(
-        future: (names.hf.isNotEmpty) ? Future.value(null) : fetchInfo(),
-        builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              names.hf.isEmpty) {
-            return AlertDialog(
-                title: Text(localizations.slot_settings),
-                content: const SingleChildScrollView(
-                    child: Column(children: [CircularProgressIndicator()])));
-          } else if (snapshot.hasError) {
-            appState.connector!.performDisconnect();
-            return AlertDialog(
-                title: Text(localizations.slot_settings),
-                content: ErrorPage(errorMessage: snapshot.error.toString()));
-          } else {
-            return AlertDialog(
-                title: Row(
-                  children: [
-                    Text(localizations.slot_settings),
-                    const Spacer(
-                      flex: 1,
-                    ),
-                    IconButton(
-                      onPressed: (slotTypes.notMatch())
-                          ? () {
-                              showDialog<String>(
-                                  context: context,
-                                  builder: (BuildContext context) =>
-                                      SlotExportMenu(
-                                          slot: widget.slot,
-                                          names: names,
-                                          enabledSlotInfo: enabledSlot,
-                                          slotTypes: slotTypes));
-                            }
-                          : null,
-                      icon: const Icon(Icons.download),
-                    ),
-                  ],
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final slots = status.snapshot.slots;
+        final slot = slots.slots[widget.slot];
+        final hf = _SlotFrequencyView(slots, slot.hf);
+        final lf = _SlotFrequencyView(slots, slot.lf);
+        final canExport = hf.isCurrent &&
+            lf.isCurrent &&
+            (hf.type.value != TagType.unknown ||
+                lf.type.value != TagType.unknown);
+        final needsRefresh =
+            slots.unavailableFacets.isNotEmpty || slots.staleFacets.isNotEmpty;
+
+        return AlertDialog(
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  localizations.slot_settings,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                content: SingleChildScrollView(
-                    child: Column(children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text('${localizations.hf}:'),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () async {
-                              showDialog<String>(
-                                  context: context,
-                                  builder: (BuildContext context) =>
-                                      SlotEditMenu(
-                                          name: names.hf,
-                                          isEnabled: enabledSlot.hf,
-                                          slotType: slotTypes.hf,
-                                          frequency: TagFrequency.hf,
-                                          slot: widget.slot,
-                                          update: updateSlot));
-                            },
-                            icon: const Icon(Icons.edit),
+              ),
+              if (needsRefresh)
+                IconButton(
+                  key: const Key('slot-settings-refresh'),
+                  onPressed: status.refreshSlots,
+                  tooltip: localizations.slot_status,
+                  icon: const Icon(Icons.refresh),
+                ),
+              IconButton(
+                key: const Key('slot-settings-export'),
+                onPressed: canExport
+                    ? () {
+                        showDialog<String>(
+                          context: context,
+                          builder: (context) => SlotExportMenu(
+                            slot: widget.slot,
+                            names: SlotNames(
+                              hf: hf.name.value!,
+                              lf: lf.name.value!,
+                            ),
+                            enabledSlotInfo: EnabledSlotInfo(
+                              hf: hf.enabled.value!,
+                              lf: lf.enabled.value!,
+                            ),
+                            slotTypes: SlotTypes(
+                              hf: hf.type.value!,
+                              lf: lf.type.value!,
+                            ),
                           ),
-                          IconButton(
-                            onPressed: () async {
-                              if (appState.sharedPreferencesProvider
-                                      .getConfirmDelete() ==
-                                  true) {
-                                var confirm = await showDialog(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return ConfirmDeletionMenu(
-                                        thingBeingDeleted: names.hf);
-                                  },
-                                );
-
-                                if (confirm != true) {
-                                  return;
-                                }
-                              }
-                              if (!await _deleteSlot(TagFrequency.hf)) {
-                                return;
-                              }
-
-                              setState(() {
-                                names.hf = localizations.empty;
-                                slotTypes.hf = TagType.unknown;
-                              });
-
-                              widget.refresh();
-                            },
-                            icon: const Icon(Icons.clear_rounded),
-                          ),
-                          Switch(
-                            value: enabledSlot.hf,
-                            onChanged: (bool value) async {
-                              if (!await _runForegroundCommand(
-                                  (session) => session.communicator.enableSlot(
-                                        widget.slot,
-                                        TagFrequency.hf,
-                                        value,
-                                      ))) {
-                                return;
-                              }
-
-                              setState(() {
-                                enabledSlot.hf = value;
-                              });
-
-                              widget.refresh();
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: null,
-                          child: Text(
-                            names.hf,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text('${localizations.lf}:'),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () async {
-                              showDialog<String>(
-                                  context: context,
-                                  builder: (BuildContext context) =>
-                                      SlotEditMenu(
-                                          name: names.lf,
-                                          isEnabled: enabledSlot.lf,
-                                          slotType: slotTypes.lf,
-                                          frequency: TagFrequency.lf,
-                                          slot: widget.slot,
-                                          update: updateSlot));
-                            },
-                            icon: const Icon(Icons.edit),
-                          ),
-                          IconButton(
-                            onPressed: () async {
-                              if (appState.sharedPreferencesProvider
-                                      .getConfirmDelete() ==
-                                  true) {
-                                var confirm = await showDialog(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return ConfirmDeletionMenu(
-                                        thingBeingDeleted: names.lf);
-                                  },
-                                );
-
-                                if (confirm != true) {
-                                  return;
-                                }
-                              }
-                              if (!await _deleteSlot(TagFrequency.lf)) {
-                                return;
-                              }
-
-                              setState(() {
-                                names.lf = localizations.empty;
-                                slotTypes.lf = TagType.unknown;
-                              });
-
-                              widget.refresh();
-                            },
-                            icon: const Icon(Icons.clear_rounded),
-                          ),
-                          Switch(
-                            value: enabledSlot.lf,
-                            onChanged: (bool value) async {
-                              if (!await _runForegroundCommand(
-                                  (session) => session.communicator.enableSlot(
-                                        widget.slot,
-                                        TagFrequency.lf,
-                                        value,
-                                      ))) {
-                                return;
-                              }
-
-                              setState(() {
-                                enabledSlot.lf = value;
-                              });
-
-                              widget.refresh();
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: null,
-                          child: Text(
-                            names.lf,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ])));
-          }
-        });
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.download),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              children: [
+                _frequencySettings(
+                  status: status,
+                  appState: appState,
+                  localizations: localizations,
+                  frequency: TagFrequency.hf,
+                  frequencyStatus: hf,
+                ),
+                const SizedBox(height: 8),
+                _frequencySettings(
+                  status: status,
+                  appState: appState,
+                  localizations: localizations,
+                  frequency: TagFrequency.lf,
+                  frequencyStatus: lf,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
+
+  Widget _frequencySettings({
+    required ConnectedDeviceStatus status,
+    required ChameleonGUIState appState,
+    required AppLocalizations localizations,
+    required TagFrequency frequency,
+    required _SlotFrequencyView frequencyStatus,
+  }) {
+    final frequencyName =
+        frequency == TagFrequency.hf ? localizations.hf : localizations.lf;
+    final keySuffix = frequency.name;
+    final nameLabel = _fieldLabel(
+      frequencyStatus.name,
+      localizations,
+      (name) => name.isEmpty ? localizations.empty : name,
+    );
+    final typeLabel = _fieldLabel(
+      frequencyStatus.type,
+      localizations,
+      (type) => type == TagType.unknown
+          ? localizations.empty
+          : chameleonTagToString(type, localizations),
+    );
+    final canEdit = frequencyStatus.isCurrent;
+    final canDelete =
+        frequencyStatus.type.isCurrent && frequencyStatus.name.isCurrent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('$frequencyName:'),
+            const Spacer(),
+            IconButton(
+              key: Key('slot-settings-edit-$keySuffix'),
+              onPressed: canEdit
+                  ? () {
+                      showDialog<String>(
+                        context: context,
+                        builder: (context) => SlotEditMenu(
+                          status: status,
+                          name: frequencyStatus.name.value!,
+                          isEnabled: frequencyStatus.enabled.value!,
+                          slotType: frequencyStatus.type.value!,
+                          frequency: frequency,
+                          slot: widget.slot,
+                        ),
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.edit),
+            ),
+            IconButton(
+              key: Key('slot-settings-delete-$keySuffix'),
+              onPressed: canDelete
+                  ? () => _deleteFrequency(
+                        status,
+                        appState,
+                        frequency,
+                        _confirmedName(
+                          frequencyStatus.name,
+                          localizations,
+                        ),
+                        localizations,
+                      )
+                  : null,
+              icon: const Icon(Icons.clear_rounded),
+            ),
+            _enabledControl(
+              status: status,
+              localizations: localizations,
+              frequency: frequency,
+              frequencyName: frequencyName,
+              enabled: frequencyStatus.enabled,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: null,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(nameLabel, overflow: TextOverflow.ellipsis),
+                Text(
+                  typeLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _enabledControl({
+    required ConnectedDeviceStatus status,
+    required AppLocalizations localizations,
+    required TagFrequency frequency,
+    required String frequencyName,
+    required _SlotFieldView<bool> enabled,
+  }) {
+    final key = Key('slot-settings-enable-${frequency.name}');
+    if (!enabled.field.isConfirmed) {
+      return Semantics(
+        key: key,
+        container: true,
+        enabled: false,
+        label:
+            '$frequencyName ${localizations.enabled.toLowerCase()}: ${localizations.unavailable}',
+        child: SizedBox(
+          width: 72,
+          height: 48,
+          child: ExcludeSemantics(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.remove, size: 20),
+                Text(
+                  localizations.unavailable,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final value = enabled.field.value!;
+    final state = value ? localizations.enabled : localizations.disabled;
+    final semanticsLabel = enabled.isCurrent
+        ? '$frequencyName ${localizations.enabled.toLowerCase()}: $state'
+        : '$frequencyName ${localizations.enabled.toLowerCase()}: $state (${localizations.unavailable})';
+    final toggle = Switch(
+      key: key,
+      value: value,
+      onChanged: enabled.isCurrent
+          ? (value) => _setFrequencyEnabled(status, frequency, value)
+          : null,
+    );
+    return Semantics(
+      label: semanticsLabel,
+      child: enabled.isCurrent
+          ? toggle
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                toggle,
+                ExcludeSemantics(
+                  child: Text(
+                    localizations.unavailable,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  String _confirmedName(
+    _SlotFieldView<String> name,
+    AppLocalizations localizations,
+  ) {
+    assert(name.isCurrent);
+    return name.field.value!.isEmpty ? localizations.empty : name.field.value!;
+  }
+
+  String _fieldLabel<T>(
+    _SlotFieldView<T> field,
+    AppLocalizations localizations,
+    String Function(T value) label,
+  ) {
+    if (!field.field.isConfirmed) {
+      return localizations.unavailable;
+    }
+    final confirmed = label(field.field.value as T);
+    return field.isCurrent
+        ? confirmed
+        : '$confirmed (${localizations.unavailable})';
+  }
+}
+
+class _SlotFrequencyView {
+  _SlotFrequencyView(SlotsStatus slots, SlotFrequencyStatus frequency)
+      : type = _SlotFieldView(
+          frequency.type,
+          unavailable: slots.unavailableFacets.contains(SlotFacet.types),
+          stale: slots.staleFacets.contains(SlotFacet.types),
+        ),
+        enabled = _SlotFieldView(
+          frequency.enabled,
+          unavailable:
+              slots.unavailableFacets.contains(SlotFacet.enabledStates),
+          stale: slots.staleFacets.contains(SlotFacet.enabledStates),
+        ),
+        name = _SlotFieldView(
+          frequency.name,
+          unavailable: slots.unavailableFacets.contains(SlotFacet.names),
+          stale: slots.staleFacets.contains(SlotFacet.names),
+        );
+
+  final _SlotFieldView<TagType> type;
+  final _SlotFieldView<bool> enabled;
+  final _SlotFieldView<String> name;
+
+  bool get isCurrent => type.isCurrent && enabled.isCurrent && name.isCurrent;
+}
+
+class _SlotFieldView<T> {
+  const _SlotFieldView(
+    this.field, {
+    required this.unavailable,
+    required this.stale,
+  });
+
+  final SlotField<T> field;
+  final bool unavailable;
+  final bool stale;
+
+  T? get value => field.value;
+
+  bool get isCurrent => field.isConfirmed && !unavailable && !stale;
 }

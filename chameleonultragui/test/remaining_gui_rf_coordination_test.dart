@@ -173,7 +173,7 @@ void main() {
     await _pumpLocalized(
       tester,
       appState,
-      SlotSettings(slot: 2, refresh: () {}),
+      const SlotSettings(slot: 2),
     );
     await tester.pump();
 
@@ -185,10 +185,10 @@ void main() {
 
     expect(communicator.commands, [
       'activate:2',
-      'name:2:hf',
-      'name:2:lf',
-      'enabled',
       'types',
+      'enabled',
+      'names',
+      'active',
     ]);
     expect(
       (await appState.rfOperations.tryRunBackground(() async => true)).acquired,
@@ -204,7 +204,7 @@ void main() {
     await _pumpLocalized(
       tester,
       appState,
-      SlotSettings(slot: 3, refresh: () {}),
+      const SlotSettings(slot: 3),
     );
     await communicator.activationStarted.future;
     final replacement = _SlotCommunicator();
@@ -224,7 +224,7 @@ void main() {
     await _pumpLocalized(
       tester,
       appState,
-      SlotSettings(slot: 1, refresh: () {}),
+      const SlotSettings(slot: 1),
     );
     await communicator.lastReadStarted.future;
 
@@ -249,7 +249,7 @@ void main() {
     await _pumpLocalized(
       tester,
       appState,
-      SlotSettings(slot: 0, refresh: () {}),
+      const SlotSettings(slot: 0),
     );
     await tester.pumpAndSettle();
 
@@ -441,6 +441,18 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Future<List<SlotTypes>> getSlotTagTypes() async {
     commands.add('types');
     return List.generate(8, (_) => SlotTypes());
+  }
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() async {
+    commands.add('names');
+    return List.generate(8, (_) => SlotNames());
+  }
+
+  @override
+  Future<int> getActiveSlot() async {
+    commands.add('active');
+    return 0;
   }
 }
 

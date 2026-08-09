@@ -14,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('profile includes only found slots with six-byte keys', () async {
     final appState = ChameleonGUIState(SharedPreferencesProvider());
     final localizations =
@@ -51,8 +53,8 @@ void main() {
       acceptAllSingleKeys: true,
     );
     final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..communicator = communicator
       ..connector = _TestSerial(log: Logger())
+      ..communicator = communicator
       ..log = Logger();
     final localizations =
         await AppLocalizations.delegate.load(const Locale('en'));
@@ -97,8 +99,8 @@ void main() {
       acceptedDictionaryKey: alternativeKey,
     );
     final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..communicator = communicator
       ..connector = _TestSerial(log: Logger())
+      ..communicator = communicator
       ..log = Logger();
     final localizations =
         await AppLocalizations.delegate.load(const Locale('en'));
@@ -157,8 +159,8 @@ void main() {
       acceptedDictionaryKey: dictionaryKey,
     );
     final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..communicator = communicator
       ..connector = _TestSerial(log: Logger())
+      ..communicator = communicator
       ..log = Logger();
     final checkMarks =
         List.filled(80, ChameleonKeyCheckmark.disabled, growable: false);
@@ -211,8 +213,8 @@ void main() {
       forcedSingleStatus: 0x66,
     );
     final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..communicator = communicator
       ..connector = _TestSerial(log: Logger())
+      ..communicator = communicator
       ..log = Logger();
     final checkMarks =
         List.filled(80, ChameleonKeyCheckmark.disabled, growable: false);

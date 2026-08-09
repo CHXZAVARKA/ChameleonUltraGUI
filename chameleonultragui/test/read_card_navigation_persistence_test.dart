@@ -1099,6 +1099,7 @@ class _ReadCardFixture {
     final connector = EmulatorSerial(log: logger)
       ..connected = true
       ..device = ChameleonDevice.ultra
+      ..portName = 'Demo'
       ..connectionType = ConnectionType.usb;
     final communicator = communicatorFactory?.call(logger, connector) ??
         ChameleonCommunicator(logger, port: connector);
@@ -1190,6 +1191,7 @@ class _ReplaceableReadCardFixture {
       final connector = EmulatorSerial(log: logger)
         ..connected = true
         ..device = ChameleonDevice.ultra
+        ..portName = 'Demo'
         ..connectionType = ConnectionType.usb;
       final communicator = factory(logger, connector);
       return ChameleonGUIState(preferences)

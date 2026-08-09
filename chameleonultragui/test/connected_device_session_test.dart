@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('session-bound foreground exposes its captured session and value',
       () async {
     final fixture = _connectedAppState();
