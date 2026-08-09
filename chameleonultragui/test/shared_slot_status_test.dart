@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:ui' show Tristate;
+import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-
-import 'support/firmware_catalog_stub.dart';
+import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -17,6 +16,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+
+import 'support/firmware_catalog_stub.dart';
 
 void main() {
   testWidgets('Home shows eight numbered HF and LF slot columns',
@@ -218,6 +219,48 @@ void main() {
     );
   });
 
+  testWidgets('active slot frame stays teal when the theme primary is red',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(
+      tester,
+      appState,
+      const HomePage(),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.light(primary: Colors.red),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    var frame = tester.widget<AnimatedContainer>(
+      find.byKey(const Key('home-active-slot-1')),
+    );
+    var frameColor = (frame.decoration! as BoxDecoration).border!.top.color;
+    expect(frameColor, Colors.teal.shade700);
+    expect(HSLColor.fromColor(frameColor).hue, inInclusiveRange(160, 190));
+
+    await _pumpPage(
+      tester,
+      appState,
+      const HomePage(),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.dark(primary: Colors.red),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    frame = tester.widget<AnimatedContainer>(
+      find.byKey(const Key('home-active-slot-1')),
+    );
+    frameColor = (frame.decoration! as BoxDecoration).border!.top.color;
+    expect(frameColor, Colors.teal.shade300);
+    expect(HSLColor.fromColor(frameColor).hue, inInclusiveRange(160, 190));
+  });
+
   testWidgets('Home explains unknown enabled state and unavailable slot data',
       (tester) async {
     final semantics = tester.ensureSemantics();
@@ -256,6 +299,61 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('narrow Home slots expose one 48px semantic tap target',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final semantics = tester.ensureSemantics();
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+
+    await _pumpPage(
+      tester,
+      appState,
+      Scaffold(body: Center(child: HomeSlotGrid(status: status))),
+    );
+    await tester.pumpAndSettle();
+
+    for (var slot = 1; slot <= 8; slot++) {
+      final finder = find.byKey(Key('home-slot-$slot'));
+      final size = tester.getSize(finder);
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+      expect(
+        tester
+            .getSemantics(finder)
+            .getSemanticsData()
+            .hasAction(SemanticsAction.tap),
+        isTrue,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp('^Slot $slot\\.')),
+        findsOneWidget,
+      );
+    }
+
+    final confirmationGate = Completer<void>();
+    communicator.nextActiveGate = confirmationGate;
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+
+    for (var slot = 1; slot <= 8; slot++) {
+      final data = tester
+          .getSemantics(find.byKey(Key('home-slot-$slot')))
+          .getSemanticsData();
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
+      expect(data.flagsCollection.isEnabled, Tristate.isFalse);
+    }
+
+    confirmationGate.complete();
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
   testWidgets(
       'Home blocks repeated activation and moves frame only after reread',
       (tester) async {
@@ -286,6 +384,55 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
+  testWidgets('full refresh cannot clear a queued Home activation',
+      (tester) async {
+    final refreshGate = Completer<void>();
+    final activationGate = Completer<void>();
+    final communicator = _SlotCommunicator()
+      ..nextTypesGate = refreshGate
+      ..activationGate = activationGate;
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
+      1,
+    );
+
+    refreshGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(communicator.activations, [1]);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
+      1,
+    );
+    expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
+    expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
+    expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('home-slot-3')));
+    await tester.tap(find.byKey(const Key('home-slot-4')));
+    await tester.pump();
+    expect(communicator.activations, [1]);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
+      1,
+    );
+
+    activationGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(communicator.activations, [1]);
+    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+  });
+
   testWidgets('Home activation failure preserves frame and shows one error',
       (tester) async {
     final communicator = _SlotCommunicator()..failActivation = true;
@@ -303,6 +450,38 @@ void main() {
       find.byKey(const Key('home-slot-activation-error')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('old Home activation cannot report into a replacement session',
+      (tester) async {
+    final oldGate = Completer<void>();
+    final oldCommunicator = _SlotCommunicator()..activationGate = oldGate;
+    final appState = _connectedState(oldCommunicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+    expect(oldCommunicator.activations, [1]);
+
+    final newCommunicator = _SlotCommunicator()..name = 'Replacement';
+    _replaceConnection(appState, newCommunicator);
+    appState.changesMade();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    oldCommunicator.failActivation = true;
+    oldGate.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+
+    await tester.tap(find.byKey(const Key('home-slot-3')));
+    await tester.pumpAndSettle();
+    expect(newCommunicator.activations, [2]);
+    expect(find.byKey(const Key('home-active-slot-3')), findsOneWidget);
   });
 
   testWidgets('Home skips busy active polling without making slots stale',

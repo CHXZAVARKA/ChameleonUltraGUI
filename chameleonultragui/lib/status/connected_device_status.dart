@@ -1102,7 +1102,13 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (result.acquired) {
           final status = result.value;
           if (_canPublish && status != null) {
-            _publish(_snapshot.copyWith(slots: status));
+            _publish(
+              _snapshot.copyWith(
+                slots: status.copyWith(
+                  pendingActivation: _snapshot.slots.pendingActivation,
+                ),
+              ),
+            );
           }
           return;
         }

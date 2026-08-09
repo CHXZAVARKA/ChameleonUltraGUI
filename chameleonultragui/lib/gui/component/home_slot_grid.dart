@@ -48,15 +48,16 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   }
 
   Future<void> _activate(int index) async {
-    if (widget.status.snapshot.slots.pendingActivation != null) {
+    final invokedStatus = widget.status;
+    if (invokedStatus.snapshot.slots.pendingActivation != null) {
       return;
     }
     _focusNode.requestFocus();
     if (_focusedSlot != index) {
       setState(() => _focusedSlot = index);
     }
-    final confirmed = await widget.status.activateSlot(index);
-    if (!confirmed && mounted) {
+    final confirmed = await invokedStatus.activateSlot(index);
+    if (!confirmed && mounted && identical(widget.status, invokedStatus)) {
       final localizations = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -115,28 +116,50 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           (constraints.maxWidth - labelWidth) / 8,
                         );
                         final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
+                        final slotsWidth = slotWidth * 8;
+                        final targetWidth = math.max(48.0, slotWidth);
+                        final gridHeight = markSize * 2 + 44;
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _FrequencyLabels(markSize: markSize),
-                            for (var index = 0; index < 8; index++)
-                              SizedBox(
-                                width: slotWidth,
-                                child: _SlotColumn(
-                                  index: index,
-                                  slot: slots.slots[index],
-                                  markSize: markSize,
-                                  loading: slots.availability ==
-                                      SlotsAvailability.loading,
-                                  active: activeSlot == index &&
-                                      slots.activeSlot.isConfirmed,
-                                  activating: slots.pendingActivation == index,
-                                  focused: _hasFocus && _focusedSlot == index,
-                                  blocked: slots.pendingActivation != null,
-                                  onTap: () => _activate(index),
-                                ),
+                            SizedBox(
+                              width: slotsWidth,
+                              height: gridHeight,
+                              child: Stack(
+                                children: [
+                                  for (var index = 0; index < 8; index++)
+                                    Positioned(
+                                      left: (index * slotWidth +
+                                              (slotWidth - targetWidth) / 2)
+                                          .clamp(
+                                        0.0,
+                                        slotsWidth - targetWidth,
+                                      ),
+                                      top: 0,
+                                      bottom: 0,
+                                      width: targetWidth,
+                                      child: _SlotColumn(
+                                        index: index,
+                                        slot: slots.slots[index],
+                                        markSize: markSize,
+                                        loading: slots.availability ==
+                                            SlotsAvailability.loading,
+                                        active: activeSlot == index &&
+                                            slots.activeSlot.isConfirmed,
+                                        activating:
+                                            slots.pendingActivation == index,
+                                        focused:
+                                            _hasFocus && _focusedSlot == index,
+                                        blocked:
+                                            slots.pendingActivation != null,
+                                        onTap: () => _activate(index),
+                                      ),
+                                    ),
+                                ],
                               ),
+                            ),
                           ],
                         );
                       },
@@ -281,6 +304,9 @@ class _SlotColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final activeFrameColor = theme.brightness == Brightness.dark
+        ? Colors.teal.shade300
+        : Colors.teal.shade700;
     final tooltip = '${localizations.slot} ${index + 1}\n'
         '${_frequencyDescription(localizations, localizations.hf, slot.hf)}\n'
         '${_frequencyDescription(localizations, localizations.lf, slot.lf)}'
@@ -294,10 +320,12 @@ class _SlotColumn extends StatelessWidget {
         selected: active,
         label: tooltip.replaceAll('\n', '. '),
         excludeSemantics: true,
+        onTap: blocked ? null : onTap,
         child: Material(
           type: MaterialType.transparency,
           child: InkWell(
             key: Key('home-slot-${index + 1}'),
+            excludeFromSemantics: true,
             borderRadius: BorderRadius.circular(18),
             onTap: blocked ? null : onTap,
             child: Stack(
@@ -317,7 +345,7 @@ class _SlotColumn extends StatelessWidget {
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: active
-                          ? theme.colorScheme.primary
+                          ? activeFrameColor
                           : focused
                               ? theme.colorScheme.outline
                               : Colors.transparent,
