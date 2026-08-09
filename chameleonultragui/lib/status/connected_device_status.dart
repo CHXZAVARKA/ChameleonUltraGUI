@@ -863,14 +863,21 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
     try {
-      await _rfOperations.runForeground(_firmwareInstaller);
-      if (_canPublish) {
-        _publish(
-          _snapshot.copyWith(
-            firmware: _snapshot.firmware.copyWith(installing: false),
-          ),
-        );
+      final installationStarted = await _rfOperations.runForeground(() async {
+        if (!_canPublish) {
+          return false;
+        }
+        await _firmwareInstaller();
+        return true;
+      });
+      if (!installationStarted || !_canPublish) {
+        return FirmwareInstallOutcome.connectionChanged;
       }
+      _publish(
+        _snapshot.copyWith(
+          firmware: _snapshot.firmware.copyWith(installing: false),
+        ),
+      );
       return FirmwareInstallOutcome.started;
     } catch (error, stackTrace) {
       _session.appState.log?.w(

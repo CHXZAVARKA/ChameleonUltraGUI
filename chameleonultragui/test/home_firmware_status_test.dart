@@ -369,6 +369,68 @@ void main() {
   });
 
   testWidgets(
+      'queued update from a replaced connection never reaches the installer',
+      (tester) async {
+    var installs = 0;
+    final catalog = _FakeFirmwareCatalog([
+      const FirmwareCatalogRelease(
+        latestCommit: 'def5678',
+        updateAvailable: true,
+      ),
+      const FirmwareCatalogRelease(
+        latestCommit: 'new5678',
+        updateAvailable: true,
+      ),
+    ]);
+    final appState = _connectedState(
+      _FirmwareCommunicator.current(),
+      catalog: catalog,
+      installer: (_) async => installs++,
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    final oldStatus = appState.connectedDeviceStatus!;
+
+    final releaseForeground = Completer<void>();
+    final foregroundStarted = Completer<void>();
+    final foreground = appState.rfOperations.runForeground(() async {
+      foregroundStarted.complete();
+      await releaseForeground.future;
+    });
+    await foregroundStarted.future;
+
+    final oldPublications = <DeviceStatusSnapshot>[];
+    oldStatus.addListener(() => oldPublications.add(oldStatus.snapshot));
+    final oldInstall = oldStatus.installFirmware();
+    await tester.pump();
+
+    expect(oldStatus.snapshot.firmware.installing, isTrue);
+    expect(installs, 0);
+
+    _replaceConnection(
+        appState,
+        _FirmwareCommunicator.current(
+          commit: 'new1234',
+        ));
+    appState.changesMade();
+    await tester.pumpAndSettle();
+    final newStatus = appState.connectedDeviceStatus!;
+    final publicationsAtReplacement = oldPublications.length;
+
+    releaseForeground.complete();
+    await foreground;
+
+    expect(await oldInstall, FirmwareInstallOutcome.connectionChanged);
+    expect(installs, 0);
+    expect(oldPublications, hasLength(publicationsAtReplacement));
+    expect(newStatus.snapshot.firmware.state, FirmwareState.updateAvailable);
+
+    expect(await newStatus.installFirmware(), FirmwareInstallOutcome.started);
+    expect(installs, 1);
+  });
+
+  testWidgets(
       'update failure remains inline and Retry starts the flasher again',
       (tester) async {
     var installs = 0;
