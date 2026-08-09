@@ -7,6 +7,56 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 
+enum CardSaveTextFormat {
+  nativeJson,
+  proxmark3Json,
+  flipperNfc,
+  mifareClassicTool,
+  flipperRfid,
+}
+
+bool isCardFolderBundleJson(dynamic decodedJson) =>
+    decodedJson is Map && decodedJson['format'] == 'chameleon-ultra-gui-folder';
+
+CardSaveTextFormat detectCardSaveTextFormat(
+  String source, {
+  dynamic decodedJson,
+}) {
+  if (decodedJson == null) {
+    try {
+      decodedJson = jsonDecode(source);
+    } catch (_) {
+      // Non-JSON formats are identified by their existing text headers.
+    }
+  }
+  if (decodedJson is Map && decodedJson['Created'] == 'proxmark3') {
+    return CardSaveTextFormat.proxmark3Json;
+  }
+  if (source.contains('Filetype: Flipper NFC device')) {
+    return CardSaveTextFormat.flipperNfc;
+  }
+  if (source.contains('+Sector: 0')) {
+    return CardSaveTextFormat.mifareClassicTool;
+  }
+  if (source.contains('Filetype: Flipper RFID key')) {
+    return CardSaveTextFormat.flipperRfid;
+  }
+  return CardSaveTextFormat.nativeJson;
+}
+
+CardSave cardSaveFromText(
+  String source, {
+  CardSaveTextFormat? format,
+}) {
+  return switch (format ?? detectCardSaveTextFormat(source)) {
+    CardSaveTextFormat.nativeJson => CardSave.fromJson(source),
+    CardSaveTextFormat.proxmark3Json => pm3JsonToCardSave(source),
+    CardSaveTextFormat.flipperNfc => flipperNfcToCardSave(source),
+    CardSaveTextFormat.mifareClassicTool => mctToCardSave(source),
+    CardSaveTextFormat.flipperRfid => flipperRfidToCardSave(source),
+  };
+}
+
 CardSave pm3JsonToCardSave(String json) {
   Map<String, dynamic> data = jsonDecode(json);
 

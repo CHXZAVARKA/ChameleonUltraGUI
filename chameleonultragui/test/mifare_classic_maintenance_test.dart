@@ -82,6 +82,7 @@ class _FakePort implements MifareClassicMaintenancePort {
   MifareClassicType type = MifareClassicType.m4k;
   Completer<void>? readerModeStarted;
   Completer<void>? allowReaderMode;
+  void Function()? onEnsureReaderMode;
 
   _FakePort(this.blocks);
 
@@ -94,6 +95,7 @@ class _FakePort implements MifareClassicMaintenancePort {
 
   @override
   Future<void> ensureReaderMode({bool Function()? shouldCancel}) async {
+    onEnsureReaderMode?.call();
     readerModeStarted?.complete();
     await allowReaderMode?.future;
   }
@@ -788,6 +790,30 @@ void main() {
     expect(error.block, 1);
     expect(port.blocks[1], orderedEquals(List.filled(16, 0x3C)));
     expect(port.writes, isEmpty);
+  });
+
+  test('execute publishes revalidation before its first RF command', () async {
+    final current = _blankCard();
+    final port = _FakePort(current);
+    final maintenance = MifareClassicMaintenance(port);
+    final plan = await maintenance.preflight(
+      image: _image(current),
+      profile: _profile(),
+    );
+    MifareClassicMaintenanceProgress? latestProgress;
+    port.onEnsureReaderMode = () {
+      expect(
+        latestProgress?.phase,
+        MifareClassicMaintenancePhase.revalidating,
+      );
+      expect(latestProgress?.completed, 0);
+      expect(latestProgress?.total, plan.dataBlockCount);
+    };
+
+    await maintenance.execute(
+      plan,
+      onProgress: (progress) => latestProgress = progress,
+    );
   });
 
   test('execute revalidates the last source block before the first write',

@@ -24,7 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('standard write offers only complete or confirmed legacy dumps',
+  testWidgets('standard write offers only proven complete saved dumps',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
@@ -140,7 +140,7 @@ void main() {
     await tester.tap(find.text('Select saved card'));
     await tester.pumpAndSettle();
     expect(find.text('Own EV1 dump'), findsOneWidget);
-    expect(find.text('Legacy EV1 dump'), findsOneWidget);
+    expect(find.text('Legacy EV1 dump'), findsNothing);
     expect(find.text('Incomplete EV1 dump'), findsNothing);
     expect(find.text('Malformed EV1 dump'), findsNothing);
     expect(find.text('4K data marked as 1K'), findsNothing);
@@ -151,28 +151,13 @@ void main() {
     expect(find.text('✓ Own EV1 dump · 1152 bytes · MIFARE Classic 1K EV1'),
         findsOneWidget);
 
-    await tester.tap(find.text('Select saved card'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Legacy EV1 dump'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Unverified legacy dump'), findsOneWidget);
-    expect(
-      find.textContaining('predates completeness tracking'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Use saved dump'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('✓ Legacy EV1 dump · 1152 bytes · MIFARE Classic 1K EV1'),
-        findsOneWidget);
     expect(
       preferences
           .getCards()
           .firstWhere((card) => card.id == 'legacy-1k-ev1-card')
           .extraData
           .mifareClassicDumpComplete,
-      isTrue,
+      isNull,
     );
     expect(
       preferences

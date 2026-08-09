@@ -133,12 +133,18 @@ class _StandardMifareClassicWritePanelState
     super.dispose();
   }
 
-  void _selectImage(Uint8List image, String name) {
+  void _selectImage(
+    Uint8List image,
+    String name, {
+    MifareClassicGeometry? geometry,
+  }) {
     final localizations = AppLocalizations.of(context)!;
     setState(() {
       _invalidatePlan();
-      final geometry = MifareClassicGeometry.fromImageSize(image.length);
-      if (geometry == null) {
+      final selectedGeometry =
+          geometry ?? MifareClassicGeometry.fromImageSize(image.length);
+      if (selectedGeometry == null ||
+          selectedGeometry.imageSize != image.length) {
         _image = null;
         _imageName = null;
         _geometry = null;
@@ -149,7 +155,7 @@ class _StandardMifareClassicWritePanelState
       }
       _image = Uint8List.fromList(image);
       _imageName = name;
-      _geometry = geometry;
+      _geometry = selectedGeometry;
       MifareClassicKeyProfile? selectedProfile;
       for (final profile in context
           .read<ChameleonGUIState>()
@@ -162,8 +168,8 @@ class _StandardMifareClassicWritePanelState
       }
       if (selectedProfile != null &&
           !selectedProfile.isCompatible(
-            cardType: geometry.cardType,
-            sectorCount: geometry.sectorCount,
+            cardType: selectedGeometry.cardType,
+            sectorCount: selectedGeometry.sectorCount,
           )) {
         _profileId = null;
       }
@@ -197,7 +203,11 @@ class _StandardMifareClassicWritePanelState
         return;
       }
       final imported = importMifareClassicImage(contents);
-      _selectImage(imported.bytes, picked.name);
+      _selectImage(
+        imported.bytes,
+        picked.name,
+        geometry: imported.geometry,
+      );
     } catch (error, stackTrace) {
       _logMaintenanceError(appState, error, stackTrace);
       if (mounted) {
@@ -211,7 +221,7 @@ class _StandardMifareClassicWritePanelState
     final localizations = AppLocalizations.of(context)!;
     final cards = appState.sharedPreferencesProvider
         .getCards()
-        .where((card) => card.extraData.mifareClassicDumpComplete != false)
+        .where((card) => card.extraData.mifareClassicDumpComplete == true)
         .where((card) => MifareClassicGeometry.fromSavedCardData(card) != null)
         .toList()
       ..sort((first, second) => first.name.compareTo(second.name));
@@ -231,55 +241,17 @@ class _StandardMifareClassicWritePanelState
     );
   }
 
-  Future<void> _selectSavedDump(
+  void _selectSavedDump(
     CardSave selected,
     void Function(BuildContext context, String result) closeSearch,
-    AppLocalizations localizations,
-  ) async {
+    AppLocalizations _,
+  ) {
     if (!mounted) {
       return;
     }
     final geometry = MifareClassicGeometry.fromSavedCardData(selected);
     if (geometry == null) {
       return;
-    }
-
-    if (selected.extraData.mifareClassicDumpComplete == null) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(
-            localizations.mifare_classic_standard_legacy_dump_title,
-          ),
-          content: Text(
-            localizations.mifare_classic_standard_legacy_dump_description,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(localizations.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(
-                localizations.mifare_classic_standard_use_legacy_dump,
-              ),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) {
-        return;
-      }
-
-      final appState = context.read<ChameleonGUIState>();
-      final cards = appState.sharedPreferencesProvider.getCards();
-      final index = cards.indexWhere((card) => card.id == selected.id);
-      if (index >= 0) {
-        cards[index].extraData.mifareClassicDumpComplete = true;
-        appState.sharedPreferencesProvider.setCards(cards);
-        appState.changesMade();
-      }
     }
 
     _selectImage(
@@ -289,6 +261,7 @@ class _StandardMifareClassicWritePanelState
         isEV1: geometry.isEV1,
       ),
       selected.name,
+      geometry: geometry,
     );
     closeSearch(context, selected.name);
   }
