@@ -27,7 +27,7 @@ class SlotSettingsState extends State<SlotSettings> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final status = context.read<ChameleonGUIState>().connectedDeviceStatus;
+    final status = context.watch<ChameleonGUIState>().connectedDeviceStatus;
     if (identical(status, _status)) {
       return;
     }

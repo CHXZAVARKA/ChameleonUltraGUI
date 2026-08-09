@@ -430,8 +430,11 @@ class ModeStatus {
 
   const ModeStatus.loading() : this._(availability: ModeAvailability.loading);
 
-  const ModeStatus.unavailable()
-      : this._(availability: ModeAvailability.unavailable);
+  const ModeStatus.unavailable({ConnectedDeviceMode? confirmedMode})
+      : this._(
+          availability: ModeAvailability.unavailable,
+          confirmedMode: confirmedMode,
+        );
 
   const ModeStatus.available(ConnectedDeviceMode mode)
       : this._(
@@ -1188,7 +1191,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         error: error,
         stackTrace: stackTrace,
       );
-      return null;
+      if (!_canPublish) {
+        return null;
+      }
+      return ModeStatus.unavailable(
+        confirmedMode: _snapshot.mode.confirmedMode,
+      );
     }
   }
 

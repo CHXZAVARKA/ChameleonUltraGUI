@@ -1268,6 +1268,39 @@ void main() {
     expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
   });
 
+  testWidgets(
+      'failed mode reconciliation preserves confirmation as unavailable and later repairs',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshMode();
+    await status.refreshSlots();
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+
+    communicator.failModeRead = true;
+    final result = await status.mutateSlots(
+      (mutation) async {
+        await mutation.run(
+          (communicator) => communicator.setReaderDeviceMode(true),
+        );
+        return 7;
+      },
+      reconcileMode: true,
+    );
+
+    expect(result, 7);
+    expect(status.snapshot.slots.availability, SlotsAvailability.available);
+    expect(status.snapshot.mode.availability, ModeAvailability.unavailable);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    expect(status.snapshot.mode.pendingMode, isNull);
+
+    communicator.failModeRead = false;
+    await status.refreshMode();
+    expect(status.snapshot.mode.availability, ModeAvailability.available);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+  });
+
   testWidgets('queued slot mutation never starts after connection replacement',
       (tester) async {
     final oldCommunicator = _SlotCommunicator();
@@ -1414,6 +1447,13 @@ void main() {
     expect(communicator.slotTypeReads, initialTypeReads + 1);
 
     communicator.commandEvents.clear();
+    await tester.tap(find.byKey(const Key('slot-settings-enable-hf')));
+    await tester.pumpAndSettle();
+    expect(communicator.commandEvents, contains('enable:0:hf:true'));
+    expect(status.snapshot.slots.slots.first.hf.enabled.value, isTrue);
+    expect(communicator.slotTypeReads, initialTypeReads + 2);
+
+    communicator.commandEvents.clear();
     await tester.tap(find.byKey(const Key('slot-settings-delete-lf')));
     await tester.pumpAndSettle();
     expect(
@@ -1426,6 +1466,134 @@ void main() {
     );
     expect(status.snapshot.slots.slots.first.lf.type.value, TagType.unknown);
     expect(status.snapshot.slots.slots.first.lf.name.value, 'Empty');
+  });
+
+  testWidgets(
+      'open Slot Settings adopts replacement status and mutates its communicator',
+      (tester) async {
+    final oldCommunicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) =>
+            index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+      );
+    final appState = _connectedState(oldCommunicator);
+    final oldStatus = appState.connectedDeviceStatus!;
+    await oldStatus.refreshSlots();
+    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Old HF'), findsOneWidget);
+
+    oldCommunicator.commandEvents.clear();
+    final newCommunicator = _SlotCommunicator()
+      ..slotTypes = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+            : SlotTypes(),
+      )
+      ..enabledSlots = List.generate(
+        8,
+        (index) => EnabledSlotInfo(hf: false, lf: index == 0),
+      )
+      ..slotNames = List.generate(
+        8,
+        (index) => index == 0
+            ? SlotNames(hf: 'Replacement HF', lf: 'Replacement LF')
+            : SlotNames(),
+      );
+    _replaceConnection(appState, newCommunicator);
+    final newStatus = appState.connectedDeviceStatus!;
+    appState.changesMade();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Replacement HF'), findsOneWidget);
+    expect(find.text('Old HF'), findsNothing);
+    expect(oldCommunicator.commandEvents, isEmpty);
+    expect(newCommunicator.activations, [0]);
+
+    newCommunicator.commandEvents.clear();
+    await tester.tap(find.byKey(const Key('slot-settings-enable-hf')));
+    await tester.pumpAndSettle();
+    expect(newCommunicator.commandEvents, contains('enable:0:hf:true'));
+    expect(newStatus.snapshot.slots.slots.first.hf.enabled.value, isTrue);
+    expect(oldCommunicator.commandEvents, isEmpty);
+    expect(find.text('Replacement HF'), findsOneWidget);
+  });
+
+  testWidgets('Slot Edit keeps ordinary read failures local to the dialog',
+      (tester) async {
+    final communicator = _SlotCommunicator()..failActivation = true;
+    final appState = _connectedState(communicator);
+    final serial = appState.connector! as _TestSerial;
+
+    await _pumpPage(
+      tester,
+      appState,
+      const SlotEditMenu(
+        name: 'Garage',
+        isEnabled: true,
+        slotType: TagType.em410X,
+        frequency: TagFrequency.lf,
+        slot: 0,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(serial.disconnects, 0);
+    expect(serial.connected, isTrue);
+  });
+
+  testWidgets(
+      'stale Slot Edit failure never disconnects a replacement connector',
+      (tester) async {
+    final activationGate = Completer<void>();
+    final oldCommunicator = _SlotCommunicator()
+      ..activationGate = activationGate;
+    final appState = _connectedState(oldCommunicator);
+
+    await _pumpPage(
+      tester,
+      appState,
+      const SlotEditMenu(
+        name: 'Garage',
+        isEnabled: true,
+        slotType: TagType.em410X,
+        frequency: TagFrequency.lf,
+        slot: 0,
+      ),
+    );
+    await tester.pump();
+    expect(oldCommunicator.commandEvents, contains('activate:0'));
+
+    final replacementSerial = _TestSerial(log: Logger())
+      ..connected = true
+      ..device = ChameleonDevice.ultra
+      ..connectionType = ConnectionType.usb
+      ..portName = 'replacement-port'
+      ..activeDevicePort = 'replacement';
+    appState
+      ..connector = replacementSerial
+      ..communicator = _SlotCommunicator();
+    activationGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(replacementSerial.disconnects, 0);
+    expect(replacementSerial.connected, isTrue);
   });
 
   testWidgets('Slot Edit save reconciles renamed slot through shared status',
@@ -1543,6 +1711,7 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Completer<void>? nextActiveGate;
   Completer<void>? activationGate;
   bool failActivation = false;
+  bool failModeRead = false;
   bool readerMode = false;
   Completer<void>? modeWriteGate;
   Completer<void>? modeWriteStarted;
@@ -1733,6 +1902,9 @@ class _SlotCommunicator extends ChameleonCommunicator {
   @override
   Future<bool> isReaderDeviceMode() async {
     modeReads++;
+    if (failModeRead) {
+      throw StateError('mode unavailable');
+    }
     return readerMode;
   }
 

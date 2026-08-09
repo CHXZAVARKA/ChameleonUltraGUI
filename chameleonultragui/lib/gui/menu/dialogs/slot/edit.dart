@@ -402,7 +402,6 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                       return const Column(
                           children: [CircularProgressIndicator()]);
                     } else if (snapshot.hasError) {
-                      appState.connector!.performDisconnect();
                       return ErrorPage(errorMessage: snapshot.error.toString());
                     } else {
                       return Visibility(
