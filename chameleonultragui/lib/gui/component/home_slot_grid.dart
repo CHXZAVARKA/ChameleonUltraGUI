@@ -153,9 +153,6 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       builder: (context, _) {
         final slots = widget.status.snapshot.slots;
         final activeSlot = slots.activeSlot.value;
-        final showRefresh = slots.availability == SlotsAvailability.stale ||
-            slots.availability == SlotsAvailability.unavailable ||
-            slots.availability == SlotsAvailability.partial;
         return ConstrainedBox(
           key: const Key('home-slot-grid'),
           constraints: const BoxConstraints(maxWidth: 680),
@@ -327,13 +324,6 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                   ),
                 ),
               ),
-              if (showRefresh)
-                IconButton(
-                  key: const Key('home-slot-refresh'),
-                  tooltip: localizations.refresh_slot_status,
-                  onPressed: widget.status.refreshSlots,
-                  icon: const Icon(Icons.refresh),
-                ),
             ],
           ),
         );
@@ -474,9 +464,7 @@ class _SlotColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final activeFrameColor = theme.brightness == Brightness.dark
-        ? Colors.teal.shade300
-        : Colors.teal.shade700;
+    const activeFrameColor = Colors.white;
     final tooltip = '${localizations.slot} ${index + 1}\n'
         '${_frequencyDescription(localizations, localizations.hf, slot.hf)}\n'
         '${_frequencyDescription(localizations, localizations.lf, slot.lf)}'
@@ -525,33 +513,49 @@ class _SlotColumn extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
-                        height: markRowHeight,
-                        child: Center(
-                          child: _SlotStatusMark(
-                            key: Key(
-                              'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                      if (activating)
+                        SizedBox(
+                          key: Key('home-slot-${index + 1}-progress'),
+                          height: markRowHeight * 2 + 8,
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: math.max(24, markSize),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: theme.colorScheme.primary,
+                              ),
                             ),
-                            frequency: TagFrequency.hf,
-                            state: _markState(slot.hf),
-                            size: markSize,
+                          ),
+                        )
+                      else ...[
+                        SizedBox(
+                          height: markRowHeight,
+                          child: Center(
+                            child: _SlotStatusMark(
+                              key: Key(
+                                'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                              ),
+                              frequency: TagFrequency.hf,
+                              state: _markState(slot.hf),
+                              size: markSize,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: markRowHeight,
-                        child: Center(
-                          child: _SlotStatusMark(
-                            key: Key(
-                              'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: markRowHeight,
+                          child: Center(
+                            child: _SlotStatusMark(
+                              key: Key(
+                                'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                              ),
+                              frequency: TagFrequency.lf,
+                              state: _markState(slot.lf),
+                              size: markSize,
                             ),
-                            frequency: TagFrequency.lf,
-                            state: _markState(slot.lf),
-                            size: markSize,
                           ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 4),
                       Text(
                         '${index + 1}',
@@ -562,19 +566,6 @@ class _SlotColumn extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (activating)
-                  Positioned(
-                    key: Key('home-slot-${index + 1}-progress'),
-                    right: 0,
-                    top: 0,
-                    child: SizedBox.square(
-                      dimension: 13,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.8,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),

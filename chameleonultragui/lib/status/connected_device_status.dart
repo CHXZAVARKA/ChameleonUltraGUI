@@ -1671,13 +1671,24 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _batteryTimer?.cancel();
     _batteryTimer = Timer.periodic(
       batteryPollInterval,
-      (_) => unawaited(refreshBattery()),
+      (_) => _pollBatteryAndUncertainStatus(),
     );
     _activeSlotTimer?.cancel();
     _activeSlotTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => unawaited(_scheduleActiveSlotRefresh()),
     );
+  }
+
+  void _pollBatteryAndUncertainStatus() {
+    unawaited(refreshBattery());
+    if (_snapshot.mode.availability != ModeAvailability.available) {
+      unawaited(refreshMode());
+    }
+    if (_snapshot.slots.availability != SlotsAvailability.available &&
+        _snapshot.slots.pendingActivation == null) {
+      unawaited(refreshSlots());
+    }
   }
 
   void _leaveHome() {

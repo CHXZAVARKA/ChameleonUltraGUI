@@ -520,7 +520,7 @@ void main() {
     );
   });
 
-  testWidgets('active slot frame stays teal when the theme primary is red',
+  testWidgets('active slot frame stays white in light and dark themes',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -540,8 +540,7 @@ void main() {
       find.byKey(const Key('home-active-slot-1')),
     );
     var frameColor = (frame.decoration! as BoxDecoration).border!.top.color;
-    expect(frameColor, Colors.teal.shade700);
-    expect(HSLColor.fromColor(frameColor).hue, inInclusiveRange(160, 190));
+    expect(frameColor, Colors.white);
 
     await _pumpPage(
       tester,
@@ -558,8 +557,7 @@ void main() {
       find.byKey(const Key('home-active-slot-1')),
     );
     frameColor = (frame.decoration! as BoxDecoration).border!.top.color;
-    expect(frameColor, Colors.teal.shade300);
-    expect(HSLColor.fromColor(frameColor).hue, inInclusiveRange(160, 190));
+    expect(frameColor, Colors.white);
   });
 
   testWidgets('Home explains unknown enabled state and unavailable slot data',
@@ -592,11 +590,7 @@ void main() {
       tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
       contains('HF: Unavailable · Unavailable · Unavailable'),
     );
-    expect(find.byKey(const Key('home-slot-refresh')), findsOneWidget);
-    expect(
-      tester.getCenter(find.byKey(const Key('home-slot-refresh'))).dx,
-      greaterThan(tester.getCenter(find.byKey(const Key('home-slot-8'))).dx),
-    );
+    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
     semantics.dispose();
   });
 
@@ -735,6 +729,19 @@ void main() {
 
     expect(communicator.commandEvents, ['activate:1', 'read-active']);
     expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
+    expect(
+      find.byKey(const Key('home-slot-2-hf-mark-empty')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('home-slot-2-lf-mark-empty')),
+      findsNothing,
+    );
+    final progressRect =
+        tester.getRect(find.byKey(const Key('home-slot-2-progress')));
+    final slotRect = tester.getRect(find.byKey(const Key('home-slot-2')));
+    expect(progressRect.width, greaterThanOrEqualTo(24));
+    expect(progressRect.center.dx, closeTo(slotRect.center.dx, 1));
     expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
     expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
     await tester.tap(find.byKey(const Key('home-slot-3')));
@@ -894,7 +901,7 @@ void main() {
     expect(slots.staleFacets, {SlotFacet.activeSlot});
     expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
     expect(find.byType(SnackBar), findsNothing);
-    expect(find.byKey(const Key('home-slot-refresh')), findsOneWidget);
+    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
 
     communicator
       ..failActive = false
@@ -906,6 +913,48 @@ void main() {
     expect(slots.activeSlot.value, 1);
     expect(slots.staleFacets, isEmpty);
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+  });
+
+  testWidgets('Home automatically repairs stale slot facts without a button',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+
+    communicator
+      ..failTypes = true
+      ..failEnabled = true
+      ..failNames = true;
+    await status.refreshSlots();
+    await tester.pump();
+
+    expect(status.snapshot.slots.availability, SlotsAvailability.stale);
+    expect(
+      status.snapshot.slots.staleFacets,
+      containsAll({SlotFacet.types, SlotFacet.enabledStates, SlotFacet.names}),
+    );
+    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
+
+    communicator
+      ..failTypes = false
+      ..failEnabled = false
+      ..failNames = false;
+    final typeReads = communicator.slotTypeReads;
+    final enabledReads = communicator.enabledSlotReads;
+    final nameReads = communicator.slotNameReads;
+
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
+    await tester.pump();
+
+    expect(status.snapshot.slots.availability, SlotsAvailability.available);
+    expect(status.snapshot.slots.staleFacets, isEmpty);
+    expect(communicator.slotTypeReads, typeReads + 1);
+    expect(communicator.enabledSlotReads, enabledReads + 1);
+    expect(communicator.slotNameReads, nameReads + 1);
+    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
   });
 
   testWidgets('Home pauses polling and refreshes active slot on resume',

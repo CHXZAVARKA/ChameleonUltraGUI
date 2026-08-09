@@ -675,24 +675,7 @@ class _DeviceModeControl extends StatelessWidget {
               ),
             ),
           );
-          if (mode.availability != ModeAvailability.unavailable) {
-            return control;
-          }
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              control,
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  key: const Key('home-mode-retry'),
-                  tooltip: localizations.unavailable,
-                  onPressed: status.refreshMode,
-                  icon: const Icon(Icons.refresh),
-                ),
-              ),
-            ],
-          );
+          return control;
         },
       ),
     );

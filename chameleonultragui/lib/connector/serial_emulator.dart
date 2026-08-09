@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:flutter/services.dart';
 
@@ -9,15 +12,48 @@ import 'package:flutter/services.dart';
 // For now main purpose is Apple reviews, maybe should be used for tests in future
 
 class EmulatorSerial extends AbstractSerial {
-  EmulatorSerial({required super.log});
+  EmulatorSerial({required super.log, math.Random? random})
+      : _random = random ?? math.Random() {
+    _resetDemoState();
+  }
 
-  // The enabled-slots protocol carries bools only. Keep one configured Demo
-  // mark explicitly uncertain so the demo can represent that real UI state.
-  @override
-  SlotEnabledStateCertainty get slotEnabledStateCertainty =>
-      const SlotEnabledStateCertainty(
-        unconfirmedHighFrequencySlotMask: 1 << 6,
-      );
+  final math.Random _random;
+  late List<_DemoSlot> _slots;
+  late int _activeSlot;
+  late bool _readerMode;
+  late int _batteryPercent;
+  late int _batteryVoltage;
+
+  void _resetDemoState() {
+    final templates = <_DemoSlotTemplate>[
+      const _DemoSlotTemplate(hf: true, hfEnabled: true),
+      const _DemoSlotTemplate(lf: true, lfEnabled: true),
+      const _DemoSlotTemplate(
+        hf: true,
+        lf: true,
+        hfEnabled: true,
+        lfEnabled: false,
+      ),
+      const _DemoSlotTemplate(hf: true, hfEnabled: false),
+      const _DemoSlotTemplate(lf: true, lfEnabled: false),
+      const _DemoSlotTemplate(),
+      const _DemoSlotTemplate(
+        hf: true,
+        lf: true,
+        hfEnabled: true,
+        lfEnabled: true,
+      ),
+      const _DemoSlotTemplate(hf: true, hfEnabled: true),
+    ]..shuffle(_random);
+    _slots = List.generate(
+      templates.length,
+      (index) => _DemoSlot.fromTemplate(templates[index], _random, index),
+    );
+    _activeSlot = _random.nextInt(_slots.length);
+    _readerMode = _random.nextBool();
+    _batteryPercent = 35 + _random.nextInt(61);
+    _batteryVoltage = 3700 + (_batteryPercent * 5);
+  }
 
   @override
   Future<bool> performConnect() async {
@@ -51,7 +87,10 @@ class EmulatorSerial extends AbstractSerial {
 
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async {
-    if (emulatedCommands.containsKey(bytesToHex(command))) {
+    final dynamicResponse = _handleStatefulCommand(command);
+    if (dynamicResponse != null) {
+      await messageCallback(dynamicResponse);
+    } else if (emulatedCommands.containsKey(bytesToHex(command))) {
       await messageCallback(hexToBytes(emulatedCommands[bytesToHex(command)]!));
     } else {
       log.e('Missing response for ${bytesToHex(command)}');
@@ -62,6 +101,7 @@ class EmulatorSerial extends AbstractSerial {
 
   @override
   Future<bool> connectSpecificDevice(dynamic devicePort) async {
+    _resetDemoState();
     portName = "Demo";
     connected = true;
     device = ChameleonDevice.ultra;
@@ -74,6 +114,217 @@ class EmulatorSerial extends AbstractSerial {
   bool isManualConnectionSupported() {
     return false;
   }
+
+  Uint8List? _handleStatefulCommand(Uint8List frame) {
+    if (frame.length < 10) {
+      return null;
+    }
+    final commandValue = (frame[2] << 8) | frame[3];
+    final dataLength = (frame[6] << 8) | frame[7];
+    final data = frame.sublist(9, 9 + dataLength);
+    final command = ChameleonCommand.values
+        .where((candidate) => candidate.value == commandValue)
+        .firstOrNull;
+    if (command == null) {
+      return null;
+    }
+
+    Uint8List? responseData;
+    var handled = true;
+    switch (command) {
+      case ChameleonCommand.getBatteryCharge:
+        responseData = Uint8List.fromList([
+          ...u16ToBytes(_batteryVoltage),
+          _batteryPercent,
+        ]);
+      case ChameleonCommand.getDeviceMode:
+        responseData = Uint8List.fromList([_readerMode ? 1 : 0]);
+      case ChameleonCommand.changeDeviceMode:
+        _readerMode = data.first == 1;
+        responseData = Uint8List(0);
+      case ChameleonCommand.getActiveSlot:
+        responseData = Uint8List.fromList([_activeSlot]);
+      case ChameleonCommand.setActiveSlot:
+        _activeSlot = data.first.clamp(0, 7);
+        responseData = Uint8List(0);
+      case ChameleonCommand.getSlotInfo:
+        responseData = Uint8List.fromList([
+          for (final slot in _slots) ...[
+            ...u16ToBytes(slot.hfType.value),
+            ...u16ToBytes(slot.lfType.value),
+          ],
+        ]);
+      case ChameleonCommand.getEnabledSlots:
+        responseData = Uint8List.fromList([
+          for (final slot in _slots) ...[
+            slot.hfEnabled ? 1 : 0,
+            slot.lfEnabled ? 1 : 0,
+          ],
+        ]);
+      case ChameleonCommand.getAllSlotNicks:
+        responseData = Uint8List.fromList([
+          for (final slot in _slots) ...[
+            utf8.encode(slot.hfName).length,
+            ...utf8.encode(slot.hfName),
+            utf8.encode(slot.lfName).length,
+            ...utf8.encode(slot.lfName),
+          ],
+        ]);
+      case ChameleonCommand.getSlotTagNick:
+        final slot = _slots[data[0]];
+        responseData = Uint8List.fromList(
+          utf8.encode(
+              data[1] == TagFrequency.hf.value ? slot.hfName : slot.lfName),
+        );
+      case ChameleonCommand.setSlotTagNick:
+        final slot = _slots[data[0]];
+        final name = utf8.decode(data.sublist(2), allowMalformed: true);
+        if (data[1] == TagFrequency.hf.value) {
+          slot.hfName = name;
+        } else {
+          slot.lfName = name;
+        }
+        responseData = Uint8List(0);
+      case ChameleonCommand.setSlotEnable:
+        final slot = _slots[data[0]];
+        if (data[1] == TagFrequency.hf.value) {
+          slot.hfEnabled = data[2] == 1;
+        } else {
+          slot.lfEnabled = data[2] == 1;
+        }
+        responseData = Uint8List(0);
+      case ChameleonCommand.setSlotTagType:
+        final slot = _slots[data[0]];
+        final type = numberToChameleonTag(bytesToU16(data.sublist(1, 3)));
+        if (chameleonTagToFrequency(type) == TagFrequency.hf) {
+          slot.hfType = type;
+        } else {
+          slot.lfType = type;
+        }
+        responseData = Uint8List(0);
+      case ChameleonCommand.deleteSlotInfo:
+        final slot = _slots[data[0]];
+        if (data[1] == TagFrequency.hf.value) {
+          slot
+            ..hfType = TagType.unknown
+            ..hfEnabled = false
+            ..hfName = '';
+        } else {
+          slot
+            ..lfType = TagType.unknown
+            ..lfEnabled = false
+            ..lfName = '';
+        }
+        responseData = Uint8List(0);
+      case ChameleonCommand.setSlotDataDefault:
+      case ChameleonCommand.saveSlotNicks:
+        responseData = Uint8List(0);
+      default:
+        handled = false;
+    }
+    return handled ? _makeResponseFrame(commandValue, responseData!) : null;
+  }
+
+  Uint8List _makeResponseFrame(int command, Uint8List data) {
+    final frame = <int>[
+      0x11,
+      0xef,
+      ...u16ToBytes(command),
+      ...u16ToBytes(0x68),
+      ...u16ToBytes(data.length),
+    ];
+    frame.add(_lrc(frame.sublist(2, 8)));
+    frame.addAll(data);
+    frame.add(_lrc(frame));
+    return Uint8List.fromList(frame);
+  }
+
+  int _lrc(List<int> bytes) {
+    var sum = 0;
+    for (final byte in bytes) {
+      sum = (sum + byte) & 0xff;
+    }
+    return (0x100 - sum) & 0xff;
+  }
+}
+
+class _DemoSlotTemplate {
+  const _DemoSlotTemplate({
+    this.hf = false,
+    this.lf = false,
+    this.hfEnabled = false,
+    this.lfEnabled = false,
+  });
+
+  final bool hf;
+  final bool lf;
+  final bool hfEnabled;
+  final bool lfEnabled;
+}
+
+class _DemoSlot {
+  _DemoSlot({
+    required this.hfType,
+    required this.lfType,
+    required this.hfEnabled,
+    required this.lfEnabled,
+    required this.hfName,
+    required this.lfName,
+  });
+
+  factory _DemoSlot.fromTemplate(
+    _DemoSlotTemplate template,
+    math.Random random,
+    int index,
+  ) {
+    const hfTypes = [
+      TagType.mifareMini,
+      TagType.mifare1K,
+      TagType.mifare4K,
+      TagType.ntag213,
+      TagType.ntag215,
+      TagType.ultralight,
+    ];
+    const lfTypes = [
+      TagType.em410X,
+      TagType.hidProx,
+      TagType.viking,
+      TagType.pac,
+      TagType.ioProx,
+      TagType.idteck,
+    ];
+    const names = [
+      'Office',
+      'Garage',
+      'Transit',
+      'Studio',
+      'Lab',
+      'Archive',
+      'Guest',
+      'Alarm',
+    ];
+    String nameFor(String frequency) =>
+        '${names[random.nextInt(names.length)]} $frequency${index + 1}';
+    return _DemoSlot(
+      hfType: template.hf
+          ? hfTypes[random.nextInt(hfTypes.length)]
+          : TagType.unknown,
+      lfType: template.lf
+          ? lfTypes[random.nextInt(lfTypes.length)]
+          : TagType.unknown,
+      hfEnabled: template.hfEnabled,
+      lfEnabled: template.lfEnabled,
+      hfName: template.hf ? nameFor('HF') : '',
+      lfName: template.lf ? nameFor('LF') : '',
+    );
+  }
+
+  TagType hfType;
+  TagType lfType;
+  bool hfEnabled;
+  bool lfEnabled;
+  String hfName;
+  String lfName;
 }
 
 // write: read

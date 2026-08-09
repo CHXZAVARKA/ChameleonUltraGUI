@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
@@ -37,7 +38,7 @@ void main() {
         6,
         highFrequency: true,
       ),
-      isFalse,
+      isTrue,
     );
     expect(
       demo.slotEnabledStateCertainty.isConfirmed(
@@ -51,6 +52,28 @@ void main() {
         File('lib/status/connected_device_status.dart').readAsStringSync();
     expect(statusSource, isNot(contains('connector/serial_emulator.dart')));
     expect(statusSource, isNot(contains('EmulatorSerial')));
+  });
+
+  test('Demo device state is stable per session and randomized between them',
+      () async {
+    final firstSerial = EmulatorSerial(log: Logger(), random: Random(11));
+    await firstSerial.connectSpecificDevice('Demo');
+    final firstCommunicator = ChameleonCommunicator(
+      Logger(),
+      port: firstSerial,
+    );
+    final first = await _readDemoState(firstCommunicator);
+    expect(await _readDemoState(firstCommunicator), first);
+
+    final secondSerial = EmulatorSerial(log: Logger(), random: Random(29));
+    await secondSerial.connectSpecificDevice('Demo');
+    final secondCommunicator = ChameleonCommunicator(
+      Logger(),
+      port: secondSerial,
+    );
+    final second = await _readDemoState(secondCommunicator);
+
+    expect(second, isNot(first));
   });
 
   testWidgets('Home uses the approved bottom-anchored dashboard hierarchy',
@@ -351,13 +374,13 @@ void main() {
     }
   });
 
-  testWidgets('Demo command seam exposes eight representative ordered slots',
+  testWidgets('Demo Home exposes complete representative states without errors',
       (tester) async {
     await _setViewport(tester, const Size(360, 800));
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
-    final serial = EmulatorSerial(log: Logger());
+    final serial = EmulatorSerial(log: Logger(), random: Random(7));
     await serial.connectSpecificDevice('Demo');
     final communicator = ChameleonCommunicator(Logger(), port: serial);
     final appState = ChameleonGUIState(
@@ -371,43 +394,95 @@ void main() {
     await _pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
-    expect(
-        find.byKey(const Key('home-slot-1-hf-mark-enabled')), findsOneWidget);
-    expect(find.byKey(const Key('home-slot-1-lf-mark-empty')), findsOneWidget);
-    expect(find.byKey(const Key('home-slot-2-hf-mark-empty')), findsOneWidget);
-    expect(
-        find.byKey(const Key('home-slot-2-lf-mark-enabled')), findsOneWidget);
-    expect(
-        find.byKey(const Key('home-slot-3-hf-mark-enabled')), findsOneWidget);
-    expect(
-        find.byKey(const Key('home-slot-3-lf-mark-disabled')), findsOneWidget);
-    expect(find.byKey(const Key('home-slot-5-hf-mark-empty')), findsOneWidget);
-    expect(
-      find.byKey(const Key('home-slot-7-hf-mark-enabledUnknown')),
-      findsOneWidget,
-    );
-    final unknownEnabled =
-        appState.connectedDeviceStatus!.snapshot.slots.slots[6].hf;
-    expect(unknownEnabled.type.value, isNot(TagType.unknown));
-    expect(unknownEnabled.enabled.isConfirmed, isFalse);
-    final unknownSemantics =
-        tester.getSemantics(find.byKey(const Key('home-slot-7'))).label;
-    expect(unknownSemantics.toLowerCase(), contains('enabled status unknown'));
-    expect(unknownSemantics.toLowerCase(), contains('dashed outline'));
-    expect(
-      tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
-      contains('Office'),
-    );
-    expect(
-      tester.getSemantics(find.byKey(const Key('home-slot-2'))).label,
-      contains('Garage'),
-    );
+    final slots = appState.connectedDeviceStatus!.snapshot.slots.slots;
+    var configuredHighFrequency = 0;
+    var configuredLowFrequency = 0;
+    var enabledConfigured = 0;
+    var disabledConfigured = 0;
+    var emptyFrequencies = 0;
+    for (final slot in slots) {
+      for (final frequency in [slot.hf, slot.lf]) {
+        expect(frequency.type.isConfirmed, isTrue);
+        expect(frequency.name.isConfirmed, isTrue);
+        if (frequency.type.value != null &&
+            frequency.type.value != TagType.unknown) {
+          expect(frequency.enabled.isConfirmed, isTrue);
+          expect(frequency.name.value, isNotEmpty);
+          if (frequency.enabled.value == true) {
+            enabledConfigured++;
+          } else {
+            disabledConfigured++;
+          }
+        } else {
+          emptyFrequencies++;
+        }
+      }
+      if (slot.hf.type.value != null && slot.hf.type.value != TagType.unknown) {
+        configuredHighFrequency++;
+      }
+      if (slot.lf.type.value != null && slot.lf.type.value != TagType.unknown) {
+        configuredLowFrequency++;
+      }
+    }
+    expect(configuredHighFrequency, greaterThan(0));
+    expect(configuredLowFrequency, greaterThan(0));
+    expect(enabledConfigured, greaterThan(0));
+    expect(disabledConfigured, greaterThan(0));
+    expect(emptyFrequencies, greaterThan(0));
+    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
     for (var slot = 1; slot <= 8; slot++) {
       expect(find.byKey(Key('home-slot-$slot')), findsOneWidget);
+      final label =
+          tester.getSemantics(find.byKey(Key('home-slot-$slot'))).label;
+      expect(label.toLowerCase(), isNot(contains('unknown')));
+      expect(label.toLowerCase(), isNot(contains('unavailable')));
     }
+
+    final initialActive =
+        appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value!;
+    final targetSlot = (initialActive + 1) % 8;
+    await tester.tap(find.byKey(Key('home-slot-${targetSlot + 1}')));
+    await tester.pumpAndSettle();
+    expect(
+      appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value,
+      targetSlot,
+    );
+    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+
+    final initialMode =
+        appState.connectedDeviceStatus!.snapshot.mode.confirmedMode!;
+    final targetMode = initialMode == ConnectedDeviceMode.emulator
+        ? ConnectedDeviceMode.reader
+        : ConnectedDeviceMode.emulator;
+    await tester.tap(find.text(
+      targetMode == ConnectedDeviceMode.reader ? 'Reader' : 'Emulator',
+    ));
+    await tester.pumpAndSettle();
+    expect(
+      appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
+      targetMode,
+    );
+    expect(find.byType(SnackBar), findsNothing);
     expect(tester.takeException(), isNull);
     appState.dispose();
   });
+}
+
+Future<String> _readDemoState(ChameleonCommunicator communicator) async {
+  final types = await communicator.getSlotTagTypes();
+  final enabled = await communicator.getEnabledSlots();
+  final names = await communicator.getSlotTagNames();
+  final active = await communicator.getActiveSlot();
+  final reader = await communicator.isReaderDeviceMode();
+  final battery = await communicator.getBatteryCharge();
+  return [
+    types.map((slot) => '${slot.hf.name}:${slot.lf.name}').join(','),
+    enabled.map((slot) => '${slot.hf}:${slot.lf}').join(','),
+    names.map((slot) => '${slot.hf}:${slot.lf}').join(','),
+    '$active',
+    '$reader',
+    '${battery.voltage}:${battery.percent}',
+  ].join('|');
 }
 
 Future<void> _prepareScenario(
@@ -515,10 +590,8 @@ void _expectDashboardHierarchy(
   expect(firmware.hitTestable(), findsOneWidget, reason: reason);
   expect(layout.hitTestable(), findsOneWidget, reason: reason);
   expect(modeAction.hitTestable(), findsOneWidget, reason: reason);
-  final modeRetry = find.byKey(const Key('home-mode-retry'));
-  if (modeRetry.evaluate().isNotEmpty) {
-    expect(modeRetry.hitTestable(), findsOneWidget, reason: reason);
-  }
+  expect(find.byKey(const Key('home-mode-retry')), findsNothing,
+      reason: reason);
   expect(settings.hitTestable(), findsOneWidget, reason: reason);
 }
 
@@ -542,11 +615,11 @@ void _expectScenario(
     case _DashboardScenario.loading:
       expect(find.text('Checking'), findsOneWidget, reason: reason);
     case _DashboardScenario.stale:
-      expect(find.byKey(const Key('home-slot-refresh')), findsOneWidget,
+      expect(find.byKey(const Key('home-slot-refresh')), findsNothing,
           reason: reason);
     case _DashboardScenario.error:
       expect(find.text('--%'), findsOneWidget, reason: reason);
-      expect(find.byKey(const Key('home-mode-retry')), findsOneWidget,
+      expect(find.byKey(const Key('home-mode-retry')), findsNothing,
           reason: reason);
     case _DashboardScenario.lite:
       final mode = tester.widget<SegmentedButton<ConnectedDeviceMode>>(

@@ -211,7 +211,7 @@ void main() {
     expect(find.byType(SnackBar), findsOneWidget);
   });
 
-  testWidgets('first mode read failure disables selection and offers retry',
+  testWidgets('first mode read failure stays aligned and retries automatically',
       (tester) async {
     final communicator = _ModeCommunicator(initialReaderMode: false)
       ..modeReadResults.addAll([
@@ -225,10 +225,14 @@ void main() {
 
     expect(_modeControl(tester).selected, isEmpty);
     expect(_modeControl(tester).onSelectionChanged, isNull);
-    expect(find.byKey(const Key('home-mode-retry')), findsOneWidget);
+    expect(find.byKey(const Key('home-mode-retry')), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('home-mode-control'))).height,
+      closeTo(48, 1),
+    );
 
-    await tester.tap(find.byKey(const Key('home-mode-retry')));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
     expect(communicator.modeReads, 2);

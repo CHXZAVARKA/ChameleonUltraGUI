@@ -68,7 +68,7 @@ void main() {
     );
     expect(find.byIcon(Icons.settings), findsOneWidget);
     expect(find.textContaining('legacy status unavailable'), findsNothing);
-    expect(find.byKey(const Key('home-mode-retry')), findsOneWidget);
+    expect(find.byKey(const Key('home-mode-retry')), findsNothing);
     expect(serial.connected, isTrue);
     expect(serial.disconnects, 0);
   });
