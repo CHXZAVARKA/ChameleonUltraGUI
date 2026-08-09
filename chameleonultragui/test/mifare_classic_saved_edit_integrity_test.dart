@@ -31,6 +31,24 @@ void main() {
     expect(MifareClassicGeometry.fromSavedCard(savedCard), isNull);
   });
 
+  testWidgets('changing card type removes inherited Classic BIN eligibility',
+      (tester) async {
+    final harness = await _EditHarness.create(tester);
+
+    await harness.pump(CardEditMenu(tagSave: harness.card));
+    await tester.tap(find.byType(DropdownButton<TagType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('NTAG213').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final savedCard = harness.preferences.getCards().single;
+    expect(savedCard.tag, TagType.ntag213);
+    expect(savedCard.extraData.mifareClassicDumpComplete, isNull);
+    expect(MifareClassicGeometry.fromSavedCard(savedCard), isNull);
+  });
+
   testWidgets('Dump Editor save invalidates complete Classic BIN eligibility',
       (tester) async {
     final harness = await _EditHarness.create(tester);

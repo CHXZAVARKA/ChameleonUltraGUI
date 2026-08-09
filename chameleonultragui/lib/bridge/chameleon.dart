@@ -11,25 +11,6 @@ import 'package:logger/logger.dart';
 // Nobody knows how it works
 
 class ChameleonCommunicator {
-  static final Set<ChameleonCommand> _commandsWithSecretData = {
-    ChameleonCommand.bleSetConnectKey,
-    ChameleonCommand.bleGetConnectKey,
-    ChameleonCommand.getDeviceSettings,
-    ChameleonCommand.mf1StaticNestedAcquire,
-    ChameleonCommand.mf1NTDistanceDetect,
-    ChameleonCommand.mf1NestedAcquire,
-    ChameleonCommand.mf1CheckKey,
-    ChameleonCommand.mf1ReadBlock,
-    ChameleonCommand.mf1WriteBlock,
-    ChameleonCommand.mf1HardNestedAcquire,
-    ChameleonCommand.mf1StaticEncryptedNestedAcquire,
-    ChameleonCommand.mf1CheckKeysOnBlock,
-    ChameleonCommand.mf1LoadBlockData,
-    ChameleonCommand.mf1GetBlockData,
-    ChameleonCommand.mf1ManipulateValueBlock,
-    ChameleonCommand.hf14ARawCommand,
-  };
-
   int baudrate = 115200;
   int dataFrameSof = 0x11;
   int dataMaxLength = 4096;
@@ -120,18 +101,9 @@ class ChameleonCommunicator {
               command: dataCmd,
               status: dataStatus,
               data: Uint8List.fromList(dataResponse));
-          ChameleonCommand? command;
-          for (final candidate in ChameleonCommand.values) {
-            if (candidate.value == message.command) {
-              command = candidate;
-              break;
-            }
-          }
-          final responseData = command != null &&
-                  _commandsWithSecretData.contains(command) &&
-                  message.data.isNotEmpty
+          final responseData = message.data.isNotEmpty
               ? "<redacted ${message.data.length} byte(s)>"
-              : bytesToHex(message.data);
+              : "<empty>";
           log.d(
               "Received message: command = ${message.command}, status = ${message.status}, data = $responseData");
           dataPosition = 0;
@@ -172,15 +144,11 @@ class ChameleonCommunicator {
 
     commandQueue.add(cmd.value);
 
-    final hasSecretData = _commandsWithSecretData.contains(cmd);
-    final logData = hasSecretData && data != null && data.isNotEmpty
+    final logData = data != null && data.isNotEmpty
         ? "<redacted ${data.length} byte(s)>"
-        : bytesToHex(data ?? Uint8List(0));
-    if (hasSecretData) {
-      log.t("Sending command ${cmd.value} with redacted payload");
-    } else {
-      log.t("Sending: ${bytesToHex(dataFrame)}");
-    }
+        : "<empty>";
+    log.t(
+        "Sending command ${cmd.value} with ${data?.length ?? 0} payload byte(s)");
     log.d("Sending message: command = ${cmd.value}, data = $logData");
 
     if (skipReceive) {
