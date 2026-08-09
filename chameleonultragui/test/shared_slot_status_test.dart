@@ -198,7 +198,7 @@ void main() {
     expect(selector.selected, {SlotLayout.twoByFour});
   });
 
-  testWidgets('layout switch keeps slot focus and keyboard activation',
+  testWidgets('layout switch keeps slot focus after direct arrow activation',
       (tester) async {
     final preferences = SharedPreferencesProvider();
     final communicator = _SlotCommunicator();
@@ -221,8 +221,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
     expect(communicator.activations, [1]);
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
@@ -284,13 +282,14 @@ void main() {
         .pixels;
     expect(after, closeTo(before, 0.1));
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(communicator.activations, [7]);
+    expect(communicator.activations, List.generate(7, (index) => index + 1));
 
     await tester.tap(find.byKey(const Key('home-slot-7')));
     await tester.pumpAndSettle();
-    expect(communicator.activations, [7, 6]);
+    expect(
+      communicator.activations,
+      [...List.generate(7, (index) => index + 1), 6],
+    );
   });
 
   for (final layout in SlotLayout.values) {
@@ -684,7 +683,6 @@ void main() {
     await tester.pumpAndSettle();
     for (var index = 1; index < slotFinders.length; index++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
     }
     expect(communicator.activations, List.generate(8, (index) => index));
@@ -754,6 +752,66 @@ void main() {
     expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
     expect(find.byKey(const Key('home-active-slot-1')), findsNothing);
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+  });
+
+  testWidgets(
+      'successful slot command survives a lost confirmation without an error',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    communicator.scriptedActiveSlotReads.add(
+      StateError('confirmation unavailable'),
+    );
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final slots = appState.connectedDeviceStatus!.snapshot.slots;
+    expect(communicator.activations, [1]);
+    expect(slots.activeSlot.value, 1);
+    expect(slots.pendingActivation, isNull);
+    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+  });
+
+  testWidgets('arrow and number keys activate slots immediately',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-slot-1')));
+    await tester.pumpAndSettle();
+    communicator.activations.clear();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(communicator.activations, [1]);
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+
+    const numberKeys = [
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
+      LogicalKeyboardKey.digit8,
+    ];
+    communicator.activations.clear();
+    for (final key in numberKeys) {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+    }
+
+    expect(communicator.activations, List.generate(8, (index) => index));
+    expect(find.byKey(const Key('home-active-slot-8')), findsOneWidget);
   });
 
   testWidgets('full refresh cannot clear a queued Home activation',
@@ -989,7 +1047,7 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
-  testWidgets('Tab focuses slots and arrows plus Enter activate in Reader mode',
+  testWidgets('Tab focuses slots and arrows activate directly in Reader mode',
       (tester) async {
     final communicator = _SlotCommunicator()..readerMode = true;
     final appState = _connectedState(communicator);
@@ -1008,10 +1066,9 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    expect(communicator.activations, [2]);
+    expect(communicator.activations, [1, 2]);
     expect(find.byKey(const Key('home-active-slot-3')), findsOneWidget);
     expect(
       appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
@@ -1468,7 +1525,7 @@ void main() {
     );
   });
 
-  testWidgets('invalid activation reread marks the confirmed active slot stale',
+  testWidgets('invalid activation reread keeps the acknowledged target stale',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -1479,12 +1536,33 @@ void main() {
     expect(status.snapshot.slots.activeSlot.value, 0);
 
     communicator.scriptedActiveSlotReads.add(8);
-    expect(await status.activateSlot(1), isFalse);
+    expect(await status.activateSlot(1), isTrue);
     await tester.pump();
 
     final slots = status.snapshot.slots;
     expect(communicator.activations, [1]);
-    expect(slots.activeSlot.value, 0);
+    expect(slots.activeSlot.value, 1);
+    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
+    expect(slots.availability, SlotsAvailability.stale);
+  });
+
+  testWidgets('lagging activation reread keeps the acknowledged target stale',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    final status = appState.connectedDeviceStatus!;
+    expect(status.snapshot.slots.activeSlot.value, 0);
+
+    communicator.scriptedActiveSlotReads.add(0);
+    expect(await status.activateSlot(1), isTrue);
+    await tester.pump();
+
+    final slots = status.snapshot.slots;
+    expect(communicator.activations, [1]);
+    expect(slots.activeSlot.value, 1);
     expect(slots.staleFacets, contains(SlotFacet.activeSlot));
     expect(slots.availability, SlotsAvailability.stale);
   });

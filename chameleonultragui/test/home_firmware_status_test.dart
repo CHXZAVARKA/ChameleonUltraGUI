@@ -85,7 +85,7 @@ void main() {
   });
 
   testWidgets(
-      'firmware pill keeps a compact visual inside one accessible 48px action',
+      'firmware pill visual and pressed action share the same 48px stadium',
       (tester) async {
     final semantics = tester.ensureSemantics();
     try {
@@ -98,10 +98,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final pill = find.byKey(const Key('home-firmware-pill'));
-      expect(tester.getSize(pill).height, greaterThanOrEqualTo(48));
+      final actionSize = tester.getSize(pill);
+      expect(actionSize.height, greaterThanOrEqualTo(48));
       expect(
         tester.getSize(find.byKey(const Key('firmware-visual-pill'))).height,
-        lessThan(48),
+        actionSize.height,
       );
       expect(
         find.bySemanticsLabel('Firmware · Up to date · Firmware details'),

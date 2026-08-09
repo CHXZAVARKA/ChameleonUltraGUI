@@ -1272,30 +1272,35 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish) {
           return false;
         }
-        final confirmedSlot = await _session.communicator.getActiveSlot();
-        if (!_canPublish) {
-          return false;
+        try {
+          final confirmedSlot = await _session.communicator.getActiveSlot();
+          if (!_canPublish) {
+            return false;
+          }
+          if (confirmedSlot < 0 || confirmedSlot >= 8) {
+            throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
+          }
+          if (confirmedSlot == slot) {
+            _publishActiveSlot(confirmedSlot, stale: false);
+            return true;
+          }
+          _session.appState.log?.w(
+            'Connected-device slot confirmation is lagging the acknowledged activation',
+          );
+          _publishActiveSlot(slot, stale: true);
+          return true;
+        } catch (error, stackTrace) {
+          _session.appState.log?.w(
+            'Unable to confirm connected-device slot activation',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (!_canPublish) {
+            return false;
+          }
+          _publishActiveSlot(slot, stale: true);
+          return true;
         }
-        if (confirmedSlot < 0 || confirmedSlot >= 8) {
-          throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
-        }
-        final currentSlots = _snapshot.slots;
-        final staleFacets = {...currentSlots.staleFacets}
-          ..remove(SlotFacet.activeSlot);
-        final unavailableFacets = {...currentSlots.unavailableFacets}
-          ..remove(SlotFacet.activeSlot);
-        _publish(
-          _snapshot.copyWith(
-            slots: currentSlots.copyWith(
-              availability: _slotsAvailability(staleFacets, unavailableFacets),
-              activeSlot: SlotField.confirmed(confirmedSlot),
-              pendingActivation: null,
-              staleFacets: staleFacets,
-              unavailableFacets: unavailableFacets,
-            ),
-          ),
-        );
-        return confirmedSlot == slot;
       });
     } catch (error, stackTrace) {
       _session.appState.log?.w(
@@ -1326,6 +1331,29 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       }
       return false;
     }
+  }
+
+  void _publishActiveSlot(int activeSlot, {required bool stale}) {
+    final currentSlots = _snapshot.slots;
+    final staleFacets = {...currentSlots.staleFacets};
+    if (stale) {
+      staleFacets.add(SlotFacet.activeSlot);
+    } else {
+      staleFacets.remove(SlotFacet.activeSlot);
+    }
+    final unavailableFacets = {...currentSlots.unavailableFacets}
+      ..remove(SlotFacet.activeSlot);
+    _publish(
+      _snapshot.copyWith(
+        slots: currentSlots.copyWith(
+          availability: _slotsAvailability(staleFacets, unavailableFacets),
+          activeSlot: SlotField.confirmed(activeSlot),
+          pendingActivation: null,
+          staleFacets: staleFacets,
+          unavailableFacets: unavailableFacets,
+        ),
+      ),
+    );
   }
 
   Future<void> _scheduleActiveSlotRefresh() {

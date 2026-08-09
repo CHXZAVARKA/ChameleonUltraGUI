@@ -40,6 +40,7 @@ class ChameleonCommunicator {
   int dataLength = 0;
   List<ChameleonMessage> messageQueue = [];
   List<int> commandQueue = [];
+  Future<void> _commandTail = Future<void>.value();
 
   final Logger log;
 
@@ -146,7 +147,34 @@ class ChameleonCommunicator {
     }
   }
 
+  Future<T> _runSerialized<T>(Future<T> Function() operation) {
+    final result = Completer<T>();
+    _commandTail = _commandTail.then((_) async {
+      try {
+        result.complete(await operation());
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      }
+    });
+    return result.future;
+  }
+
   Future<ChameleonMessage?> sendCmd(ChameleonCommand cmd,
+          {Uint8List? data,
+          Duration timeout = const Duration(seconds: 5),
+          bool skipReceive = false,
+          bool firstRun = false}) =>
+      _runSerialized(
+        () => _sendCmd(
+          cmd,
+          data: data,
+          timeout: timeout,
+          skipReceive: skipReceive,
+          firstRun: firstRun,
+        ),
+      );
+
+  Future<ChameleonMessage?> _sendCmd(ChameleonCommand cmd,
       {Uint8List? data,
       Duration timeout = const Duration(seconds: 5),
       bool skipReceive = false,
@@ -204,7 +232,12 @@ class ChameleonCommunicator {
           DateTime.now().millisecondsSinceEpoch) {
         commandQueue.remove(cmd.value);
         if (firstRun) {
-          sendCmd(cmd, data: data, timeout: timeout, firstRun: false);
+          return _sendCmd(
+            cmd,
+            data: data,
+            timeout: timeout,
+            firstRun: false,
+          );
         } else {
           // no luck
           throw ("Timeout waiting for response for command ${cmd.value}");

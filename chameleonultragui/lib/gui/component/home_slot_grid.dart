@@ -90,14 +90,22 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      setState(() => _focusedSlot = math.max(0, _focusedSlot - 1));
-      _revealFocusedSlot();
+    final numberedSlot = _numberedSlot(event.logicalKey);
+    if (numberedSlot != null) {
+      _activateFromKeyboard(numberedSlot);
       return KeyEventResult.handled;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      setState(() => _focusedSlot = math.min(7, _focusedSlot + 1));
-      _revealFocusedSlot();
+    final direction = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowLeft => -1,
+      LogicalKeyboardKey.arrowRight => 1,
+      LogicalKeyboardKey.arrowUp =>
+        widget.layout == SlotLayout.twoByFour ? -4 : -1,
+      LogicalKeyboardKey.arrowDown =>
+        widget.layout == SlotLayout.twoByFour ? 4 : 1,
+      _ => null,
+    };
+    if (direction != null) {
+      _activateFromKeyboard((_focusedSlot + direction + 8) % 8);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -106,6 +114,29 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  int? _numberedSlot(LogicalKeyboardKey key) => switch (key) {
+        LogicalKeyboardKey.digit1 || LogicalKeyboardKey.numpad1 => 0,
+        LogicalKeyboardKey.digit2 || LogicalKeyboardKey.numpad2 => 1,
+        LogicalKeyboardKey.digit3 || LogicalKeyboardKey.numpad3 => 2,
+        LogicalKeyboardKey.digit4 || LogicalKeyboardKey.numpad4 => 3,
+        LogicalKeyboardKey.digit5 || LogicalKeyboardKey.numpad5 => 4,
+        LogicalKeyboardKey.digit6 || LogicalKeyboardKey.numpad6 => 5,
+        LogicalKeyboardKey.digit7 || LogicalKeyboardKey.numpad7 => 6,
+        LogicalKeyboardKey.digit8 || LogicalKeyboardKey.numpad8 => 7,
+        _ => null,
+      };
+
+  void _activateFromKeyboard(int slot) {
+    if (widget.status.snapshot.slots.pendingActivation != null) {
+      return;
+    }
+    if (_focusedSlot != slot) {
+      setState(() => _focusedSlot = slot);
+    }
+    _revealFocusedSlot();
+    _activate(slot);
   }
 
   void _revealFocusedSlot() {
@@ -164,6 +195,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                 child: Focus(
                   key: const Key('home-slot-grid-focus'),
                   focusNode: _focusNode,
+                  autofocus: true,
                   onFocusChange: (value) {
                     if (_hasFocus != value) {
                       setState(() {

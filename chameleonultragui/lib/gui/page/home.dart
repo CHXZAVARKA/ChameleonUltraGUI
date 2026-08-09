@@ -366,6 +366,7 @@ class _FirmwarePill extends StatelessWidget {
                   widthFactor: 1,
                   child: Ink(
                     key: const Key('firmware-visual-pill'),
+                    height: 48,
                     decoration: BoxDecoration(
                       color:
                           Theme.of(context).colorScheme.surfaceContainerHighest,
