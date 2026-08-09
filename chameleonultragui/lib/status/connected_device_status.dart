@@ -434,8 +434,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _refreshHomeAfterResume() async {
     final batteryRefresh = refreshBattery();
+    final modeRefresh = _snapshot.mode.availability == ModeAvailability.loading
+        ? refreshMode()
+        : Future<void>.value();
     final slotsRefresh = refreshSlots();
-    await Future.wait([batteryRefresh, slotsRefresh]);
+    await Future.wait([batteryRefresh, modeRefresh, slotsRefresh]);
   }
 
   Future<void> refreshMode() {

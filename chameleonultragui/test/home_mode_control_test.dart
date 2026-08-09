@@ -299,6 +299,30 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
   });
 
+  testWidgets('Home mounted while paused reads mode once when the app resumes',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final communicator = _ModeCommunicator(initialReaderMode: true);
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    tester.binding.drawFrame();
+    await tester.pump();
+    tester.binding.drawFrame();
+
+    expect(communicator.modeReads, 0);
+    expect(_modeControl(tester).selected, isEmpty);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(communicator.modeReads, 1);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+  });
+
   testWidgets('mode switch waits for foreground RF ownership', (tester) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
