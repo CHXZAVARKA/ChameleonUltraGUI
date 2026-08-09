@@ -1,6 +1,5 @@
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
-import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/gui/component/mifare/standard_write.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
@@ -487,7 +486,6 @@ class WriteCardPageState extends State<WriteCardPage> {
   @override
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
-    final featureStrings = MifareClassicFeatureStrings.of(context);
     var typeLocalization = {
       'gen1': localizations.gen1,
       'gen2': localizations.gen2,
@@ -508,12 +506,12 @@ class WriteCardPageState extends State<WriteCardPage> {
                 ButtonSegment(
                   value: _WriteCardMode.magic,
                   icon: const Icon(Icons.auto_fix_high),
-                  label: Text(featureStrings.magicCardMode),
+                  label: Text(localizations.mifare_classic_magic_card_mode),
                 ),
                 ButtonSegment(
                   value: _WriteCardMode.standard,
                   icon: const Icon(Icons.credit_card),
-                  label: Text(featureStrings.standardCardMode),
+                  label: Text(localizations.mifare_classic_standard_card_mode),
                 ),
               ],
               selected: {_mode},

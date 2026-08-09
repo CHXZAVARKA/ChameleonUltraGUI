@@ -995,7 +995,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Select key profile'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Mini keys (5)').last);
+      await tester.tap(find.text('Mini keys (5 keys)').last);
       await tester.pumpAndSettle();
 
       communicator.gatePreflight = true;

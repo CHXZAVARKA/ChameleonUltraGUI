@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
-import 'package:chameleonultragui/gui/component/mifare/feature_strings.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -75,8 +74,33 @@ class _StandardMifareClassicWritePanelState
   String _safeMaintenanceError(Object error) {
     final localizations = AppLocalizations.of(context)!;
     if (error is MifareClassicMaintenanceException) {
-      return MifareClassicFeatureStrings.of(context)
-          .maintenanceFailure(error.failure, localizations);
+      return switch (error.failure) {
+        MifareClassicMaintenanceFailure.invalidImage =>
+          localizations.mifare_classic_maintenance_invalid_image,
+        MifareClassicMaintenanceFailure.incompatibleProfile =>
+          localizations.mifare_classic_maintenance_incompatible_profile,
+        MifareClassicMaintenanceFailure.communicationLost =>
+          localizations.mifare_classic_maintenance_communication_lost,
+        MifareClassicMaintenanceFailure.stalePlan =>
+          localizations.mifare_classic_maintenance_stale_plan,
+        MifareClassicMaintenanceFailure.noCard => localizations.no_card_found,
+        MifareClassicMaintenanceFailure.wrongCardType ||
+        MifareClassicMaintenanceFailure.identityMismatch =>
+          localizations.mifare_classic_maintenance_card_mismatch,
+        MifareClassicMaintenanceFailure.authenticationFailed =>
+          localizations.mifare_classic_maintenance_authentication_failed,
+        MifareClassicMaintenanceFailure.readFailed =>
+          localizations.recovery_error_dump_data,
+        MifareClassicMaintenanceFailure.invalidAccessBits ||
+        MifareClassicMaintenanceFailure.writeNotAllowed ||
+        MifareClassicMaintenanceFailure.verificationNotAllowed =>
+          localizations.mifare_classic_maintenance_change_not_allowed,
+        MifareClassicMaintenanceFailure.writeFailed ||
+        MifareClassicMaintenanceFailure.verificationFailed =>
+          localizations.magic_failed_write,
+        MifareClassicMaintenanceFailure.cancelled =>
+          localizations.mifare_classic_maintenance_cancelled,
+      };
     }
     return localizations.error;
   }
@@ -100,6 +124,7 @@ class _StandardMifareClassicWritePanelState
   }
 
   void _selectImage(Uint8List image, String name) {
+    final localizations = AppLocalizations.of(context)!;
     setState(() {
       _invalidatePlan();
       final geometry = MifareClassicGeometry.fromImageSize(image.length);
@@ -108,8 +133,8 @@ class _StandardMifareClassicWritePanelState
         _imageName = null;
         _geometry = null;
         _profileId = null;
-        _error =
-            'Unsupported dump size: ${image.length} bytes. Expected 320, 1024, 1152, 2048, or 4096 bytes.';
+        _error = localizations
+            .mifare_classic_standard_unsupported_dump_size(image.length);
         return;
       }
       _image = Uint8List.fromList(image);
@@ -162,7 +187,7 @@ class _StandardMifareClassicWritePanelState
 
   Future<void> _pickSavedDump() async {
     final appState = context.read<ChameleonGUIState>();
-    final strings = MifareClassicFeatureStrings.of(context);
+    final localizations = AppLocalizations.of(context)!;
     final cards = appState.sharedPreferencesProvider
         .getCards()
         .where((card) => card.extraData.mifareClassicDumpComplete != false)
@@ -170,7 +195,8 @@ class _StandardMifareClassicWritePanelState
         .toList()
       ..sort((first, second) => first.name.compareTo(second.name));
     if (cards.isEmpty) {
-      setState(() => _error = strings.noCompleteSavedCards);
+      setState(() =>
+          _error = localizations.mifare_classic_standard_no_usable_saved_dumps);
       return;
     }
 
@@ -198,12 +224,15 @@ class _StandardMifareClassicWritePanelState
     }
 
     if (selected.extraData.mifareClassicDumpComplete == null) {
-      final strings = MifareClassicFeatureStrings.of(context);
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(strings.legacySavedDumpTitle),
-          content: Text(strings.legacySavedDumpDescription),
+          title: Text(
+            localizations.mifare_classic_standard_legacy_dump_title,
+          ),
+          content: Text(
+            localizations.mifare_classic_standard_legacy_dump_description,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -211,7 +240,9 @@ class _StandardMifareClassicWritePanelState
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(strings.useLegacySavedDump),
+              child: Text(
+                localizations.mifare_classic_standard_use_legacy_dump,
+              ),
             ),
           ],
         ),
@@ -366,7 +397,7 @@ class _StandardMifareClassicWritePanelState
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<ChameleonGUIState>();
-    final strings = MifareClassicFeatureStrings.of(context);
+    final localizations = AppLocalizations.of(context)!;
     final profiles = _profiles(appState);
     final selectedProfileExists =
         profiles.any((profile) => profile.id == _profileId);
@@ -381,11 +412,11 @@ class _StandardMifareClassicWritePanelState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                strings.standardWriteTitle,
+                localizations.mifare_classic_standard_write_title,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
-              Text(strings.standardWriteDescription),
+              Text(localizations.mifare_classic_standard_write_description),
               const SizedBox(height: 16),
               Card(
                 child: Padding(
@@ -395,7 +426,12 @@ class _StandardMifareClassicWritePanelState
                     children: [
                       const Icon(Icons.shield_outlined, color: Colors.green),
                       const SizedBox(width: 12),
-                      Expanded(child: Text(strings.safeBlocksNote)),
+                      Expanded(
+                        child: Text(
+                          localizations
+                              .mifare_classic_standard_safe_blocks_note,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -408,33 +444,43 @@ class _StandardMifareClassicWritePanelState
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _pickBinaryDump,
                     icon: const Icon(Icons.file_open),
-                    label: Text(strings.selectBinDump),
+                    label: Text(
+                      localizations.mifare_classic_standard_select_bin_dump,
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _pickSavedDump,
                     icon: const Icon(Icons.inventory_2_outlined),
-                    label: Text(strings.selectSavedDump),
+                    label: Text(localizations.select_saved_card),
                   ),
                 ],
               ),
               if (_imageName != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                    '✓ $_imageName · ${_image!.length} bytes · ${_geometry!.label}'),
+                    localizations.mifare_classic_standard_selected_dump_summary(
+                  _imageName!,
+                  _image!.length,
+                  _geometry!.label,
+                )),
               ],
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 key: ValueKey(_profileId),
                 initialValue: selectedProfileExists ? _profileId : null,
                 decoration: InputDecoration(
-                  labelText: strings.selectKeyProfile,
+                  labelText:
+                      localizations.mifare_classic_standard_select_key_profile,
                   border: const OutlineInputBorder(),
                 ),
                 items: profiles
                     .map((profile) => DropdownMenuItem(
                           value: profile.id,
                           child: Text(
-                            '${profile.name} (${profile.keyCount})',
+                            localizations.mifare_classic_key_profile_option(
+                              profile.name,
+                              profile.keyCount,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ))
@@ -457,7 +503,9 @@ class _StandardMifareClassicWritePanelState
                     ? _runPreflight
                     : null,
                 icon: const Icon(Icons.fact_check_outlined),
-                label: Text(strings.runPreflight),
+                label: Text(
+                  localizations.mifare_classic_standard_run_preflight,
+                ),
               ),
               if (_busy && progress != null) ...[
                 const SizedBox(height: 16),
@@ -469,8 +517,8 @@ class _StandardMifareClassicWritePanelState
                 const SizedBox(height: 8),
                 Text(
                   progress.phase == MifareClassicMaintenancePhase.preflight
-                      ? strings.preflightRunning
-                      : strings.keepCardStable,
+                      ? localizations.mifare_classic_standard_preflight_running
+                      : localizations.mifare_classic_standard_keep_card_stable,
                 ),
               ],
               if (_plan != null && !_busy) ...[
@@ -479,8 +527,12 @@ class _StandardMifareClassicWritePanelState
                   color: Theme.of(context).colorScheme.primaryContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(strings.preflightReady(
-                        _plan!.changedBlocks, _plan!.unchangedBlocks)),
+                    child: Text(
+                      localizations.mifare_classic_standard_preflight_ready(
+                        _plan!.changedBlocks,
+                        _plan!.unchangedBlocks,
+                      ),
+                    ),
                   ),
                 ),
                 CheckboxListTile(
@@ -489,7 +541,10 @@ class _StandardMifareClassicWritePanelState
                   onChanged: (value) =>
                       setState(() => _authorized = value ?? false),
                   controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(strings.authorizedCardConfirmation),
+                  title: Text(
+                    localizations
+                        .mifare_classic_standard_authorized_confirmation,
+                  ),
                 ),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
@@ -498,7 +553,9 @@ class _StandardMifareClassicWritePanelState
                   ),
                   onPressed: _authorized ? _writeAndVerify : null,
                   icon: const Icon(Icons.system_update_alt),
-                  label: Text(strings.writeAndVerify),
+                  label: Text(
+                    localizations.mifare_classic_standard_write_and_verify,
+                  ),
                 ),
               ],
               if (_report != null) ...[
@@ -507,7 +564,11 @@ class _StandardMifareClassicWritePanelState
                   color: Colors.green.withValues(alpha: 0.15),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(strings.writeComplete(_report!.verifiedBlocks)),
+                    child: Text(
+                      localizations.mifare_classic_standard_write_complete(
+                        _report!.verifiedBlocks,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -517,7 +578,11 @@ class _StandardMifareClassicWritePanelState
                   color: Theme.of(context).colorScheme.errorContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text('${strings.operationFailed}: $_error'),
+                    child: Text(
+                      localizations.mifare_classic_standard_operation_failed(
+                        _error!,
+                      ),
+                    ),
                   ),
                 ),
               ],
