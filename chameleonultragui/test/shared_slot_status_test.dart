@@ -227,6 +227,72 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
+  testWidgets(
+      'eight-across restores scroll and focus after a two-by-four roundtrip',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final preferences = SharedPreferencesProvider();
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final scrollFinder = find.byKey(const Key('home-slot-grid-scroll'));
+    final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
+    for (var attempt = 0;
+        attempt < 12 &&
+            !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
+        attempt++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
+    for (var step = 0; step < 7; step++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    }
+    await tester.pumpAndSettle();
+    final before = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: scrollFinder,
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position
+        .pixels;
+    expect(before, greaterThan(40));
+
+    preferences.setSlotLayout(SlotLayout.twoByFour);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+
+    preferences.setSlotLayout(SlotLayout.eightAcross);
+    await tester.pumpAndSettle();
+
+    final after = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: scrollFinder,
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position
+        .pixels;
+    expect(after, closeTo(before, 0.1));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(communicator.activations, [7]);
+
+    await tester.tap(find.byKey(const Key('home-slot-7')));
+    await tester.pumpAndSettle();
+    expect(communicator.activations, [7, 6]);
+  });
+
   for (final layout in SlotLayout.values) {
     testWidgets('${layout.name} blocks duplicate activation while pending',
         (tester) async {

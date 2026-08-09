@@ -178,21 +178,25 @@ class _HomeControls extends StatelessWidget {
       preferences: preferences,
       layout: layout,
     );
-    final modeAndSettings = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _DeviceModeControl(status: status),
-        const SizedBox(width: 2),
-        IconButton(
-          tooltip: localizations.settings,
-          onPressed: () => showDialog<String>(
-            context: context,
-            builder: (_) => const ChameleonSettings(),
+    Widget modeAndSettings({required bool constrained}) {
+      final modeControl = _DeviceModeControl(status: status);
+      return Row(
+        mainAxisSize: constrained ? MainAxisSize.max : MainAxisSize.min,
+        children: [
+          if (constrained) Expanded(child: modeControl) else modeControl,
+          const SizedBox(width: 2),
+          IconButton(
+            tooltip: localizations.settings,
+            onPressed: () => showDialog<String>(
+              context: context,
+              builder: (_) => const ChameleonSettings(),
+            ),
+            icon: const Icon(Icons.settings),
           ),
-          icon: const Icon(Icons.settings),
-        ),
-      ],
-    );
+        ],
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 560) {
@@ -209,10 +213,7 @@ class _HomeControls extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: modeAndSettings,
-                ),
+                child: modeAndSettings(constrained: true),
               ),
             ],
           );
@@ -224,7 +225,7 @@ class _HomeControls extends StatelessWidget {
               child: layoutControl,
             ),
             const Spacer(),
-            modeAndSettings,
+            modeAndSettings(constrained: false),
             const SizedBox(width: 8),
           ],
         );
@@ -611,7 +612,6 @@ class _DeviceModeControl extends StatelessWidget {
         final enabled = mode.availability == ModeAvailability.available &&
             mode.pendingMode == null;
         final control = SegmentedButton<ConnectedDeviceMode>(
-          showSelectedIcon: false,
           segments: [
             ButtonSegment(
               value: ConnectedDeviceMode.emulator,
@@ -627,13 +627,6 @@ class _DeviceModeControl extends StatelessWidget {
           selected:
               mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
           emptySelectionAllowed: mode.confirmedMode == null,
-          style: const ButtonStyle(
-            minimumSize: WidgetStatePropertyAll(Size(48, 48)),
-            tapTargetSize: MaterialTapTargetSize.padded,
-            padding: WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 8),
-            ),
-          ),
           onSelectionChanged: enabled
               ? (selection) async {
                   final outcome = await status.switchMode(selection.single);

@@ -24,15 +24,64 @@ class HomeSlotGrid extends StatefulWidget {
 
 class _HomeSlotGridState extends State<HomeSlotGrid> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'Home slot grid');
+  final ScrollController _eightAcrossController = ScrollController(
+    keepScrollOffset: false,
+  );
   final List<GlobalKey> _slotKeys = List.generate(
     8,
     (index) => GlobalKey(debugLabel: 'Home slot ${index + 1}'),
   );
   var _focusedSlot = 0;
   var _hasFocus = false;
+  var _eightAcrossOffset = 0.0;
+  var _restoringEightAcrossOffset = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _eightAcrossController.addListener(_rememberEightAcrossOffset);
+  }
+
+  void _rememberEightAcrossOffset() {
+    if (!_restoringEightAcrossOffset && _eightAcrossController.hasClients) {
+      _eightAcrossOffset = _eightAcrossController.offset;
+    }
+  }
+
+  @override
+  void didUpdateWidget(HomeSlotGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.layout == SlotLayout.eightAcross &&
+        widget.layout != SlotLayout.eightAcross &&
+        _eightAcrossController.hasClients) {
+      _eightAcrossOffset = _eightAcrossController.offset;
+    }
+    if (oldWidget.layout != SlotLayout.eightAcross &&
+        widget.layout == SlotLayout.eightAcross) {
+      _restoringEightAcrossOffset = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (_eightAcrossController.hasClients) {
+          final position = _eightAcrossController.position;
+          _eightAcrossController.jumpTo(
+            _eightAcrossOffset.clamp(
+              position.minScrollExtent,
+              position.maxScrollExtent,
+            ),
+          );
+        }
+        _restoringEightAcrossOffset = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _eightAcrossController
+      ..removeListener(_rememberEightAcrossOffset)
+      ..dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -203,10 +252,11 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           children: [
                             _FrequencyLabels(markSize: markSize),
                             SizedBox(
+                              key: const Key('home-slot-grid-scroll'),
                               width: availableSlotsWidth,
                               height: gridHeight,
                               child: SingleChildScrollView(
-                                key: const Key('home-slot-grid-scroll'),
+                                controller: _eightAcrossController,
                                 scrollDirection: Axis.horizontal,
                                 child: SizedBox(
                                   width: slotWidth * columns,

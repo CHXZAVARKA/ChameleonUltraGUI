@@ -37,6 +37,41 @@ void main() {
     expect(communicator.modeReads, 1);
   });
 
+  testWidgets('narrow Home preserves the established mode control presentation',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final appState = _connectedState(
+      _ModeCommunicator(initialReaderMode: false),
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+
+    var control = _modeControl(tester);
+    expect(control.showSelectedIcon, isTrue);
+    expect(control.style, isNull);
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getCenter(find.text('Emulator')).dy,
+      closeTo(tester.getCenter(find.byTooltip('Settings')).dy, 1),
+    );
+    expect(
+      tester.getCenter(find.byKey(const Key('home-slot-layout-control'))).dy,
+      lessThan(tester.getCenter(find.text('Emulator')).dy),
+    );
+
+    appState.sharedPreferencesProvider.setSlotLayout(SlotLayout.twoByFour);
+    await tester.pumpAndSettle();
+
+    control = _modeControl(tester);
+    expect(control.showSelectedIcon, isTrue);
+    expect(control.style, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'mode switch keeps confirmed selection and blocks repeated input until reread',
       (tester) async {
