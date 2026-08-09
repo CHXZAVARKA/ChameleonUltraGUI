@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/write.dart';
@@ -41,18 +42,22 @@ class WriteCardPageState extends State<WriteCardPage> {
   Future<void> onTap(CardSave selectedCard, dynamic close,
       AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final communicator = appState.communicator;
+    if (communicator == null) return;
+    final selectedBaseHelper = AbstractWriteHelper.getClassByCardType(
+      selectedCard.tag,
+      appState,
+      updateState,
+      localizations,
+      operationCanContinue: () =>
+          appState.hasConnectedCommunicator(communicator),
+    );
 
     setState(() {
       card = selectedCard;
-      baseHelper = AbstractWriteHelper.getClassByCardType(
-          selectedCard.tag, appState, updateState, localizations);
+      baseHelper = selectedBaseHelper;
+      helper = selectedBaseHelper?.getAvailableMethods()[0];
     });
-
-    if (baseHelper != null) {
-      setState(() {
-        helper = baseHelper!.getAvailableMethods()[0];
-      });
-    }
 
     await helper?.getCardType();
 
@@ -126,12 +131,40 @@ class WriteCardPageState extends State<WriteCardPage> {
     var localizations = AppLocalizations.of(context)!;
     SnackBar snackBar;
     updateProgress(0);
+    final selectedHelper = helper;
+    final selectedCard = card;
 
-    if (!await appState.communicator!.isReaderDeviceMode()) {
-      await appState.communicator!.setReaderDeviceMode(true);
+    final result = await appState.runSessionBoundForegroundCatching<bool>(
+      (session) async {
+        if (selectedHelper == null ||
+            selectedCard == null ||
+            !identical(selectedHelper.communicator, session.communicator)) {
+          return false;
+        }
+        selectedHelper.setOperationContinuation(
+          () => mounted && session.isCurrent,
+        );
+        if (!selectedHelper.operationCanContinue) return false;
+
+        if (!await session.communicator.isReaderDeviceMode()) {
+          if (!selectedHelper.operationCanContinue) return false;
+          await session.communicator.setReaderDeviceMode(true);
+        }
+        if (!selectedHelper.operationCanContinue) return false;
+
+        return selectedHelper.writeData(selectedCard, (writeProgress) {
+          if (selectedHelper.operationCanContinue) {
+            updateProgress(writeProgress);
+          }
+        });
+      },
+    );
+    if (result.error != null) {
+      appState.log?.e('Failed to write card: ${result.error}');
     }
+    if (!mounted) return;
 
-    if (await helper!.writeData(card!, updateProgress)) {
+    if (result.executed && result.error == null && result.value == true) {
       snackBar = SnackBar(
         content: Text(localizations.magic_success_write),
         action: SnackBarAction(

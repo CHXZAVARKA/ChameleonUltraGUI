@@ -8,7 +8,8 @@ import 'package:chameleonultragui/helpers/mifare_classic/write/gen2.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 
 class MifareClassicGen3WriteHelper extends MifareClassicGen2WriteHelper {
-  MifareClassicGen3WriteHelper(super.communicator, {required super.recovery});
+  MifareClassicGen3WriteHelper(super.communicator,
+      {required super.recovery, required super.operationCanContinue});
 
   @override
   String get name => "gen3";

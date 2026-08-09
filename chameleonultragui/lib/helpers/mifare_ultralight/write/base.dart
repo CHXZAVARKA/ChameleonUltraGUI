@@ -23,18 +23,27 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
   TextEditingController keyController = TextEditingController();
   String? key;
 
-  BaseMifareUltralightWriteHelper(super.communicator);
+  BaseMifareUltralightWriteHelper(super.communicator,
+      {required super.operationCanContinue});
 
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      BaseMifareUltralightWriteHelper(communicator),
+      BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      ),
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
-    return [BaseMifareUltralightWriteHelper(communicator)];
+    return [
+      BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      )
+    ];
   }
 
   @override

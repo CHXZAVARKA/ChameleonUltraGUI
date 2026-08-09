@@ -25,18 +25,27 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
   String currentKey = "";
   String newKey = "";
 
-  BaseT55XXCardHelper(super.communicator);
+  BaseT55XXCardHelper(super.communicator,
+      {required super.operationCanContinue});
 
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      inheritOperationContinuation(BaseT55XXCardHelper(communicator)),
+      inheritOperationContinuation(BaseT55XXCardHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      )),
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
-    return [inheritOperationContinuation(BaseT55XXCardHelper(communicator))];
+    return [
+      inheritOperationContinuation(BaseT55XXCardHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      ))
+    ];
   }
 
   @override

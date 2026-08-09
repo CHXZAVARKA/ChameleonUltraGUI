@@ -46,6 +46,7 @@ void main() {
     final helper = MifareClassicGen1WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeBlock(1, Uint8List(16));
@@ -64,6 +65,7 @@ void main() {
     final helper = MifareClassicGen1WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeBlock(1, Uint8List(16));
@@ -82,6 +84,7 @@ void main() {
     final helper = MifareClassicGen1WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeBlock(1, Uint8List(16));
@@ -98,6 +101,7 @@ void main() {
     final helper = MifareClassicGen2WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeBlockModifier(
@@ -111,6 +115,27 @@ void main() {
     expect(communicator.authenticatedWrites, 1);
   });
 
+  test('Gen2 reports a stale session after an issued write as ambiguous',
+      () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    var sessionCurrent = true;
+    final communicator = _CompletedClassicWriteCommunicator(
+      logger,
+      afterWrite: () => sessionCurrent = false,
+    );
+    final helper = _ExposedGen2WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
+    )..setOperationContinuation(() => sessionCurrent);
+
+    final outcome = await helper.writeAuthenticatedOutcome();
+
+    expect(outcome, MifareClassicMagicWriteOutcome.ambiguous);
+    expect(communicator.authenticatedWrites, 1);
+  });
+
   test('Gen2 full write stops after an ambiguous trailer write', () async {
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
@@ -121,6 +146,7 @@ void main() {
     final helper = MifareClassicGen2WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeData(
@@ -149,6 +175,7 @@ void main() {
     final helper = MifareClassicGen2WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeData(
@@ -168,6 +195,7 @@ void main() {
     final helper = MifareClassicGen3WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeBlockModifier(
@@ -190,6 +218,7 @@ void main() {
     final helper = MifareClassicGen3WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
 
     final result = await helper.writeData(
@@ -217,6 +246,7 @@ void main() {
     final helper = MifareClassicGen3WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     );
     final verifiedBlockZero = Uint8List.fromList([
       0x01,
@@ -261,6 +291,7 @@ void main() {
     final helper = MifareClassicGen3WriteHelper(
       communicator,
       recovery: await recoveryFor(communicator),
+      operationCanContinue: () => true,
     )..setOperationContinuation(() => sessionCurrent);
 
     final result = await helper.writeBlockModifier(
@@ -279,7 +310,10 @@ void main() {
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
     final communicator = _CompletedT55WriteCommunicator(logger);
-    final helper = BaseT55XXCardHelper(communicator);
+    final helper = BaseT55XXCardHelper(
+      communicator,
+      operationCanContinue: () => true,
+    );
     var sessionCurrent = true;
     helper.setOperationContinuation(() => sessionCurrent);
     communicator.afterWrite = () => sessionCurrent = false;
@@ -498,6 +532,39 @@ class _CompletedT55WriteCommunicator extends ChameleonCommunicator {
   Future<EM410XCard?> readEM410X() async {
     reads++;
     return null;
+  }
+}
+
+class _ExposedGen2WriteHelper extends MifareClassicGen2WriteHelper {
+  _ExposedGen2WriteHelper(super.communicator,
+      {required super.recovery, required super.operationCanContinue});
+
+  Future<MifareClassicMagicWriteOutcome> writeAuthenticatedOutcome() {
+    return writeAuthenticatedBlock(
+      1,
+      0x60,
+      Uint8List.fromList(const [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+      Uint8List(16),
+    );
+  }
+}
+
+class _CompletedClassicWriteCommunicator extends ChameleonCommunicator {
+  _CompletedClassicWriteCommunicator(super.log, {required this.afterWrite});
+
+  final void Function() afterWrite;
+  int authenticatedWrites = 0;
+
+  @override
+  Future<bool> mf1WriteBlock(
+    int block,
+    int keyType,
+    Uint8List key,
+    Uint8List data,
+  ) async {
+    authenticatedWrites++;
+    afterWrite();
+    return true;
   }
 }
 

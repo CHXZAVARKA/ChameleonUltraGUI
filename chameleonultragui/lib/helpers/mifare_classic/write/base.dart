@@ -29,24 +29,31 @@ class BaseMifareClassicWriteHelper extends AbstractWriteHelper {
 
   BaseMifareClassicWriteHelper(super.communicator,
       {required this.recovery,
+      required super.operationCanContinue,
       this.type = MifareClassicType.m1k,
       this.isEV1 = false});
 
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      MifareClassicGen1WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen2WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen3WriteHelper(communicator, recovery: recovery)
+      MifareClassicGen1WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue),
+      MifareClassicGen2WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue),
+      MifareClassicGen3WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue)
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
     return [
-      MifareClassicGen1WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen3WriteHelper(communicator, recovery: recovery),
-      MifareClassicGen2WriteHelper(communicator, recovery: recovery)
+      MifareClassicGen1WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue),
+      MifareClassicGen3WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue),
+      MifareClassicGen2WriteHelper(communicator,
+          recovery: recovery, operationCanContinue: () => operationCanContinue)
     ];
   }
 

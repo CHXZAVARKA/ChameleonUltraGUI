@@ -3,7 +3,8 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/helpers/mifare_classic/write/base.dart';
 
 class MifareClassicGen1WriteHelper extends BaseMifareClassicWriteHelper {
-  MifareClassicGen1WriteHelper(super.communicator, {required super.recovery});
+  MifareClassicGen1WriteHelper(super.communicator,
+      {required super.recovery, required super.operationCanContinue});
 
   @override
   String get name => "gen1";

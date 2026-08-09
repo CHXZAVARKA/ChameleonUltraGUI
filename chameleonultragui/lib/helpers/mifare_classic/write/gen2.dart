@@ -19,7 +19,8 @@ enum MifareClassicMagicWriteOutcome {
 class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
   List<int> failedBlocks = [];
 
-  MifareClassicGen2WriteHelper(super.communicator, {required super.recovery});
+  MifareClassicGen2WriteHelper(super.communicator,
+      {required super.recovery, required super.operationCanContinue});
 
   @override
   String get name => "gen2";
@@ -206,7 +207,7 @@ class MifareClassicGen2WriteHelper extends BaseMifareClassicWriteHelper {
         data,
       );
       if (!operationCanContinue) {
-        return MifareClassicMagicWriteOutcome.rejected;
+        return MifareClassicMagicWriteOutcome.ambiguous;
       }
       return result
           ? MifareClassicMagicWriteOutcome.success
