@@ -27,8 +27,8 @@ void main() {
       find.byWidgetPredicate((widget) => widget is SegmentedButton),
       findsOneWidget,
     );
-    expect(find.text('Go to emulator mode'), findsOneWidget);
-    expect(find.text('Go to reader mode'), findsOneWidget);
+    expect(find.text('Emulator'), findsOneWidget);
+    expect(find.text('Reader'), findsOneWidget);
     expect(communicator.modeReads, 1);
   });
 
@@ -50,14 +50,14 @@ void main() {
     communicator.events.clear();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pump();
 
     expect(communicator.modeSets, [true]);
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
     expect(_modeControl(tester).onSelectionChanged, isNull);
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pump();
     expect(communicator.modeSets, [true]);
 
@@ -67,6 +67,61 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
     expect(communicator.modeReads, 2);
     expect(communicator.events, ['mode:set:reader', 'mode:read']);
+  });
+
+  testWidgets(
+      'late Home entry refresh cannot clear pending mode or queue a duplicate command',
+      (tester) async {
+    final entryRefreshGate = Completer<void>();
+    final switchGate = Completer<void>();
+    addTearDown(() {
+      if (!entryRefreshGate.isCompleted) {
+        entryRefreshGate.complete();
+      }
+      if (!switchGate.isCompleted) {
+        switchGate.complete();
+      }
+    });
+    final communicator = _ModeCommunicator(initialReaderMode: false);
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    communicator
+      ..events.clear()
+      ..nextModeReadGate = entryRefreshGate
+      ..nextModeSetGate = switchGate;
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    expect(communicator.events, ['mode:read']);
+
+    await tester.tap(find.text('Reader'));
+    await tester.pump();
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+    expect(_modeControl(tester).onSelectionChanged, isNull);
+    expect(communicator.modeSets, isEmpty);
+
+    entryRefreshGate.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(communicator.modeSets, [true]);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+    expect(_modeControl(tester).onSelectionChanged, isNull);
+
+    await tester.tap(
+      find.text('Reader'),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(communicator.modeSets, [true]);
+
+    switchGate.complete();
+    await tester.pumpAndSettle();
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+    expect(communicator.modeSets, [true]);
   });
 
   testWidgets('first mode read failure disables selection and offers retry',
@@ -124,13 +179,33 @@ void main() {
     await tester.pumpAndSettle();
     communicator.events.clear();
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
     expect(communicator.events, ['mode:set:reader', 'mode:read']);
     expect(find.text('Error: Unavailable'), findsOneWidget);
     expect(find.byType(SnackBar), findsOneWidget);
+  });
+
+  testWidgets(
+      'confirmed reread publishes the target when the command applies then throws',
+      (tester) async {
+    final communicator = _ModeCommunicator(initialReaderMode: false)
+      ..mutateModeBeforeSetError = true
+      ..nextModeSetError = StateError('transport lost the response');
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    communicator.events.clear();
+
+    await tester.tap(find.text('Reader'));
+    await tester.pumpAndSettle();
+
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+    expect(communicator.events, ['mode:set:reader', 'mode:read']);
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('mode reread mismatch keeps the prior confirmed selection',
@@ -143,7 +218,7 @@ void main() {
     await tester.pumpAndSettle();
     communicator.events.clear();
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
@@ -162,7 +237,7 @@ void main() {
       ..events.clear()
       ..modeReadResults.add(StateError('confirmation unavailable'));
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
@@ -184,6 +259,10 @@ void main() {
     final control = _modeControl(tester);
     expect(control.selected, {ConnectedDeviceMode.emulator});
     expect(control.segments[1].enabled, isFalse);
+    expect(
+      control.segments[1].tooltip,
+      'Chameleon Lite does not support reading cards',
+    );
     expect(communicator.modeReads, 0);
     expect(
       find.byWidgetPredicate(
@@ -194,7 +273,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Go to reader mode'), warnIfMissed: false);
+    await tester.tap(find.text('Reader'), warnIfMissed: false);
     await tester.pump();
     expect(communicator.modeSets, isEmpty);
   });
@@ -234,7 +313,7 @@ void main() {
     });
     await foregroundStarted.future;
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pump();
     expect(communicator.modeSets, isEmpty);
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
@@ -281,7 +360,7 @@ void main() {
     final oldReadGate = Completer<void>();
     oldCommunicator.nextModeReadGate = oldReadGate;
 
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pump();
     expect(oldCommunicator.modeSets, [true]);
 
@@ -316,7 +395,7 @@ void main() {
     expect(communicator.modeSets, isEmpty);
 
     communicator.events.clear();
-    await tester.tap(find.text('Go to reader mode'));
+    await tester.tap(find.text('Reader'));
     await tester.pumpAndSettle();
     expect(communicator.modeSets, [true]);
     expect(communicator.activations, [1]);
@@ -392,6 +471,7 @@ class _ModeCommunicator extends ChameleonCommunicator {
   Completer<void>? nextModeSetGate;
   Completer<void>? nextModeReadGate;
   Object? nextModeSetError;
+  bool mutateModeBeforeSetError = false;
   bool ignoreModeSets = false;
   int activeSlot = 0;
 
@@ -422,6 +502,9 @@ class _ModeCommunicator extends ChameleonCommunicator {
     await gate?.future;
     final error = nextModeSetError;
     nextModeSetError = null;
+    if (mutateModeBeforeSetError && error != null) {
+      this.readerMode = readerMode;
+    }
     if (error != null) {
       throw error;
     }

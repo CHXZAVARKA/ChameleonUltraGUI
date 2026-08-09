@@ -75,6 +75,8 @@
   "check_updates": "Check for updates",
   "emulator_mode": "Go to emulator mode",
   "reader_mode": "Go to reader mode",
+  "emulator": "Emulator",
+  "reader": "Reader",
   "recover_keys_via": "Recover keys via {mode}",
   "recover_keys": "Recover keys",
   "recover_keys_nonce": "Recover keys from {number} nonce(s)",

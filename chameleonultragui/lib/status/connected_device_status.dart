@@ -465,13 +465,18 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         );
         if (result.acquired) {
           if (_canPublish) {
+            final confirmed = result.value!
+                ? ConnectedDeviceMode.reader
+                : ConnectedDeviceMode.emulator;
+            final pending = _snapshot.mode.pendingMode;
             _publish(
               _snapshot.copyWith(
-                mode: ModeStatus.available(
-                  result.value!
-                      ? ConnectedDeviceMode.reader
-                      : ConnectedDeviceMode.emulator,
-                ),
+                mode: pending == null
+                    ? ModeStatus.available(confirmed)
+                    : ModeStatus.pending(
+                        confirmedMode: confirmed,
+                        pendingMode: pending,
+                      ),
               ),
             );
           }
@@ -570,15 +575,17 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           : isReader
               ? ConnectedDeviceMode.reader
               : ConnectedDeviceMode.emulator;
-      if (commandError == null && readError == null && confirmed == target) {
-        _publish(_snapshot.copyWith(mode: ModeStatus.available(target)));
-        return ModeActionOutcome.confirmed;
-      }
-
-      if (commandError == null && readError == null) {
-        _session.appState.log?.w(
-          'Connected-device mode did not match the requested mode',
-        );
+      if (readError == null && confirmed != null) {
+        _publish(_snapshot.copyWith(mode: ModeStatus.available(confirmed)));
+        if (confirmed == target) {
+          return ModeActionOutcome.confirmed;
+        }
+        if (commandError == null) {
+          _session.appState.log?.w(
+            'Connected-device mode did not match the requested mode',
+          );
+        }
+        return ModeActionOutcome.failed;
       }
       _publish(_snapshot.copyWith(mode: previous));
       return ModeActionOutcome.failed;

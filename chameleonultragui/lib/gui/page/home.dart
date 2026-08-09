@@ -524,17 +524,13 @@ class _DeviceModeControl extends StatelessWidget {
           segments: [
             ButtonSegment(
               value: ConnectedDeviceMode.emulator,
-              label: Text(localizations.emulator_mode),
+              label: Text(localizations.emulator),
             ),
             ButtonSegment(
               value: ConnectedDeviceMode.reader,
               enabled: !isLite,
-              label: isLite
-                  ? Tooltip(
-                      message: localizations.lite_no_read,
-                      child: Text(localizations.reader_mode),
-                    )
-                  : Text(localizations.reader_mode),
+              tooltip: isLite ? localizations.lite_no_read : null,
+              label: Text(localizations.reader),
             ),
           ],
           selected:
