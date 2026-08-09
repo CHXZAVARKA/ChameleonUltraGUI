@@ -14,6 +14,8 @@ import 'package:provider/provider.dart';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
+import 'support/firmware_catalog_stub.dart';
+
 void main() {
   testWidgets('Home shell renders while battery is still loading',
       (tester) async {
@@ -387,7 +389,10 @@ ChameleonGUIState _connectedState(ChameleonCommunicator communicator) {
     ..connectionType = ConnectionType.usb
     ..portName = 'USB device with a very long port name'
     ..activeDevicePort = 'test-port';
-  return ChameleonGUIState(SharedPreferencesProvider())
+  return ChameleonGUIState(
+    SharedPreferencesProvider(),
+    firmwareCatalog: const CurrentFirmwareCatalogStub(),
+  )
     ..connector = serial
     ..communicator = communicator
     ..log = Logger();

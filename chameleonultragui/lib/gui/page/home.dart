@@ -1,8 +1,5 @@
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
-import 'package:chameleonultragui/helpers/definitions.dart';
-import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
-import 'package:chameleonultragui/helpers/github.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,15 +19,9 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-  int selectedSlot = 1;
-  bool isLegacyFirmware = false;
   ConnectedDeviceStatus? _status;
   StatusPresence? _homePresence;
-
-  @override
-  void initState() {
-    super.initState();
-  }
+  bool _firmwareWarningScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -40,129 +31,83 @@ class HomePageState extends State<HomePage> {
     if (identical(_status, nextStatus)) {
       return;
     }
+    _status?.removeListener(_onStatusChanged);
     _homePresence?.dispose();
     _status = nextStatus;
+    nextStatus?.addListener(_onStatusChanged);
     _homePresence = nextStatus?.present(StatusSurface.home);
+    _scheduleFirmwareWarning();
   }
 
   @override
   void dispose() {
+    _status?.removeListener(_onStatusChanged);
     _homePresence?.dispose();
     super.dispose();
   }
 
-  Future<(List<String>, bool)> getFutureData() async {
-    return (await getVersion(), await areCapabilitiesSupported());
+  void _onStatusChanged() {
+    _scheduleFirmwareWarning();
   }
 
-  Future<bool> areCapabilitiesSupported() async {
-    // Checks that firmware supports all functions of current app
-    // If not, prompt user to update firmware (as outdated firmware might break app)
-
-    int ultraCapability = ChameleonCommand.setIdteckEmulatorID.value;
-    int liteCapability = ChameleonCommand.setIdteckEmulatorID.value;
-
-    var appState = context.read<ChameleonGUIState>();
-    List<int> capabilities;
-    try {
-      capabilities = await appState.communicator!.getDeviceCapabilities();
-    } catch (_) {
-      return false;
+  void _scheduleFirmwareWarning() {
+    if (_firmwareWarningScheduled) {
+      return;
     }
-
-    if (appState.connector!.device == ChameleonDevice.ultra &&
-        !capabilities.contains(ultraCapability)) {
-      return false;
-    }
-
-    if (appState.connector!.device == ChameleonDevice.lite &&
-        !capabilities.contains(liteCapability)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  Future<List<String>> getVersion() async {
-    var appState = context.read<ChameleonGUIState>();
-
-    String commitHash = "";
-    var firmware = await appState.communicator!.getFirmwareVersion();
-    isLegacyFirmware = firmware.legacyProtocol;
-    String firmwareVersion = numToVerCode(firmware.version);
-
-    try {
-      commitHash = await appState.communicator!.getGitCommitHash();
-    } catch (_) {}
-
-    if (commitHash.isEmpty) {
-      if (mounted) {
-        commitHash = AppLocalizations.of(context)!.outdated_fw;
-      } else {
-        commitHash = "Outdated FW";
+    _firmwareWarningScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _firmwareWarningScheduled = false;
+      if (!mounted) {
+        return;
       }
-    }
-
-    if (mounted && isLegacyFirmware) {
-      var localizations = AppLocalizations.of(context)!;
-      showDialog<void>(
+      final status = _status;
+      if (status == null || !status.claimFirmwareCompatibilityWarning()) {
+        return;
+      }
+      final localizations = AppLocalizations.of(context)!;
+      await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text(localizations.outdated_protocol),
-            content: SingleChildScrollView(
-              child: ListBody(
-                children: <Widget>[
-                  Text(localizations.outdated_protocol_description_1),
-                  Text(localizations.outdated_protocol_description_2),
-                  Text(localizations.outdated_protocol_description_3),
-                ],
-              ),
+        builder: (dialogContext) => AlertDialog(
+          key: const Key('firmware-compatibility-warning'),
+          title: Text(localizations.outdated_protocol),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: [
+                Text(localizations.outdated_protocol_description_1),
+                Text(localizations.outdated_protocol_description_2),
+                Text(localizations.outdated_protocol_description_3),
+              ],
             ),
-            actions: <Widget>[
-              TextButton(
-                child: Text(localizations.update),
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  var localizations = AppLocalizations.of(context)!;
-                  var scaffoldMessenger = ScaffoldMessenger.of(context);
-                  var snackBar = SnackBar(
-                    content: Text(localizations.downloading_fw(
-                        chameleonDeviceName(appState.connector!.device))),
-                    action: SnackBarAction(
-                      label: localizations.close,
-                      onPressed: () {
-                        scaffoldMessenger.hideCurrentSnackBar();
-                      },
-                    ),
-                  );
-
-                  scaffoldMessenger.showSnackBar(snackBar);
-                  await flashFirmware(appState,
-                      scaffoldMessenger: scaffoldMessenger);
-                },
-              ),
-              TextButton(
-                child: Text(localizations.skip),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        },
+          ),
+          actions: [
+            TextButton(
+              key: const Key('firmware-warning-update'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    _openFirmwareDetails(context, status);
+                  }
+                });
+              },
+              child: Text(localizations.update),
+            ),
+            TextButton(
+              key: const Key('firmware-warning-skip'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(localizations.skip),
+            ),
+          ],
+        ),
       );
-    }
-
-    return ["$firmwareVersion ($commitHash)", commitHash];
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
     var localizations = AppLocalizations.of(context)!;
-    var scaffoldMessenger = ScaffoldMessenger.of(context);
     final status = _status;
     if (status == null) {
       return Scaffold(appBar: AppBar(title: Text(localizations.home)));
@@ -172,337 +117,330 @@ class HomePageState extends State<HomePage> {
         appState: appState,
         status: status,
       ),
-      body: FutureBuilder(
-        future: getFutureData(),
-        builder: (BuildContext context, AsyncSnapshot snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _LegacyHomePlaceholder(
-              device: status.snapshot.identity.device,
-              status: status,
-            );
-          } else if (snapshot.hasError) {
-            return _LegacyHomePlaceholder(
-              device: status.snapshot.identity.device,
-              status: status,
-              errorMessage: snapshot.error.toString(),
-            );
-          } else {
-            final (
-              fwVersion,
-              areCapabilitiesSupported,
-            ) = snapshot.data;
-
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _FirmwarePill(status: status),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _SharedSlotSummary(status: status),
+            Expanded(
+              child: FractionallySizedBox(
+                widthFactor: 0.4,
+                child: Image.asset(
+                  status.snapshot.identity.device == ChameleonDevice.ultra
+                      ? 'assets/black-ultra-standing-front.webp'
+                      : 'assets/black-lite-standing-front.webp',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Row(
                 children: [
-                  const SizedBox(height: 20),
-                  _SharedSlotSummary(status: status),
-                  Expanded(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.4,
-                      child: Image.asset(
-                        appState.connector!.device == ChameleonDevice.ultra
-                            ? 'assets/black-ultra-standing-front.webp'
-                            : 'assets/black-lite-standing-front.webp',
-                        fit: BoxFit.contain,
-                      ),
-                    ),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: _DeviceModeControl(status: status),
                   ),
-                  const SizedBox(height: 8),
-                  if (appState.connector!.portName != "Demo")
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text("${localizations.firmware_version}: ",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: min(
-                                MediaQuery.of(context).size.width / 50,
-                                MediaQuery.of(context).size.height / 30,
-                              ),
-                            )),
-                        Text(fwVersion[0],
-                            style: TextStyle(
-                              fontSize: min(
-                                MediaQuery.of(context).size.width / 50,
-                                MediaQuery.of(context).size.height / 30,
-                              ),
-                            )),
-                        Padding(
-                          padding: const EdgeInsets.all(4.0),
-                          child: IconButton(
-                            onPressed: () async {
-                              SnackBar snackBar;
-                              String latestCommit;
-
-                              try {
-                                latestCommit = await latestAvailableCommit(
-                                    appState.connector!.device);
-                              } catch (e) {
-                                if (context.mounted) {
-                                  scaffoldMessenger.hideCurrentSnackBar();
-                                  snackBar = SnackBar(
-                                    content: Text(
-                                        '${localizations.update_error}: ${e.toString()}'),
-                                    action: SnackBarAction(
-                                      label: localizations.close,
-                                      onPressed: () {},
-                                    ),
-                                  );
-
-                                  scaffoldMessenger.showSnackBar(snackBar);
-                                }
-                                return;
-                              }
-
-                              try {
-                                fwVersion[1] =
-                                    await resolveCommit(fwVersion[1]);
-                              } catch (_) {}
-
-                              appState.log!.i(
-                                  "Latest commit: $latestCommit, current commit ${fwVersion[1]}");
-
-                              if (latestCommit.isEmpty) {
-                                return;
-                              }
-
-                              if (latestCommit.startsWith(fwVersion[1]) &&
-                                  context.mounted) {
-                                snackBar = SnackBar(
-                                  content: Text(localizations.up_to_date(
-                                      chameleonDeviceName(
-                                          appState.connector!.device))),
-                                  action: SnackBarAction(
-                                    label: localizations.close,
-                                    onPressed: () {},
-                                  ),
-                                );
-
-                                scaffoldMessenger.showSnackBar(snackBar);
-                              } else if (context.mounted) {
-                                snackBar = SnackBar(
-                                  content: Text(localizations.downloading_fw(
-                                      chameleonDeviceName(
-                                          appState.connector!.device))),
-                                  action: SnackBarAction(
-                                    label: localizations.close,
-                                    onPressed: () {
-                                      scaffoldMessenger.hideCurrentSnackBar();
-                                    },
-                                  ),
-                                );
-
-                                scaffoldMessenger.showSnackBar(snackBar);
-                                try {
-                                  await flashFirmware(appState,
-                                      scaffoldMessenger: scaffoldMessenger);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    scaffoldMessenger.hideCurrentSnackBar();
-                                    snackBar = SnackBar(
-                                      content: Text(
-                                          '${localizations.update_error}: ${e.toString()}'),
-                                      action: SnackBarAction(
-                                        label: localizations.close,
-                                        onPressed: () {
-                                          scaffoldMessenger
-                                              .hideCurrentSnackBar();
-                                        },
-                                      ),
-                                    );
-
-                                    scaffoldMessenger.showSnackBar(snackBar);
-                                  }
-                                }
-                              }
-                            },
-                            tooltip: localizations.check_updates,
-                            icon: const Icon(Icons.update),
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (appState.connector!.portName == "Demo")
-                    Container(
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: appState.sharedPreferencesProvider
-                            .getThemeComplementaryColor(),
-                        borderRadius:
-                            const BorderRadius.all(Radius.circular(8.0)),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: IconButton(
+                      tooltip: localizations.settings,
+                      onPressed: () => showDialog<String>(
+                        context: context,
+                        builder: (_) => const ChameleonSettings(),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                          ),
-                          const SizedBox(width: 16.0),
-                          Expanded(
-                            child: Text(
-                              localizations.demo_firmware,
-                              style: const TextStyle(
-                                fontSize: 16.0,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (!areCapabilitiesSupported &&
-                      appState.connector!.portName != "Demo")
-                    Container(
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: appState.sharedPreferencesProvider
-                            .getThemeComplementaryColor(),
-                        borderRadius:
-                            const BorderRadius.all(Radius.circular(8.0)),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                          ),
-                          const SizedBox(width: 16.0),
-                          Expanded(
-                            child: Text(
-                              localizations.please_update_firmware,
-                              style: const TextStyle(
-                                fontSize: 16.0,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () async {
-                              var localizations = AppLocalizations.of(context)!;
-                              var scaffoldMessenger =
-                                  ScaffoldMessenger.of(context);
-                              var snackBar = SnackBar(
-                                content: Text(localizations.downloading_fw(
-                                    chameleonDeviceName(
-                                        appState.connector!.device))),
-                                action: SnackBarAction(
-                                  label: localizations.close,
-                                  onPressed: () {
-                                    scaffoldMessenger.hideCurrentSnackBar();
-                                  },
-                                ),
-                              );
-
-                              scaffoldMessenger.showSnackBar(snackBar);
-                              await flashFirmware(appState,
-                                  scaffoldMessenger: scaffoldMessenger);
-                            },
-                            child: Text(localizations.update),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Row(
-                      children: [
-                        const Spacer(),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: _DeviceModeControl(status: status),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: IconButton(
-                            onPressed: () => showDialog<String>(
-                                context: context,
-                                builder: (BuildContext dialogContext) =>
-                                    const ChameleonSettings()),
-                            icon: const Icon(Icons.settings),
-                          ),
-                        ),
-                      ],
+                      icon: const Icon(Icons.settings),
                     ),
                   ),
                 ],
               ),
-            );
-          }
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _LegacyHomePlaceholder extends StatelessWidget {
-  const _LegacyHomePlaceholder({
-    required this.device,
-    required this.status,
-    this.errorMessage,
-  });
+Future<void> _openFirmwareDetails(
+  BuildContext context,
+  ConnectedDeviceStatus status,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _FirmwareDetailsDialog(status: status),
+  );
+}
 
-  final ChameleonDevice device;
+class _FirmwarePill extends StatelessWidget {
+  const _FirmwarePill({required this.status});
+
   final ConnectedDeviceStatus status;
-  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (errorMessage case final message?)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                '${localizations.error}: $message',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          const SizedBox(height: 20),
-          _SharedSlotSummary(status: status),
-          Expanded(
-            child: FractionallySizedBox(
-              widthFactor: 0.4,
-              child: Image.asset(
-                device == ChameleonDevice.ultra
-                    ? 'assets/black-ultra-standing-front.webp'
-                    : 'assets/black-lite-standing-front.webp',
-                fit: BoxFit.contain,
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final firmware = status.snapshot.firmware;
+        final statusLabel = _firmwareStatusLabel(localizations, firmware.state);
+        final semanticLabel = '${localizations.firmware} · $statusLabel';
+        return Semantics(
+          button: true,
+          label: semanticLabel,
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(999),
+            child: InkWell(
+              key: const Key('home-firmware-pill'),
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _openFirmwareDetails(context, status),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      localizations.firmware,
+                      key: const Key('firmware-label'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Text(' • '),
+                    Text(
+                      statusLabel,
+                      key: const Key('firmware-status-text'),
+                      style: TextStyle(
+                        color: _firmwareStatusColor(context, firmware.state),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-          Text('${localizations.firmware_version}: ${localizations.unknown}'),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Row(
+        );
+      },
+    );
+  }
+}
+
+class _FirmwareDetailsDialog extends StatelessWidget {
+  const _FirmwareDetailsDialog({required this.status});
+
+  final ConnectedDeviceStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final snapshot = status.snapshot;
+        final firmware = snapshot.firmware;
+        final latest = _latestFirmwareLabel(localizations, firmware);
+        return AlertDialog(
+          key: const Key('firmware-details-dialog'),
+          title: Text(localizations.firmware_details),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: _DeviceModeControl(status: status),
+                _FirmwareDetailRow(
+                  label: localizations.model,
+                  value: chameleonDeviceName(snapshot.identity.device),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: IconButton(
-                    onPressed: () => showDialog<String>(
-                      context: context,
-                      builder: (_) => const ChameleonSettings(),
-                    ),
-                    icon: const Icon(Icons.settings),
+                _FirmwareDetailRow(
+                  label: localizations.installed_version,
+                  value: firmware.installedVersion ?? localizations.unknown,
+                ),
+                _FirmwareDetailRow(
+                  label: localizations.installed_commit,
+                  value: firmware.installedCommit ?? localizations.unknown,
+                ),
+                _FirmwareDetailRow(
+                  label: localizations.protocol,
+                  value: _firmwareProtocolLabel(
+                    localizations,
+                    firmware.protocol,
                   ),
                 ),
+                _FirmwareDetailRow(
+                  label: localizations.latest_version_or_commit,
+                  value: latest,
+                ),
+                _FirmwareDetailRow(
+                  label: localizations.last_check_result,
+                  value: _firmwareCheckResultLabel(localizations, firmware),
+                ),
+                if (firmware.installationFailed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      localizations.update_error,
+                      key: const Key('firmware-update-error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-        ],
+          actions: [
+            if (firmware.checkResult == FirmwareCheckResult.unavailable)
+              TextButton(
+                key: const Key('firmware-check-retry'),
+                onPressed: firmware.installing
+                    ? null
+                    : () => status.retryFirmwareCheck(),
+                child: Text(localizations.retry),
+              ),
+            if (firmware.canInstall)
+              FilledButton(
+                key: Key(
+                  firmware.installationFailed
+                      ? 'firmware-install-retry'
+                      : 'firmware-update',
+                ),
+                onPressed: firmware.installing
+                    ? null
+                    : () async {
+                        final outcome = await status.installFirmware();
+                        if (context.mounted &&
+                            (outcome == FirmwareInstallOutcome.started ||
+                                outcome ==
+                                    FirmwareInstallOutcome.connectionChanged)) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                child: firmware.installing
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        firmware.installationFailed
+                            ? localizations.retry
+                            : localizations.update,
+                      ),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(localizations.close),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FirmwareDetailRow extends StatelessWidget {
+  const _FirmwareDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            TextSpan(text: value),
+          ],
+        ),
       ),
     );
   }
+}
+
+String _firmwareStatusLabel(
+  AppLocalizations localizations,
+  FirmwareState state,
+) =>
+    switch (state) {
+      FirmwareState.checking => localizations.firmware_checking,
+      FirmwareState.upToDate => localizations.firmware_up_to_date,
+      FirmwareState.updateAvailable => localizations.firmware_update_available,
+      FirmwareState.updateRequired => localizations.firmware_update_required,
+      FirmwareState.checkUnavailable =>
+        localizations.firmware_check_unavailable,
+      FirmwareState.demo => localizations.firmware_demo,
+    };
+
+String _firmwareProtocolLabel(
+  AppLocalizations localizations,
+  FirmwareProtocol protocol,
+) =>
+    switch (protocol) {
+      FirmwareProtocol.loading => localizations.firmware_checking,
+      FirmwareProtocol.current => localizations.current_protocol,
+      FirmwareProtocol.legacy => localizations.legacy_protocol,
+      FirmwareProtocol.unknown => localizations.unknown,
+    };
+
+String _latestFirmwareLabel(
+  AppLocalizations localizations,
+  FirmwareStatus firmware,
+) {
+  final version = firmware.latestVersion;
+  final commit = firmware.latestCommit;
+  if (version != null && commit != null) {
+    return '$version ($commit)';
+  }
+  return version ?? commit ?? localizations.unknown;
+}
+
+String _firmwareCheckResultLabel(
+  AppLocalizations localizations,
+  FirmwareStatus firmware,
+) =>
+    switch (firmware.checkResult) {
+      FirmwareCheckResult.checking => localizations.firmware_checking,
+      FirmwareCheckResult.succeeded =>
+        _firmwareStatusLabel(localizations, firmware.state),
+      FirmwareCheckResult.unavailable =>
+        localizations.firmware_check_unavailable,
+      FirmwareCheckResult.demo => localizations.firmware_demo,
+    };
+
+Color _firmwareStatusColor(BuildContext context, FirmwareState state) {
+  final theme = Theme.of(context);
+  final dark = theme.brightness == Brightness.dark;
+  return switch (state) {
+    FirmwareState.upToDate =>
+      dark ? Colors.green.shade300 : Colors.green.shade700,
+    FirmwareState.updateAvailable =>
+      dark ? Colors.amber.shade300 : Colors.amber.shade800,
+    FirmwareState.updateRequired => theme.colorScheme.error,
+    FirmwareState.checkUnavailable =>
+      dark ? Colors.grey.shade400 : Colors.grey.shade600,
+    FirmwareState.checking ||
+    FirmwareState.demo =>
+      theme.colorScheme.onSurfaceVariant,
+  };
 }
 
 class _DeviceModeControl extends StatelessWidget {

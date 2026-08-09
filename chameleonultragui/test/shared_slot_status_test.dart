@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+
+import 'support/firmware_catalog_stub.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -472,7 +474,10 @@ ChameleonGUIState _connectedState(ChameleonCommunicator communicator) {
     ..connectionType = ConnectionType.usb
     ..portName = 'test-port'
     ..activeDevicePort = 'test-port';
-  return ChameleonGUIState(SharedPreferencesProvider())
+  return ChameleonGUIState(
+    SharedPreferencesProvider(),
+    firmwareCatalog: const CurrentFirmwareCatalogStub(),
+  )
     ..connector = serial
     ..communicator = communicator
     ..log = Logger();

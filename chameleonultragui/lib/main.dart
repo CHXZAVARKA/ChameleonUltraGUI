@@ -11,6 +11,7 @@ import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
+import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -67,7 +68,14 @@ class ChameleonGUI extends StatelessWidget {
 
 class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
-  ChameleonGUIState(this.sharedPreferencesProvider);
+  final FirmwareCatalog firmwareCatalog;
+  final Future<void> Function()? firmwareInstaller;
+
+  ChameleonGUIState(
+    this.sharedPreferencesProvider, {
+    this.firmwareCatalog = const GitHubFirmwareCatalog(),
+    this.firmwareInstaller,
+  });
 
   RfOperationCoordinator _rfOperations = RfOperationCoordinator();
   RfOperationCoordinator get rfOperations => _rfOperations;
@@ -187,6 +195,8 @@ class ChameleonGUIState extends ChangeNotifier {
     _connectedDeviceStatus = ConnectedDeviceStatus(
       session: session,
       rfOperations: rfOperations,
+      firmwareCatalog: firmwareCatalog,
+      firmwareInstaller: firmwareInstaller,
     );
   }
 

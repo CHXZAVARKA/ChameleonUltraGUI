@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/flash.dart';
+import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
+import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/widgets.dart';
 
 enum StatusSurface { home, slotManager }
@@ -20,6 +23,129 @@ enum ModeActionOutcome {
   unsupported,
   busy,
   connectionChanged,
+}
+
+enum FirmwareState {
+  checking,
+  upToDate,
+  updateAvailable,
+  updateRequired,
+  checkUnavailable,
+  demo,
+}
+
+enum FirmwareProtocol { loading, current, legacy, unknown }
+
+enum FirmwareCompatibility { loading, compatible, incompatible, unknown }
+
+enum FirmwareCheckResult { checking, succeeded, unavailable, demo }
+
+enum FirmwareInstallOutcome {
+  started,
+  failed,
+  busy,
+  notAvailable,
+  connectionChanged,
+}
+
+@immutable
+class FirmwareStatus {
+  const FirmwareStatus({
+    required this.state,
+    required this.protocol,
+    required this.compatibility,
+    required this.checkResult,
+    this.installedVersion,
+    this.installedCommit,
+    this.latestVersion,
+    this.latestCommit,
+    this.installing = false,
+    this.installationFailed = false,
+  });
+
+  const FirmwareStatus.checking()
+      : this(
+          state: FirmwareState.checking,
+          protocol: FirmwareProtocol.loading,
+          compatibility: FirmwareCompatibility.loading,
+          checkResult: FirmwareCheckResult.checking,
+        );
+
+  const FirmwareStatus.demo()
+      : this(
+          state: FirmwareState.demo,
+          protocol: FirmwareProtocol.unknown,
+          compatibility: FirmwareCompatibility.unknown,
+          checkResult: FirmwareCheckResult.demo,
+        );
+
+  final FirmwareState state;
+  final String? installedVersion;
+  final String? installedCommit;
+  final FirmwareProtocol protocol;
+  final FirmwareCompatibility compatibility;
+  final String? latestVersion;
+  final String? latestCommit;
+  final FirmwareCheckResult checkResult;
+  final bool installing;
+  final bool installationFailed;
+
+  FirmwareStatus copyWith({
+    FirmwareState? state,
+    String? installedVersion,
+    String? installedCommit,
+    FirmwareProtocol? protocol,
+    FirmwareCompatibility? compatibility,
+    String? latestVersion,
+    String? latestCommit,
+    FirmwareCheckResult? checkResult,
+    bool? installing,
+    bool? installationFailed,
+  }) =>
+      FirmwareStatus(
+        state: state ?? this.state,
+        installedVersion: installedVersion ?? this.installedVersion,
+        installedCommit: installedCommit ?? this.installedCommit,
+        protocol: protocol ?? this.protocol,
+        compatibility: compatibility ?? this.compatibility,
+        latestVersion: latestVersion ?? this.latestVersion,
+        latestCommit: latestCommit ?? this.latestCommit,
+        checkResult: checkResult ?? this.checkResult,
+        installing: installing ?? this.installing,
+        installationFailed: installationFailed ?? this.installationFailed,
+      );
+
+  bool get canInstall =>
+      state == FirmwareState.updateAvailable ||
+      state == FirmwareState.updateRequired;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FirmwareStatus &&
+      other.state == state &&
+      other.installedVersion == installedVersion &&
+      other.installedCommit == installedCommit &&
+      other.protocol == protocol &&
+      other.compatibility == compatibility &&
+      other.latestVersion == latestVersion &&
+      other.latestCommit == latestCommit &&
+      other.checkResult == checkResult &&
+      other.installing == installing &&
+      other.installationFailed == installationFailed;
+
+  @override
+  int get hashCode => Object.hash(
+        state,
+        installedVersion,
+        installedCommit,
+        protocol,
+        compatibility,
+        latestVersion,
+        latestCommit,
+        checkResult,
+        installing,
+        installationFailed,
+      );
 }
 
 enum SlotFieldAvailability { confirmed, unavailable }
@@ -326,23 +452,27 @@ class DeviceStatusSnapshot {
     required this.battery,
     required this.mode,
     required this.slots,
+    required this.firmware,
   });
 
   final DeviceIdentityStatus identity;
   final BatteryStatus battery;
   final ModeStatus mode;
   final SlotsStatus slots;
+  final FirmwareStatus firmware;
 
   DeviceStatusSnapshot copyWith({
     BatteryStatus? battery,
     ModeStatus? mode,
     SlotsStatus? slots,
+    FirmwareStatus? firmware,
   }) =>
       DeviceStatusSnapshot(
         identity: identity,
         battery: battery ?? this.battery,
         mode: mode ?? this.mode,
         slots: slots ?? this.slots,
+        firmware: firmware ?? this.firmware,
       );
 
   @override
@@ -351,10 +481,11 @@ class DeviceStatusSnapshot {
       other.identity == identity &&
       other.battery == battery &&
       other.mode == mode &&
-      other.slots == slots;
+      other.slots == slots &&
+      other.firmware == firmware;
 
   @override
-  int get hashCode => Object.hash(identity, battery, mode, slots);
+  int get hashCode => Object.hash(identity, battery, mode, slots, firmware);
 }
 
 class StatusPresence {
@@ -369,13 +500,33 @@ class StatusPresence {
   }
 }
 
+@immutable
+class _FirmwareFacts {
+  const _FirmwareFacts({
+    required this.installedVersion,
+    required this.installedCommit,
+    required this.protocol,
+    required this.compatibility,
+  });
+
+  final String? installedVersion;
+  final String? installedCommit;
+  final FirmwareProtocol protocol;
+  final FirmwareCompatibility compatibility;
+}
+
 class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   ConnectedDeviceStatus({
     required ConnectedDeviceSession session,
     required RfOperationCoordinator rfOperations,
+    FirmwareCatalog firmwareCatalog = const GitHubFirmwareCatalog(),
+    Future<void> Function()? firmwareInstaller,
     this.batteryPollInterval = const Duration(seconds: 15),
   })  : _session = session,
         _rfOperations = rfOperations,
+        _firmwareCatalog = firmwareCatalog,
+        _firmwareInstaller =
+            firmwareInstaller ?? (() => flashFirmware(session.appState)),
         _snapshot = DeviceStatusSnapshot(
           identity: DeviceIdentityStatus(
             device: session.connector.device,
@@ -387,12 +538,17 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
               ? const ModeStatus.available(ConnectedDeviceMode.emulator)
               : const ModeStatus.loading(),
           slots: SlotsStatus.loading(),
+          firmware: session.connector.portName == 'Demo'
+              ? const FirmwareStatus.demo()
+              : const FirmwareStatus.checking(),
         ) {
     WidgetsBinding.instance.addObserver(this);
   }
 
   final ConnectedDeviceSession _session;
   final RfOperationCoordinator _rfOperations;
+  final FirmwareCatalog _firmwareCatalog;
+  final Future<void> Function() _firmwareInstaller;
   final Duration batteryPollInterval;
 
   DeviceStatusSnapshot _snapshot;
@@ -402,6 +558,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<void>? _batteryRefresh;
   Future<void>? _modeRefresh;
   Future<void>? _slotsRefresh;
+  Future<void>? _firmwareRefresh;
+  _FirmwareFacts? _firmwareFacts;
+  bool _firmwareLookupAttempted = false;
+  bool _firmwareWarningClaimed = false;
   final Object _backgroundOperationGroup = Object();
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
@@ -429,7 +589,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final batteryRefresh = refreshBattery();
     final modeRefresh = refreshMode();
     final slotsRefresh = refreshSlots();
-    await Future.wait([batteryRefresh, modeRefresh, slotsRefresh]);
+    final firmwareRefresh = refreshFirmware();
+    await Future.wait(
+      [batteryRefresh, modeRefresh, slotsRefresh, firmwareRefresh],
+    );
   }
 
   Future<void> _refreshHomeAfterResume() async {
@@ -438,7 +601,278 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         ? refreshMode()
         : Future<void>.value();
     final slotsRefresh = refreshSlots();
-    await Future.wait([batteryRefresh, modeRefresh, slotsRefresh]);
+    final firmwareRefresh = refreshFirmware();
+    await Future.wait(
+      [batteryRefresh, modeRefresh, slotsRefresh, firmwareRefresh],
+    );
+  }
+
+  Future<void> refreshFirmware() {
+    if (_snapshot.firmware.state == FirmwareState.demo ||
+        _firmwareLookupAttempted) {
+      return _firmwareRefresh ?? Future.value();
+    }
+    _firmwareLookupAttempted = true;
+    return _startFirmwareRefresh(readFacts: true);
+  }
+
+  Future<void> retryFirmwareCheck() {
+    if (_snapshot.firmware.state == FirmwareState.demo ||
+        _snapshot.firmware.checkResult != FirmwareCheckResult.unavailable) {
+      return _firmwareRefresh ?? Future.value();
+    }
+    return _startFirmwareRefresh(readFacts: _firmwareFacts == null);
+  }
+
+  Future<void> _startFirmwareRefresh({required bool readFacts}) {
+    final currentRefresh = _firmwareRefresh;
+    if (currentRefresh != null) {
+      return currentRefresh;
+    }
+
+    final refresh = _refreshFirmware(readFacts: readFacts);
+    _firmwareRefresh = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_firmwareRefresh, refresh)) {
+        _firmwareRefresh = null;
+      }
+    });
+  }
+
+  Future<void> _refreshFirmware({required bool readFacts}) async {
+    if (!_canPublish || _snapshot.firmware.state == FirmwareState.demo) {
+      return;
+    }
+
+    _publish(
+      _snapshot.copyWith(
+        firmware: _snapshot.firmware.copyWith(
+          state: _snapshot.firmware.compatibility ==
+                  FirmwareCompatibility.incompatible
+              ? FirmwareState.updateRequired
+              : FirmwareState.checking,
+          checkResult: FirmwareCheckResult.checking,
+          installationFailed: false,
+        ),
+      ),
+    );
+
+    if (readFacts || _firmwareFacts == null) {
+      _firmwareFacts = await _readFirmwareFacts();
+      if (!_canPublish) {
+        return;
+      }
+      final facts = _firmwareFacts!;
+      _publish(
+        _snapshot.copyWith(
+          firmware: FirmwareStatus(
+            state: facts.compatibility == FirmwareCompatibility.incompatible
+                ? FirmwareState.updateRequired
+                : FirmwareState.checking,
+            installedVersion: facts.installedVersion,
+            installedCommit: facts.installedCommit,
+            protocol: facts.protocol,
+            compatibility: facts.compatibility,
+            checkResult: FirmwareCheckResult.checking,
+          ),
+        ),
+      );
+    }
+
+    final facts = _firmwareFacts!;
+    try {
+      final latest = await _firmwareCatalog.latestFirmware(
+        device: _session.connector.device,
+        installedCommit: facts.installedCommit,
+      );
+      if (!_canPublish) {
+        return;
+      }
+      final comparisonAvailable = latest.updateAvailable != null;
+      final state = facts.compatibility == FirmwareCompatibility.incompatible
+          ? FirmwareState.updateRequired
+          : latest.updateAvailable == true
+              ? FirmwareState.updateAvailable
+              : latest.updateAvailable == false
+                  ? FirmwareState.upToDate
+                  : FirmwareState.checkUnavailable;
+      _publish(
+        _snapshot.copyWith(
+          firmware: FirmwareStatus(
+            state: state,
+            installedVersion: facts.installedVersion,
+            installedCommit: facts.installedCommit,
+            protocol: facts.protocol,
+            compatibility: facts.compatibility,
+            latestVersion: latest.latestVersion,
+            latestCommit: latest.latestCommit,
+            checkResult: comparisonAvailable
+                ? FirmwareCheckResult.succeeded
+                : FirmwareCheckResult.unavailable,
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to check the latest connected-device firmware',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return;
+      }
+      _publish(
+        _snapshot.copyWith(
+          firmware: FirmwareStatus(
+            state: facts.compatibility == FirmwareCompatibility.incompatible
+                ? FirmwareState.updateRequired
+                : FirmwareState.checkUnavailable,
+            installedVersion: facts.installedVersion,
+            installedCommit: facts.installedCommit,
+            protocol: facts.protocol,
+            compatibility: facts.compatibility,
+            checkResult: FirmwareCheckResult.unavailable,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<_FirmwareFacts> _readFirmwareFacts() async {
+    while (_canPublish) {
+      final result = await _rfOperations.tryRunBackground<_FirmwareFacts>(
+        () async {
+          FirmwareVersion? version;
+          String? commit;
+          List<int>? capabilities;
+
+          try {
+            version = await _session.communicator.getFirmwareVersion();
+          } catch (error, stackTrace) {
+            _logFirmwareFactFailure('version', error, stackTrace);
+          }
+          try {
+            commit = await _session.communicator.getGitCommitHash();
+            if (commit.isEmpty) {
+              commit = null;
+            }
+          } catch (error, stackTrace) {
+            _logFirmwareFactFailure('commit', error, stackTrace);
+          }
+          try {
+            capabilities = await _session.communicator.getDeviceCapabilities();
+          } catch (error, stackTrace) {
+            _logFirmwareFactFailure('compatibility', error, stackTrace);
+          }
+
+          final legacy = version?.legacyProtocol == true;
+          final requiredCapability = ChameleonCommand.setIdteckEmulatorID.value;
+          final compatibility = legacy ||
+                  (capabilities != null &&
+                      !capabilities.contains(requiredCapability))
+              ? FirmwareCompatibility.incompatible
+              : capabilities == null || version == null
+                  ? FirmwareCompatibility.unknown
+                  : FirmwareCompatibility.compatible;
+
+          return _FirmwareFacts(
+            installedVersion:
+                version == null ? null : numToVerCode(version.version),
+            installedCommit: commit,
+            protocol: version == null
+                ? FirmwareProtocol.unknown
+                : legacy
+                    ? FirmwareProtocol.legacy
+                    : FirmwareProtocol.current,
+            compatibility: compatibility,
+          );
+        },
+        group: _backgroundOperationGroup,
+      );
+      if (result.acquired) {
+        return result.value!;
+      }
+      await _rfOperations.waitUntilIdle();
+    }
+    return const _FirmwareFacts(
+      installedVersion: null,
+      installedCommit: null,
+      protocol: FirmwareProtocol.unknown,
+      compatibility: FirmwareCompatibility.unknown,
+    );
+  }
+
+  void _logFirmwareFactFailure(
+    String fact,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _session.appState.log?.w(
+      'Unable to read connected-device firmware $fact',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  bool claimFirmwareCompatibilityWarning() {
+    if (_firmwareWarningClaimed ||
+        _snapshot.firmware.compatibility !=
+            FirmwareCompatibility.incompatible) {
+      return false;
+    }
+    _firmwareWarningClaimed = true;
+    return true;
+  }
+
+  Future<FirmwareInstallOutcome> installFirmware() async {
+    if (!_canPublish) {
+      return FirmwareInstallOutcome.connectionChanged;
+    }
+    final firmware = _snapshot.firmware;
+    if (!firmware.canInstall) {
+      return FirmwareInstallOutcome.notAvailable;
+    }
+    if (firmware.installing) {
+      return FirmwareInstallOutcome.busy;
+    }
+
+    _publish(
+      _snapshot.copyWith(
+        firmware: firmware.copyWith(
+          installing: true,
+          installationFailed: false,
+        ),
+      ),
+    );
+    try {
+      await _rfOperations.runForeground(_firmwareInstaller);
+      if (_canPublish) {
+        _publish(
+          _snapshot.copyWith(
+            firmware: _snapshot.firmware.copyWith(installing: false),
+          ),
+        );
+      }
+      return FirmwareInstallOutcome.started;
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to install connected-device firmware',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return FirmwareInstallOutcome.connectionChanged;
+      }
+      _publish(
+        _snapshot.copyWith(
+          firmware: _snapshot.firmware.copyWith(
+            installing: false,
+            installationFailed: true,
+          ),
+        ),
+      );
+      return FirmwareInstallOutcome.failed;
+    }
   }
 
   Future<void> refreshMode() {
