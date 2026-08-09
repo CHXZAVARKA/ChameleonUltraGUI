@@ -58,13 +58,14 @@ class ReadCardPageState extends State<ReadCardPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final appState = Provider.of<ChameleonGUIState>(context);
-    final appStateChanged =
-        _dependenciesInitialized && !identical(_appState, appState);
+    final session = appState.readCardSession;
+    final dependenciesChanged = _dependenciesInitialized &&
+        (!identical(_appState, appState) || !identical(_session, session));
     _appState = appState;
-    _session = _appState.readCardSession;
+    _session = session;
     _dependenciesInitialized = true;
 
-    if (appStateChanged) {
+    if (dependenciesChanged) {
       _continuousHFScan.stop();
       _continuousLFScan.stop();
     }
@@ -97,26 +98,43 @@ class ReadCardPageState extends State<ReadCardPage> {
     });
   }
 
-  bool _commitHFInfo((HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
-      ConnectedDeviceSession session) {
-    if (!mounted || !session.isCurrent) {
+  bool _commitHFInfo(
+      (HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
+      ConnectedDeviceSession session,
+      ChameleonGUIState appState,
+      ReadCardSession model) {
+    if (!_isCurrentModel(appState, model, session)) {
       return false;
     }
 
     setState(() {
-      hfInfo = info.$1;
-      mfcInfo = info.$2;
-      mfuInfo = info.$3;
+      model.hfInfo = info.$1;
+      model.mfcInfo = info.$2;
+      model.mfuInfo = info.$3;
     });
     return true;
   }
 
+  bool _isCurrentModel(
+    ChameleonGUIState appState,
+    ReadCardSession model,
+    ConnectedDeviceSession session,
+  ) =>
+      mounted &&
+      identical(_appState, appState) &&
+      identical(_session, model) &&
+      identical(appState.readCardSession, model) &&
+      session.isCurrent;
+
   Future<bool> _readAndCommitHFInfoUnderLease({
     required ConnectedDeviceSession session,
+    required ChameleonGUIState appState,
+    required ReadCardSession model,
     bool Function()? canContinue,
   }) async {
     bool mayContinue() =>
-        mounted && session.isCurrent && (canContinue?.call() ?? true);
+        _isCurrentModel(appState, model, session) &&
+        (canContinue?.call() ?? true);
     if (!mayContinue()) {
       return false;
     }
@@ -131,13 +149,19 @@ class ReadCardPageState extends State<ReadCardPage> {
     return _commitHFInfo(
       info,
       session,
+      appState,
+      model,
     );
   }
 
   Future<bool> _readAndCommitHFInfo() async {
-    final result = await _appState.runSessionBoundForeground(
+    final appState = _appState;
+    final model = _session;
+    final result = await appState.runSessionBoundForeground(
       (session) => _readAndCommitHFInfoUnderLease(
         session: session,
+        appState: appState,
+        model: model,
       ),
     );
     return result.executed && result.value == true;
@@ -170,17 +194,20 @@ class ReadCardPageState extends State<ReadCardPage> {
 
   Future<bool> _readLFInfoUnderLease(
     ConnectedDeviceSession session, {
+    required ChameleonGUIState appState,
+    required ReadCardSession model,
     bool Function()? canContinue,
   }) async {
     bool mayContinue() =>
-        mounted && session.isCurrent && (canContinue?.call() ?? true);
+        _isCurrentModel(appState, model, session) &&
+        (canContinue?.call() ?? true);
     if (!mayContinue()) {
       return false;
     }
     final communicator = session.communicator;
 
     setState(() {
-      lfInfo = LFCardInfo();
+      model.lfInfo = LFCardInfo();
     });
 
     if (!await communicator.isReaderDeviceMode()) {
@@ -227,35 +254,50 @@ class ReadCardPageState extends State<ReadCardPage> {
     }
     if (card != null) {
       setState(() {
-        lfInfo.card = card;
+        model.lfInfo.card = card;
       });
     } else {
       setState(() {
-        lfInfo.cardExist = false;
+        model.lfInfo.cardExist = false;
       });
     }
     return true;
   }
 
   Future<bool> readLFInfo() async {
-    final result = await _appState.runSessionBoundForeground(
-      _readLFInfoUnderLease,
+    final appState = _appState;
+    final model = _session;
+    final result = await appState.runSessionBoundForeground(
+      (session) => _readLFInfoUnderLease(
+        session,
+        appState: appState,
+        model: model,
+      ),
     );
     return result.executed && result.value == true;
   }
 
   Future<void> startContinuousHFScan() async {
     final appState = _appState;
+    final model = _session;
     await _continuousHFScan.start(
       appState: appState,
-      isAvailable: () => mounted && identical(_appState, appState),
+      isAvailable: () =>
+          mounted &&
+          identical(_appState, appState) &&
+          identical(_session, model) &&
+          identical(appState.readCardSession, model),
       read: (session, canContinue) => _readAndCommitHFInfoUnderLease(
         session: session,
+        appState: appState,
+        model: model,
         canContinue: canContinue,
       ),
       hasResult: () => hfInfo.cardExist && hfInfo.uid.isNotEmpty,
       onStateChanged: (_) {
-        if (mounted && identical(_appState, appState)) {
+        if (mounted &&
+            identical(_appState, appState) &&
+            identical(_session, model)) {
           setState(() {});
         }
       },
@@ -273,16 +315,25 @@ class ReadCardPageState extends State<ReadCardPage> {
 
   Future<void> startContinuousLFScan() async {
     final appState = _appState;
+    final model = _session;
     await _continuousLFScan.start(
       appState: appState,
-      isAvailable: () => mounted && identical(_appState, appState),
+      isAvailable: () =>
+          mounted &&
+          identical(_appState, appState) &&
+          identical(_session, model) &&
+          identical(appState.readCardSession, model),
       read: (session, canContinue) => _readLFInfoUnderLease(
         session,
+        appState: appState,
+        model: model,
         canContinue: canContinue,
       ),
       hasResult: () => lfInfo.cardExist && lfInfo.card != null,
       onStateChanged: (_) {
-        if (mounted && identical(_appState, appState)) {
+        if (mounted &&
+            identical(_appState, appState) &&
+            identical(_session, model)) {
           setState(() {});
         }
       },
@@ -677,36 +728,45 @@ class ReadCardPageState extends State<ReadCardPage> {
                               children: [
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: () async {
-                                      if (appState.connector!.device ==
-                                          ChameleonDevice.ultra) {
-                                        await _readAndCommitHFInfo();
-                                      } else if (appState.connector!.device ==
-                                          ChameleonDevice.lite) {
-                                        showDialog<String>(
-                                          context: context,
-                                          builder: (BuildContext context) =>
-                                              AlertDialog(
-                                            title: Text(
-                                                localizations.no_supported),
-                                            content: Text(
-                                                localizations.lite_no_read,
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, localizations.ok),
-                                                child: Text(localizations.ok),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      } else {
-                                        appState.changesMade();
-                                      }
-                                    },
+                                    onPressed: scanInProgress
+                                        ? null
+                                        : () async {
+                                            if (appState.connector!.device ==
+                                                ChameleonDevice.ultra) {
+                                              await _runManualRead(
+                                                _readAndCommitHFInfo,
+                                              );
+                                            } else if (appState
+                                                    .connector!.device ==
+                                                ChameleonDevice.lite) {
+                                              showDialog<String>(
+                                                context: context,
+                                                builder:
+                                                    (BuildContext context) =>
+                                                        AlertDialog(
+                                                  title: Text(localizations
+                                                      .no_supported),
+                                                  content: Text(
+                                                      localizations
+                                                          .lite_no_read,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  actions: <Widget>[
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(context,
+                                                              localizations.ok),
+                                                      child: Text(
+                                                          localizations.ok),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            } else {
+                                              appState.changesMade();
+                                            }
+                                          },
                                     style: customCardButtonStyle(appState),
                                     child: Text(localizations.read),
                                   ),
@@ -944,36 +1004,43 @@ class ReadCardPageState extends State<ReadCardPage> {
                               children: [
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: () async {
-                                      if (appState.connector!.device ==
-                                          ChameleonDevice.ultra) {
-                                        await readLFInfo();
-                                      } else if (appState.connector!.device ==
-                                          ChameleonDevice.lite) {
-                                        showDialog<String>(
-                                          context: context,
-                                          builder: (BuildContext context) =>
-                                              AlertDialog(
-                                            title: Text(
-                                                localizations.no_supported),
-                                            content: Text(
-                                                localizations.lite_no_read,
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, localizations.ok),
-                                                child: Text(localizations.ok),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      } else {
-                                        appState.changesMade();
-                                      }
-                                    },
+                                    onPressed: scanInProgress
+                                        ? null
+                                        : () async {
+                                            if (appState.connector!.device ==
+                                                ChameleonDevice.ultra) {
+                                              await _runManualRead(readLFInfo);
+                                            } else if (appState
+                                                    .connector!.device ==
+                                                ChameleonDevice.lite) {
+                                              showDialog<String>(
+                                                context: context,
+                                                builder:
+                                                    (BuildContext context) =>
+                                                        AlertDialog(
+                                                  title: Text(localizations
+                                                      .no_supported),
+                                                  content: Text(
+                                                      localizations
+                                                          .lite_no_read,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  actions: <Widget>[
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(context,
+                                                              localizations.ok),
+                                                      child: Text(
+                                                          localizations.ok),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            } else {
+                                              appState.changesMade();
+                                            }
+                                          },
                                     style: customCardButtonStyle(appState),
                                     child: Text(localizations.read),
                                   ),

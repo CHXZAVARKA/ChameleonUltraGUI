@@ -68,16 +68,51 @@ class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   ChameleonGUIState(this.sharedPreferencesProvider);
 
-  final ReadCardSession readCardSession = ReadCardSession();
+  ReadCardSession _readCardSession = ReadCardSession();
   final RfOperationCoordinator rfOperations = RfOperationCoordinator();
+
+  AbstractSerial? _readCardSessionConnector;
+  ChameleonCommunicator? _readCardSessionCommunicator;
+  bool _readCardSessionConnected = false;
+  bool _readCardSessionDfu = false;
+  bool _readCardSessionBindingInitialized = false;
+
+  final Map<Object, (AbstractSerial, ChameleonCommunicator)>
+      _sessionWakelockOwners = {};
+  bool _flashingWakelock = false;
+  bool _wakelockRequested = false;
+  Future<void> _wakelockUpdates = Future.value();
 
   SharedPreferencesProvider? _sharedPreferencesProvider;
   Logger? log; // Logger
 
   // Android uses AndroidSerial, iOS can only use BLESerial
   // The rest (desktops?) can use NativeSerial
-  AbstractSerial? connector;
-  ChameleonCommunicator? communicator;
+  AbstractSerial? _connector;
+  ChameleonCommunicator? _communicator;
+
+  AbstractSerial? get connector => _connector;
+  set connector(AbstractSerial? value) {
+    if (identical(_connector, value)) {
+      return;
+    }
+    _connector = value;
+    _synchronizeReadCardSession();
+  }
+
+  ChameleonCommunicator? get communicator => _communicator;
+  set communicator(ChameleonCommunicator? value) {
+    if (identical(_communicator, value)) {
+      return;
+    }
+    _communicator = value;
+    _synchronizeReadCardSession();
+  }
+
+  ReadCardSession get readCardSession {
+    _synchronizeReadCardSession();
+    return _readCardSession;
+  }
 
   bool devMode = false;
   double? progress; // DFU
@@ -90,6 +125,7 @@ class ChameleonGUIState extends ChangeNotifier {
   Size? navigationRailSize;
 
   void changesMade() {
+    _synchronizeReadCardSession();
     notifyListeners();
   }
 
@@ -98,7 +134,80 @@ class ChameleonGUIState extends ChangeNotifier {
       communicator = null;
       progress = null;
     }
+    _synchronizeReadCardSession();
     notifyListeners();
+  }
+
+  void _synchronizeReadCardSession() {
+    final connector = _connector;
+    final communicator = _communicator;
+    final connected = connector?.connected == true;
+    final isDfu = connector?.isDFU == true;
+    final bindingChanged = !_readCardSessionBindingInitialized ||
+        !identical(_readCardSessionConnector, connector) ||
+        !identical(_readCardSessionCommunicator, communicator) ||
+        _readCardSessionConnected != connected ||
+        _readCardSessionDfu != isDfu;
+    if (!bindingChanged) {
+      return;
+    }
+
+    if (_readCardSessionBindingInitialized) {
+      _readCardSession = ReadCardSession();
+      _sessionWakelockOwners.clear();
+      _updateWakelock();
+    }
+    _readCardSessionConnector = connector;
+    _readCardSessionCommunicator = communicator;
+    _readCardSessionConnected = connected;
+    _readCardSessionDfu = isDfu;
+    _readCardSessionBindingInitialized = true;
+  }
+
+  Object? acquireSessionWakelock({
+    required AbstractSerial connector,
+    required ChameleonCommunicator communicator,
+  }) {
+    _synchronizeReadCardSession();
+    if (!_readCardSessionConnected ||
+        _readCardSessionDfu ||
+        !identical(_connector, connector) ||
+        !identical(_communicator, communicator)) {
+      return null;
+    }
+
+    final owner = Object();
+    _sessionWakelockOwners[owner] = (connector, communicator);
+    _updateWakelock();
+    return owner;
+  }
+
+  void releaseSessionWakelock(Object? owner) {
+    if (owner == null || _sessionWakelockOwners.remove(owner) == null) {
+      return;
+    }
+    _updateWakelock();
+  }
+
+  void setFlashingWakelock(bool enable) {
+    if (_flashingWakelock == enable) {
+      return;
+    }
+    _flashingWakelock = enable;
+    _updateWakelock();
+  }
+
+  void _updateWakelock() {
+    final enable = _flashingWakelock || _sessionWakelockOwners.isNotEmpty;
+    if (_wakelockRequested == enable) {
+      return;
+    }
+    _wakelockRequested = enable;
+    _wakelockUpdates = _wakelockUpdates.then((_) async {
+      try {
+        await WakelockPlus.toggle(enable: enable);
+      } catch (_) {}
+    });
   }
 
   bool isAutoReconnectSuppressed(dynamic devicePort) {
@@ -295,9 +404,7 @@ class _MainPageState extends State<MainPage> {
     final isReadCardVisible =
         canMountReadCard && selectedIndex == _readCardNavigationIndex;
 
-    try {
-      WakelockPlus.toggle(enable: foregroundPage is FlashingPage);
-    } catch (_) {}
+    appState.setFlashingWakelock(foregroundPage is FlashingPage);
 
     final pageContent = Stack(
       fit: StackFit.expand,

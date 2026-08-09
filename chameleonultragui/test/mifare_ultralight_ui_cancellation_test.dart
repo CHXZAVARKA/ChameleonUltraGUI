@@ -115,6 +115,97 @@ void main() {
     expect(state.state, MifareUltralightState.none);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Ultralight transport error restores actionable state safely',
+      (tester) async {
+    final logOutput = MemoryOutput();
+    final logger = Logger(
+      filter: ProductionFilter(),
+      printer: SimplePrinter(colors: false),
+      output: logOutput,
+    );
+    addTearDown(logger.close);
+    final communicator = _ThrowingUltralightCommunicator(logger);
+    final appState = _connectedState(
+      preferences,
+      communicator,
+      logger: logger,
+    );
+
+    await _pumpHelper(
+      tester,
+      appState,
+      HFCardInfo(type: TagType.ultralight),
+    );
+    final state = tester.state<CardReaderState>(
+      find.byType(MifareUltralightHelper),
+    );
+
+    await expectLater(state.readCard(), completes);
+    await tester.pump();
+
+    expect(state.state, MifareUltralightState.none);
+    expect(state.error, isNotEmpty);
+    final log = logOutput.buffer.map((event) => event.lines.join()).join();
+    expect(log, contains('MIFARE Ultralight read failed'));
+    expect(log, isNot(contains('secret transport detail')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'late Ultralight transport error cannot report through replacement model',
+      (tester) async {
+    final communicator = _DelayedUltralightCommunicator();
+    final appState = _connectedState(preferences, communicator);
+    final replacementInfo = HFCardInfo(type: TagType.ntag216);
+
+    await _pumpHelper(
+      tester,
+      appState,
+      HFCardInfo(type: TagType.ultralight),
+    );
+    final state = tester.state<CardReaderState>(
+      find.byType(MifareUltralightHelper),
+    );
+    final read = state.readCard();
+    await communicator.started.future;
+
+    await _pumpHelper(tester, appState, replacementInfo);
+    communicator.firstResponse.completeError(StateError('port closed'));
+    await expectLater(read, completes);
+    await tester.pump();
+
+    expect(state.state, MifareUltralightState.none);
+    expect(state.error, isEmpty);
+    expect(replacementInfo.type, TagType.ntag216);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('late Ultralight transport error does not setState after dispose',
+      (tester) async {
+    final communicator = _DelayedUltralightCommunicator();
+    final appState = _connectedState(preferences, communicator);
+
+    await _pumpHelper(
+      tester,
+      appState,
+      HFCardInfo(type: TagType.ultralight),
+    );
+    final state = tester.state<CardReaderState>(
+      find.byType(MifareUltralightHelper),
+    );
+    final read = state.readCard();
+    await communicator.started.future;
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    communicator.firstResponse.completeError(StateError('port closed'));
+    await expectLater(read, completes);
+    await tester.pump();
+
+    expect(state.state, MifareUltralightState.none);
+    expect(state.error, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _pumpHelper(
@@ -139,16 +230,18 @@ Future<void> _pumpHelper(
 
 ChameleonGUIState _connectedState(
   SharedPreferencesProvider preferences,
-  ChameleonCommunicator communicator,
-) {
+  ChameleonCommunicator communicator, {
+  Logger? logger,
+}) {
+  final stateLogger = logger ?? Logger();
   return ChameleonGUIState(preferences)
-    ..connector = (_TestSerial(log: Logger())..connected = true)
+    ..connector = (_TestSerial(log: stateLogger)..connected = true)
     ..communicator = communicator
-    ..log = Logger();
+    ..log = stateLogger;
 }
 
 class _UltralightCommunicator extends ChameleonCommunicator {
-  _UltralightCommunicator() : super(Logger());
+  _UltralightCommunicator([Logger? logger]) : super(logger ?? Logger());
 
   int rawCalls = 0;
 
@@ -197,6 +290,25 @@ class _DelayedUltralightCommunicator extends _UltralightCommunicator {
       return firstResponse.future;
     }
     return Future.value(Uint8List(16));
+  }
+}
+
+class _ThrowingUltralightCommunicator extends _UltralightCommunicator {
+  _ThrowingUltralightCommunicator(super.logger);
+
+  @override
+  Future<Uint8List> send14ARaw(
+    Uint8List data, {
+    int respTimeoutMs = 100,
+    int? bitLen,
+    bool activateRfField = true,
+    bool waitResponse = true,
+    bool appendCrc = true,
+    bool autoSelect = true,
+    bool keepRfField = false,
+    bool checkResponseCrc = true,
+  }) {
+    throw StateError('secret transport detail');
   }
 }
 

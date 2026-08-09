@@ -4,12 +4,78 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 
 void main() {
+  test('Read Card model remains stable for the current device session', () {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+
+    final model = fixture.appState.readCardSession;
+    model.hfInfo.uid = 'persisted';
+
+    fixture.appState
+      ..changesMade()
+      ..connector = fixture.connector
+      ..communicator = fixture.communicator;
+
+    expect(fixture.appState.readCardSession, same(model));
+    expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
+  });
+
+  for (final invalidation in <String, void Function(_Fixture)>{
+    'disconnect': (fixture) {
+      fixture.connector.connected = false;
+      fixture.appState.onConnectorStateChanged();
+    },
+    'reconnect': (fixture) {
+      fixture.connector.connected = false;
+      fixture.appState.onConnectorStateChanged();
+      fixture.connector.connected = true;
+      fixture.appState.communicator = ChameleonCommunicator(
+        fixture.logger,
+        port: fixture.connector,
+      );
+      fixture.appState.changesMade();
+    },
+    'connector replacement': (fixture) {
+      fixture.appState.connector = _TestSerial(log: fixture.logger)
+        ..connected = true;
+    },
+    'communicator replacement': (fixture) {
+      fixture.appState.communicator = ChameleonCommunicator(
+        fixture.logger,
+        port: fixture.connector,
+      );
+    },
+    'DFU transition': (fixture) {
+      fixture.connector.isDFU = true;
+      fixture.appState.changesMade();
+    },
+  }.entries) {
+    test('Read Card model rotates on ${invalidation.key}', () {
+      final fixture = _connectedAppState();
+      addTearDown(fixture.logger.close);
+      final original = fixture.appState.readCardSession;
+      original
+        ..dumpName = 'old dump'
+        ..hfInfo.uid = 'old uid'
+        ..mfcInfo.state = MifareClassicState.save;
+
+      invalidation.value(fixture);
+
+      final replacement = fixture.appState.readCardSession;
+      expect(replacement, isNot(same(original)));
+      expect(replacement.dumpName, isEmpty);
+      expect(replacement.hfInfo.uid, isEmpty);
+      expect(replacement.mfcInfo.state, MifareClassicState.none);
+    });
+  }
+
   test('session-bound foreground exposes the captured session and value',
       () async {
     final fixture = _connectedAppState();

@@ -17,6 +17,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+// ignore: depend_on_referenced_packages
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 const _mifareUltralightGetVersionCommand = 0x60;
 const _mifareUltralightReadSignatureCommand = 0x3C;
@@ -77,6 +80,84 @@ void main() {
     expect(restoredState.scanInProgress, isTrue);
     restoredState.stopContinuousHFScan();
     restoredState.stopContinuousLFScan();
+  });
+
+  testWidgets('Classic recovery keeps wakelock while Read Card is offstage', (
+    tester,
+  ) async {
+    final previousWakelock = wakelockPlusPlatformInstance;
+    final wakelock = _RecordingWakelock();
+    wakelockPlusPlatformInstance = wakelock;
+    addTearDown(() => wakelockPlusPlatformInstance = previousWakelock);
+    final fixture = await _ReadCardFixture.mount(tester);
+    final readCardState = await fixture.openReadCard();
+    final localizations =
+        await AppLocalizations.delegate.load(const Locale('en'));
+    final recovery = _PendingClassicRecovery(
+      appState: fixture.appState,
+      update: readCardState.updateMifareClassicRecovery,
+      localizations: localizations,
+    );
+    readCardState
+      ..hfInfo = HFCardInfo(
+        uid: '01 02 03 04',
+        type: TagType.mifare1K,
+      )
+      ..mfcInfo = (MifareClassicInfo(
+        type: MifareClassicType.m1k,
+        state: MifareClassicState.recovery,
+      )..recovery = recovery)
+      ..updateMifareClassicInfo();
+    await tester.pump();
+
+    await tester.tap(find.text(localizations.recover_keys));
+    await tester.pump();
+    await recovery.started.future;
+    expect(wakelock.states.last, isTrue);
+
+    await tester.tap(find.byIcon(Icons.auto_awesome_motion));
+    await tester.pump();
+    expect(readCardState.mounted, isTrue);
+    expect(wakelock.states.last, isTrue);
+
+    recovery.result.complete(false);
+    await tester.pump();
+    expect(wakelock.states.last, isFalse);
+
+    await tester.tap(find.byIcon(Icons.sensors));
+    await tester.pump();
+    final replacementRecovery = _PendingClassicRecovery(
+      appState: fixture.appState,
+      update: readCardState.updateMifareClassicRecovery,
+      localizations: localizations,
+    );
+    readCardState
+      ..hfInfo = HFCardInfo(
+        uid: '01 02 03 04',
+        type: TagType.mifare1K,
+      )
+      ..mfcInfo = (MifareClassicInfo(
+        type: MifareClassicType.m1k,
+        state: MifareClassicState.recovery,
+      )..recovery = replacementRecovery)
+      ..updateMifareClassicInfo();
+    await tester.pump();
+    await tester.tap(find.text(localizations.recover_keys));
+    await tester.pump();
+    await replacementRecovery.started.future;
+    expect(wakelock.states.last, isTrue);
+
+    fixture.appState
+      ..communicator = _ContinuousBothCommunicator(
+        fixture.logger,
+        port: fixture.connector,
+      )
+      ..changesMade();
+    await tester.pump();
+    expect(wakelock.states.last, isFalse);
+    replacementRecovery.result.complete(false);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('pending HF read updates the session while Read Card is hidden', (
@@ -404,6 +485,8 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.hfInfo;
+      expect(replacementInfo, isNot(same(originalInfo)));
       communicator.completeScan(
         CardData(
           uid: Uint8List.fromList([1, 2, 3, 4]),
@@ -416,8 +499,8 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(communicator.detectCalls, 0);
-      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
-      expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
+      expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
+      expect(replacementInfo.uid, isEmpty);
     },
   );
 
@@ -439,13 +522,15 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.lfInfo;
+      expect(replacementInfo, isNot(same(pendingInfo)));
       communicator.completeRead(null);
       await tester.idle();
 
       expect(tester.takeException(), isNull);
       expect(communicator.followUpCalls, 0);
-      expect(fixture.appState.readCardSession.lfInfo, same(pendingInfo));
-      expect(pendingInfo.card, isNull);
+      expect(fixture.appState.readCardSession.lfInfo, same(replacementInfo));
+      expect(replacementInfo.card, isNull);
     },
   );
 
@@ -469,13 +554,15 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.hfInfo;
+      expect(replacementInfo, isNot(same(originalInfo)));
       communicator.completeInnerCommand();
       await tester.idle();
 
       expect(tester.takeException(), isNull);
       expect(communicator.innerCommandCalls, 1);
       expect(communicator.followUpCalls, 0);
-      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+      expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
     },
   );
 
@@ -500,12 +587,14 @@ void main() {
     fixture.connector.isDFU = true;
     fixture.appState.changesMade();
     expect(readCardState.mounted, isTrue);
+    final replacementInfo = fixture.appState.readCardSession.hfInfo;
+    expect(replacementInfo, isNot(same(originalInfo)));
     communicator.completeInnerCommand();
     await tester.idle();
 
     expect(tester.takeException(), isNull);
     expect(communicator.innerCommandCalls, 1);
-    expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+    expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
   });
 
   testWidgets('foreground page State survives connection changes', (
@@ -719,6 +808,88 @@ void main() {
     expect(replacement.readCalls, 0);
     expect(readCardState.isContinuousLFScan, isFalse);
   });
+
+  testWidgets(
+    'pending manual HF read cannot mutate a replacement app-state model',
+    (tester) async {
+      final fixture = await _ReplaceableReadCardFixture.mount(
+        tester,
+        originalCommunicatorFactory: (logger, connector) =>
+            _PendingHFCommunicator(logger, port: connector),
+        replacementCommunicatorFactory: (logger, connector) =>
+            _ContinuousHFCommunicator(logger, port: connector),
+      );
+      final originalCommunicator =
+          fixture.originalCommunicator as _PendingHFCommunicator;
+      final originalInfo = HFCardInfo(uid: 'original persisted');
+      final replacementInfo = HFCardInfo(uid: 'replacement persisted');
+      fixture.originalAppState.readCardSession.hfInfo = originalInfo;
+      fixture.replacementAppState.readCardSession.hfInfo = replacementInfo;
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Read').first);
+      await tester.pump();
+      expect(originalCommunicator.scanStarted.isCompleted, isTrue);
+
+      fixture.replaceProvider();
+      await tester.pump();
+      originalCommunicator.completeScan(
+        CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 0x08,
+          atqa: Uint8List.fromList([0x00, 0x04]),
+          ats: Uint8List(0),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+          fixture.originalAppState.readCardSession.hfInfo, same(originalInfo));
+      expect(
+        fixture.replacementAppState.readCardSession.hfInfo,
+        same(replacementInfo),
+      );
+      expect(replacementInfo.uid, 'replacement persisted');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'pending manual LF read cannot mutate a replacement app-state model',
+    (tester) async {
+      final fixture = await _ReplaceableReadCardFixture.mount(
+        tester,
+        originalCommunicatorFactory: (logger, connector) =>
+            _PendingLFCommunicator(logger, port: connector),
+        replacementCommunicatorFactory: (logger, connector) =>
+            _ContinuousLFCommunicator(logger, port: connector),
+      );
+      final originalCommunicator =
+          fixture.originalCommunicator as _PendingLFCommunicator;
+      final replacementInfo = LFCardInfo()
+        ..card = EM410XCard.fromUID('AABBCCDDEE');
+      fixture.replacementAppState.readCardSession.lfInfo = replacementInfo;
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Read').last);
+      await tester.pump();
+      expect(originalCommunicator.readStarted.isCompleted, isTrue);
+      final pendingInfo = fixture.originalAppState.readCardSession.lfInfo;
+
+      fixture.replaceProvider();
+      await tester.pump();
+      originalCommunicator.completeRead(EM410XCard.fromUID('0102030405'));
+      await tester.pump();
+
+      expect(
+          fixture.originalAppState.readCardSession.lfInfo, same(pendingInfo));
+      expect(pendingInfo.card, isNull);
+      expect(
+        fixture.replacementAppState.readCardSession.lfInfo,
+        same(replacementInfo),
+      );
+      expect(replacementInfo.card.toString(), 'AA BB CC DD EE');
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'continuous HF scan stops when its app-state provider is replaced',
@@ -1467,4 +1638,33 @@ class _InnerUltralightBoundaryCommunicator extends ChameleonCommunicator {
   void completeInnerCommand() => _innerCommandResult.complete(
         Uint8List.fromList([0, 0, 4, 2, 1, 0, 0x0F, 3]),
       );
+}
+
+class _PendingClassicRecovery extends MifareClassicRecovery {
+  _PendingClassicRecovery({
+    required super.appState,
+    required super.update,
+    required super.localizations,
+  }) : super(mifareClassicType: MifareClassicType.m1k);
+
+  final Completer<void> started = Completer<void>();
+  final Completer<bool> result = Completer<bool>();
+
+  @override
+  Future<bool> recoverKeys() {
+    started.complete();
+    return result.future;
+  }
+}
+
+class _RecordingWakelock extends WakelockPlusPlatformInterface {
+  final List<bool> states = [];
+
+  @override
+  Future<bool> get enabled async => states.isNotEmpty && states.last;
+
+  @override
+  Future<void> toggle({required bool enable}) async {
+    states.add(enable);
+  }
 }
