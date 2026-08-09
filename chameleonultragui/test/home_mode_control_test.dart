@@ -462,7 +462,7 @@ void main() {
     await tester.pumpAndSettle();
     communicator.events.clear();
 
-    await tester.tap(find.byIcon(Icons.arrow_forward));
+    await tester.tap(find.byKey(const Key('home-slot-2')));
     await tester.pumpAndSettle();
     expect(communicator.activations, [1]);
     expect(communicator.modeSets, isEmpty);

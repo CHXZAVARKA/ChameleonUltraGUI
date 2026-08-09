@@ -1,0 +1,508 @@
+import 'dart:math' as math;
+
+import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+class HomeSlotGrid extends StatefulWidget {
+  const HomeSlotGrid({super.key, required this.status});
+
+  final ConnectedDeviceStatus status;
+
+  @override
+  State<HomeSlotGrid> createState() => _HomeSlotGridState();
+}
+
+class _HomeSlotGridState extends State<HomeSlotGrid> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'Home slot grid');
+  var _focusedSlot = 0;
+  var _hasFocus = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      setState(() => _focusedSlot = math.max(0, _focusedSlot - 1));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      setState(() => _focusedSlot = math.min(7, _focusedSlot + 1));
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
+      _activate(_focusedSlot);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _activate(int index) async {
+    if (widget.status.snapshot.slots.pendingActivation != null) {
+      return;
+    }
+    _focusNode.requestFocus();
+    if (_focusedSlot != index) {
+      setState(() => _focusedSlot = index);
+    }
+    final confirmed = await widget.status.activateSlot(index);
+    if (!confirmed && mounted) {
+      final localizations = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('home-slot-activation-error'),
+            content: Text(
+              '${localizations.error}: ${localizations.unavailable}',
+            ),
+          ),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: widget.status,
+      builder: (context, _) {
+        final slots = widget.status.snapshot.slots;
+        final activeSlot = slots.activeSlot.value;
+        final showRefresh = slots.availability == SlotsAvailability.stale ||
+            slots.availability == SlotsAvailability.unavailable ||
+            slots.availability == SlotsAvailability.partial;
+        return ConstrainedBox(
+          key: const Key('home-slot-grid'),
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Focus(
+                  key: const Key('home-slot-grid-focus'),
+                  focusNode: _focusNode,
+                  onFocusChange: (value) {
+                    if (_hasFocus != value) {
+                      setState(() {
+                        _hasFocus = value;
+                        if (value && activeSlot != null) {
+                          _focusedSlot = activeSlot;
+                        }
+                      });
+                    }
+                  },
+                  onKeyEvent: _handleKey,
+                  child: Semantics(
+                    container: true,
+                    label: localizations.slot_grid_description,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const labelWidth = 28.0;
+                        final slotWidth = math.max(
+                          34.0,
+                          (constraints.maxWidth - labelWidth) / 8,
+                        );
+                        final markSize = (slotWidth * 0.56).clamp(18.0, 30.0);
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _FrequencyLabels(markSize: markSize),
+                            for (var index = 0; index < 8; index++)
+                              SizedBox(
+                                width: slotWidth,
+                                child: _SlotColumn(
+                                  index: index,
+                                  slot: slots.slots[index],
+                                  markSize: markSize,
+                                  loading: slots.availability ==
+                                      SlotsAvailability.loading,
+                                  active: activeSlot == index &&
+                                      slots.activeSlot.isConfirmed,
+                                  activating: slots.pendingActivation == index,
+                                  focused: _hasFocus && _focusedSlot == index,
+                                  blocked: slots.pendingActivation != null,
+                                  onTap: () => _activate(index),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              if (showRefresh)
+                IconButton(
+                  key: const Key('home-slot-refresh'),
+                  tooltip: localizations.refresh_slot_status,
+                  onPressed: widget.status.refreshSlots,
+                  icon: const Icon(Icons.refresh),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FrequencyLabels extends StatelessWidget {
+  const _FrequencyLabels({required this.markSize});
+
+  final double markSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+        );
+    return SizedBox(
+      width: 28,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          children: [
+            SizedBox(
+              height: markSize,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(localizations.hf, style: style),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: markSize,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(localizations.lf, style: style),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _SlotMarkState {
+  enabled,
+  disabled,
+  empty,
+  enabledUnknown,
+  unavailable,
+  loading
+}
+
+class _SlotColumn extends StatelessWidget {
+  const _SlotColumn({
+    required this.index,
+    required this.slot,
+    required this.markSize,
+    required this.loading,
+    required this.active,
+    required this.activating,
+    required this.focused,
+    required this.blocked,
+    required this.onTap,
+  });
+
+  final int index;
+  final DeviceSlotStatus slot;
+  final double markSize;
+  final bool loading;
+  final bool active;
+  final bool activating;
+  final bool focused;
+  final bool blocked;
+  final VoidCallback onTap;
+
+  String _frequencyDescription(
+    AppLocalizations localizations,
+    String frequency,
+    SlotFrequencyStatus status,
+  ) {
+    final state = _markState(status);
+    final stateLabel = switch (state) {
+      _SlotMarkState.enabled => localizations.enabled,
+      _SlotMarkState.disabled => localizations.disabled,
+      _SlotMarkState.empty => localizations.empty,
+      _SlotMarkState.enabledUnknown =>
+        '${localizations.enabled_status_unknown}, ${localizations.dashed_outline}',
+      _SlotMarkState.unavailable => localizations.unavailable,
+      _SlotMarkState.loading => localizations.loading,
+    };
+    final name = status.name.isConfirmed
+        ? status.name.value!.isEmpty
+            ? localizations.no_name
+            : status.name.value!
+        : localizations.unavailable;
+    final type = status.type.isConfirmed
+        ? status.type.value == null || status.type.value == TagType.unknown
+            ? localizations.empty
+            : chameleonTagToString(status.type.value!, localizations)
+        : localizations.unavailable;
+    return '$frequency: $name · $type · $stateLabel';
+  }
+
+  _SlotMarkState _markState(SlotFrequencyStatus status) {
+    if (loading) {
+      return _SlotMarkState.loading;
+    }
+    if (!status.type.isConfirmed) {
+      return _SlotMarkState.unavailable;
+    }
+    if (status.type.value == null || status.type.value == TagType.unknown) {
+      return _SlotMarkState.empty;
+    }
+    if (!status.enabled.isConfirmed) {
+      return _SlotMarkState.enabledUnknown;
+    }
+    return status.enabled.value == true
+        ? _SlotMarkState.enabled
+        : _SlotMarkState.disabled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final tooltip = '${localizations.slot} ${index + 1}\n'
+        '${_frequencyDescription(localizations, localizations.hf, slot.hf)}\n'
+        '${_frequencyDescription(localizations, localizations.lf, slot.lf)}'
+        '${active ? '\n${localizations.active_slot}' : ''}'
+        '${activating ? '\n${localizations.activating}' : ''}';
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        enabled: !blocked,
+        selected: active,
+        label: tooltip.replaceAll('\n', '. '),
+        excludeSemantics: true,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            key: Key('home-slot-${index + 1}'),
+            borderRadius: BorderRadius.circular(18),
+            onTap: blocked ? null : onTap,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedContainer(
+                  key: active ? Key('home-active-slot-${index + 1}') : null,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  padding: const EdgeInsets.fromLTRB(3, 6, 3, 5),
+                  decoration: BoxDecoration(
+                    color: focused
+                        ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                        : null,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: active
+                          ? theme.colorScheme.primary
+                          : focused
+                              ? theme.colorScheme.outline
+                              : Colors.transparent,
+                      width: active ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _SlotStatusMark(
+                        key: Key(
+                          'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                        ),
+                        frequency: TagFrequency.hf,
+                        state: _markState(slot.hf),
+                        size: markSize,
+                      ),
+                      const SizedBox(height: 8),
+                      _SlotStatusMark(
+                        key: Key(
+                          'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                        ),
+                        frequency: TagFrequency.lf,
+                        state: _markState(slot.lf),
+                        size: markSize,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${index + 1}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: active ? FontWeight.w700 : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (activating)
+                  Positioned(
+                    key: Key('home-slot-${index + 1}-progress'),
+                    right: 0,
+                    top: 0,
+                    child: SizedBox.square(
+                      dimension: 13,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SlotStatusMark extends StatelessWidget {
+  const _SlotStatusMark({
+    super.key,
+    required this.frequency,
+    required this.state,
+    required this.size,
+  });
+
+  final TagFrequency frequency;
+  final _SlotMarkState state;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final frequencyColor = frequency == TagFrequency.hf
+        ? (dark ? Colors.green.shade300 : Colors.green.shade700)
+        : (dark ? Colors.blue.shade300 : Colors.blue.shade700);
+    final neutral = theme.colorScheme.outlineVariant;
+    return SizedBox.square(
+      dimension: size,
+      child: switch (state) {
+        _SlotMarkState.enabled => DecoratedBox(
+            decoration: BoxDecoration(
+              color: frequencyColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+        _SlotMarkState.disabled => DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: frequencyColor, width: 2),
+            ),
+          ),
+        _SlotMarkState.empty => DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: neutral, width: 2),
+            ),
+          ),
+        _SlotMarkState.enabledUnknown => CustomPaint(
+            painter: _DashedCirclePainter(color: frequencyColor),
+          ),
+        _SlotMarkState.unavailable => CustomPaint(
+            painter: _DashedCirclePainter(color: neutral),
+          ),
+        _SlotMarkState.loading => _SoftPulseCircle(
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.24),
+          ),
+      },
+    );
+  }
+}
+
+class _DashedCirclePainter extends CustomPainter {
+  const _DashedCirclePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final rect = Offset.zero & size;
+    const segmentCount = 10;
+    const segmentSweep = math.pi * 2 / segmentCount * 0.58;
+    for (var index = 0; index < segmentCount; index++) {
+      final start = -math.pi / 2 + math.pi * 2 / segmentCount * index;
+      canvas.drawArc(rect.deflate(1), start, segmentSweep, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedCirclePainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _SoftPulseCircle extends StatefulWidget {
+  const _SoftPulseCircle({required this.color});
+
+  final Color color;
+
+  @override
+  State<_SoftPulseCircle> createState() => _SoftPulseCircleState();
+}
+
+class _SoftPulseCircleState extends State<_SoftPulseCircle>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+    lowerBound: 0.58,
+    upperBound: 1,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller
+        ..stop()
+        ..value = 0.72;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: widget.color,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}

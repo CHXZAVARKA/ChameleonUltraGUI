@@ -41,8 +41,12 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text('Used Slots: 0/8'), findsOneWidget);
-    expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
+    expect(find.byKey(const Key('home-slot-grid')), findsOneWidget);
+    expect(
+      find.byKey(const Key('home-slot-1-hf-mark-empty')),
+      findsOneWidget,
+    );
+    expect(find.text('8'), findsOneWidget);
     expect(find.byIcon(Icons.settings), findsOneWidget);
   });
 
@@ -56,8 +60,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Chameleon Ultra'), findsOneWidget);
-    expect(find.text('Used Slots: 0/8'), findsOneWidget);
-    expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
+    expect(find.byKey(const Key('home-slot-grid')), findsOneWidget);
+    expect(
+      find.byKey(const Key('home-slot-1-hf-mark-empty')),
+      findsOneWidget,
+    );
     expect(find.byIcon(Icons.settings), findsOneWidget);
     expect(find.textContaining('legacy status unavailable'), findsNothing);
     expect(find.byKey(const Key('home-mode-retry')), findsOneWidget);

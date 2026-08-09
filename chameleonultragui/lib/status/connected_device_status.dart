@@ -154,6 +154,8 @@ enum SlotsAvailability { loading, available, partial, stale, unavailable }
 
 enum SlotFacet { types, enabledStates, names, activeSlot }
 
+const Object _keepPendingActivation = Object();
+
 @immutable
 class SlotField<T> {
   const SlotField.confirmed(this.value)
@@ -246,9 +248,14 @@ class SlotsStatus {
     required this.availability,
     required List<DeviceSlotStatus> slots,
     required this.activeSlot,
+    this.pendingActivation,
     Set<SlotFacet> unavailableFacets = const {},
     Set<SlotFacet> staleFacets = const {},
   })  : assert(slots.length == 8),
+        assert(
+          pendingActivation == null ||
+              (pendingActivation >= 0 && pendingActivation < 8),
+        ),
         slots = List.unmodifiable(slots),
         unavailableFacets = Set.unmodifiable(unavailableFacets),
         staleFacets = Set.unmodifiable(staleFacets);
@@ -263,6 +270,7 @@ class SlotsStatus {
   final SlotsAvailability availability;
   final List<DeviceSlotStatus> slots;
   final SlotField<int> activeSlot;
+  final int? pendingActivation;
   final Set<SlotFacet> unavailableFacets;
   final Set<SlotFacet> staleFacets;
 
@@ -296,6 +304,7 @@ class SlotsStatus {
     SlotsAvailability? availability,
     List<DeviceSlotStatus>? slots,
     SlotField<int>? activeSlot,
+    Object? pendingActivation = _keepPendingActivation,
     Set<SlotFacet>? unavailableFacets,
     Set<SlotFacet>? staleFacets,
   }) =>
@@ -303,6 +312,12 @@ class SlotsStatus {
         availability: availability ?? this.availability,
         slots: slots ?? this.slots,
         activeSlot: activeSlot ?? this.activeSlot,
+        pendingActivation: identical(
+          pendingActivation,
+          _keepPendingActivation,
+        )
+            ? this.pendingActivation
+            : pendingActivation as int?,
         unavailableFacets: unavailableFacets ?? this.unavailableFacets,
         staleFacets: staleFacets ?? this.staleFacets,
       );
@@ -312,6 +327,7 @@ class SlotsStatus {
     if (other is! SlotsStatus ||
         other.availability != availability ||
         other.activeSlot != activeSlot ||
+        other.pendingActivation != pendingActivation ||
         !_setEquals(other.unavailableFacets, unavailableFacets) ||
         !_setEquals(other.staleFacets, staleFacets) ||
         other.slots.length != slots.length) {
@@ -329,6 +345,7 @@ class SlotsStatus {
   int get hashCode => Object.hash(
         availability,
         activeSlot,
+        pendingActivation,
         Object.hashAll(slots),
         unavailableFacets.fold<int>(
           0,
@@ -555,9 +572,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   DeviceStatusSnapshot get snapshot => _snapshot;
 
   Timer? _batteryTimer;
+  Timer? _activeSlotTimer;
   Future<void>? _batteryRefresh;
   Future<void>? _modeRefresh;
   Future<void>? _slotsRefresh;
+  Future<void>? _activeSlotRefresh;
   Future<void>? _firmwareRefresh;
   _FirmwareFacts? _firmwareFacts;
   bool _firmwareLookupAttempted = false;
@@ -573,7 +592,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _homePresenceCount++;
         if (_homePresenceCount == 1 && _isAppActive) {
           unawaited(_refreshHomeOnEntry());
-          _startBatteryTimer();
+          _startHomeTimers();
         }
         return StatusPresence._(() => _leaveHome());
       case StatusSurface.slotManager:
@@ -600,10 +619,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final modeRefresh = _snapshot.mode.availability == ModeAvailability.loading
         ? refreshMode()
         : Future<void>.value();
-    final slotsRefresh = refreshSlots();
+    final activeSlotRefresh = _scheduleActiveSlotRefresh();
     final firmwareRefresh = refreshFirmware();
     await Future.wait(
-      [batteryRefresh, modeRefresh, slotsRefresh, firmwareRefresh],
+      [batteryRefresh, modeRefresh, activeSlotRefresh, firmwareRefresh],
     );
   }
 
@@ -1102,9 +1121,17 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> activateSlot(int slot) async {
-    if (slot < 0 || slot >= 8 || !_canPublish) {
+    if (slot < 0 ||
+        slot >= 8 ||
+        !_canPublish ||
+        _snapshot.slots.pendingActivation != null) {
       return false;
     }
+    _publish(
+      _snapshot.copyWith(
+        slots: _snapshot.slots.copyWith(pendingActivation: slot),
+      ),
+    );
     try {
       return await _rfOperations.runForeground(() async {
         if (!_session.isCurrent) {
@@ -1131,6 +1158,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             slots: currentSlots.copyWith(
               availability: _slotsAvailability(staleFacets, unavailableFacets),
               activeSlot: SlotField.confirmed(confirmedSlot),
+              pendingActivation: null,
               staleFacets: staleFacets,
               unavailableFacets: unavailableFacets,
             ),
@@ -1154,11 +1182,93 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
                 ...currentSlots.staleFacets,
                 SlotFacet.activeSlot,
               },
+              pendingActivation: null,
             ),
+          ),
+        );
+      } else if (_canPublish) {
+        _publish(
+          _snapshot.copyWith(
+            slots: _snapshot.slots.copyWith(pendingActivation: null),
           ),
         );
       }
       return false;
+    }
+  }
+
+  Future<void> _scheduleActiveSlotRefresh() {
+    if (_slotsRefresh != null || _snapshot.slots.pendingActivation != null) {
+      return Future.value();
+    }
+    final currentRefresh = _activeSlotRefresh;
+    if (currentRefresh != null) {
+      return currentRefresh;
+    }
+    final refresh = _refreshActiveSlot();
+    _activeSlotRefresh = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_activeSlotRefresh, refresh)) {
+        _activeSlotRefresh = null;
+      }
+    });
+  }
+
+  Future<void> _refreshActiveSlot() async {
+    try {
+      final result = await _rfOperations.tryRunBackground<int>(
+        _session.communicator.getActiveSlot,
+        group: _backgroundOperationGroup,
+      );
+      if (!result.acquired || !_canPublish) {
+        return;
+      }
+      final confirmedSlot = result.value!;
+      if (confirmedSlot < 0 || confirmedSlot >= 8) {
+        throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
+      }
+      final currentSlots = _snapshot.slots;
+      final staleFacets = {...currentSlots.staleFacets}
+        ..remove(SlotFacet.activeSlot);
+      final unavailableFacets = {...currentSlots.unavailableFacets}
+        ..remove(SlotFacet.activeSlot);
+      _publish(
+        _snapshot.copyWith(
+          slots: currentSlots.copyWith(
+            availability: _slotsAvailability(staleFacets, unavailableFacets),
+            activeSlot: SlotField.confirmed(confirmedSlot),
+            staleFacets: staleFacets,
+            unavailableFacets: unavailableFacets,
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to poll connected-device active slot',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return;
+      }
+      final currentSlots = _snapshot.slots;
+      final staleFacets = {...currentSlots.staleFacets};
+      final unavailableFacets = {...currentSlots.unavailableFacets};
+      if (currentSlots.activeSlot.isConfirmed) {
+        staleFacets.add(SlotFacet.activeSlot);
+        unavailableFacets.remove(SlotFacet.activeSlot);
+      } else {
+        unavailableFacets.add(SlotFacet.activeSlot);
+      }
+      _publish(
+        _snapshot.copyWith(
+          slots: currentSlots.copyWith(
+            availability: _slotsAvailability(staleFacets, unavailableFacets),
+            staleFacets: staleFacets,
+            unavailableFacets: unavailableFacets,
+          ),
+        ),
+      );
     }
   }
 
@@ -1402,11 +1512,16 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  void _startBatteryTimer() {
+  void _startHomeTimers() {
     _batteryTimer?.cancel();
     _batteryTimer = Timer.periodic(
       batteryPollInterval,
       (_) => unawaited(refreshBattery()),
+    );
+    _activeSlotTimer?.cancel();
+    _activeSlotTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => unawaited(_scheduleActiveSlotRefresh()),
     );
   }
 
@@ -1418,6 +1533,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (_homePresenceCount == 0) {
       _batteryTimer?.cancel();
       _batteryTimer = null;
+      _activeSlotTimer?.cancel();
+      _activeSlotTimer = null;
     }
   }
 
@@ -1437,10 +1554,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshHomeAfterResume());
-      _startBatteryTimer();
+      _startHomeTimers();
     } else {
       _batteryTimer?.cancel();
       _batteryTimer = null;
+      _activeSlotTimer?.cancel();
+      _activeSlotTimer = null;
     }
   }
 
@@ -1452,6 +1571,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _disposed = true;
     _batteryTimer?.cancel();
     _batteryTimer = null;
+    _activeSlotTimer?.cancel();
+    _activeSlotTimer = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

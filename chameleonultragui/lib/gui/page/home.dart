@@ -1,12 +1,11 @@
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
+import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/main.dart';
-import 'package:chameleonultragui/gui/component/slot_changer.dart';
-import 'dart:math';
 
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
@@ -129,7 +128,7 @@ class HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 8),
-            _SharedSlotSummary(status: status),
+            HomeSlotGrid(status: status),
             Expanded(
               child: FractionallySizedBox(
                 widthFactor: 0.4,
@@ -523,45 +522,6 @@ class _DeviceModeControl extends StatelessWidget {
               tooltip: localizations.unavailable,
               onPressed: status.refreshMode,
               icon: const Icon(Icons.refresh),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SharedSlotSummary extends StatelessWidget {
-  const _SharedSlotSummary({required this.status});
-
-  final ConnectedDeviceStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context)!;
-    return ListenableBuilder(
-      listenable: status,
-      builder: (context, _) {
-        final slots = status.snapshot.slots;
-        final usedSlots = slots.hasConfirmedTypes
-            ? slots.slots.where((slot) => slot.isConfigured).length.toString()
-            : localizations.unknown;
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${localizations.used_slots}: $usedSlots/8',
-              style: TextStyle(
-                fontSize: min(
-                  MediaQuery.of(context).size.width / 35,
-                  MediaQuery.of(context).size.height / 20,
-                ),
-              ),
-            ),
-            FittedBox(
-              alignment: Alignment.center,
-              fit: BoxFit.scaleDown,
-              child: SlotChanger(status: status),
             ),
           ],
         );
