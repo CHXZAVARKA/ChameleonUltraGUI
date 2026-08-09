@@ -51,12 +51,8 @@ class HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<(List<String>, bool, bool)> getFutureData() async {
-    return (
-      await getVersion(),
-      await isReaderDeviceMode(),
-      await areCapabilitiesSupported()
-    );
+  Future<(List<String>, bool)> getFutureData() async {
+    return (await getVersion(), await areCapabilitiesSupported());
   }
 
   Future<bool> areCapabilitiesSupported() async {
@@ -162,11 +158,6 @@ class HomePageState extends State<HomePage> {
     return ["$firmwareVersion ($commitHash)", commitHash];
   }
 
-  Future<bool> isReaderDeviceMode() async {
-    var appState = context.read<ChameleonGUIState>();
-    return await appState.communicator!.isReaderDeviceMode();
-  }
-
   @override
   Widget build(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
@@ -198,7 +189,6 @@ class HomePageState extends State<HomePage> {
           } else {
             final (
               fwVersion,
-              isReaderDeviceMode,
               areCapabilitiesSupported,
             ) = snapshot.data;
 
@@ -419,33 +409,10 @@ class HomePageState extends State<HomePage> {
                     child: Row(
                       children: [
                         const Spacer(),
-                        (isReaderDeviceMode)
-                            ? Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: IconButton(
-                                  onPressed: () async {
-                                    await appState.communicator!
-                                        .setReaderDeviceMode(false);
-                                    setState(() {});
-                                    appState.changesMade();
-                                  },
-                                  tooltip: localizations.emulator_mode,
-                                  icon: const Icon(Icons.nfc_sharp),
-                                ),
-                              )
-                            : Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: IconButton(
-                                  onPressed: () async {
-                                    await appState.communicator!
-                                        .setReaderDeviceMode(true);
-                                    setState(() {});
-                                    appState.changesMade();
-                                  },
-                                  tooltip: localizations.reader_mode,
-                                  icon: const Icon(Icons.barcode_reader),
-                                ),
-                              ),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: _DeviceModeControl(status: status),
+                        ),
                         Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: IconButton(
@@ -515,10 +482,9 @@ class _LegacyHomePlaceholder extends StatelessWidget {
             child: Row(
               children: [
                 const Spacer(),
-                IconButton(
-                  onPressed: null,
-                  tooltip: localizations.reader_mode,
-                  icon: const Icon(Icons.barcode_reader),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: _DeviceModeControl(status: status),
                 ),
                 Padding(
                   padding: const EdgeInsets.all(8),
@@ -535,6 +501,76 @@ class _LegacyHomePlaceholder extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DeviceModeControl extends StatelessWidget {
+  const _DeviceModeControl({required this.status});
+
+  final ConnectedDeviceStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final mode = status.snapshot.mode;
+        final isLite = status.snapshot.identity.device == ChameleonDevice.lite;
+        final enabled = mode.availability == ModeAvailability.available &&
+            mode.pendingMode == null;
+        final control = SegmentedButton<ConnectedDeviceMode>(
+          segments: [
+            ButtonSegment(
+              value: ConnectedDeviceMode.emulator,
+              label: Text(localizations.emulator_mode),
+            ),
+            ButtonSegment(
+              value: ConnectedDeviceMode.reader,
+              enabled: !isLite,
+              label: isLite
+                  ? Tooltip(
+                      message: localizations.lite_no_read,
+                      child: Text(localizations.reader_mode),
+                    )
+                  : Text(localizations.reader_mode),
+            ),
+          ],
+          selected:
+              mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
+          emptySelectionAllowed: mode.confirmedMode == null,
+          onSelectionChanged: enabled
+              ? (selection) async {
+                  final outcome = await status.switchMode(selection.single);
+                  if (outcome == ModeActionOutcome.failed && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${localizations.error}: ${localizations.unavailable}',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              : null,
+        );
+        if (mode.availability != ModeAvailability.unavailable) {
+          return control;
+        }
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            control,
+            IconButton(
+              key: const Key('home-mode-retry'),
+              tooltip: localizations.unavailable,
+              onPressed: status.refreshMode,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        );
+      },
     );
   }
 }

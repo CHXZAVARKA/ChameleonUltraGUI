@@ -10,6 +10,18 @@ enum StatusSurface { home, slotManager }
 
 enum BatteryAvailability { loading, available, unavailable }
 
+enum ModeAvailability { loading, available, unavailable }
+
+enum ConnectedDeviceMode { emulator, reader }
+
+enum ModeActionOutcome {
+  confirmed,
+  failed,
+  unsupported,
+  busy,
+  connectionChanged,
+}
+
 enum SlotFieldAvailability { confirmed, unavailable }
 
 enum SlotsAvailability { loading, available, partial, stale, unavailable }
@@ -265,24 +277,71 @@ class BatteryStatus {
 }
 
 @immutable
+class ModeStatus {
+  const ModeStatus._({
+    required this.availability,
+    this.confirmedMode,
+    this.pendingMode,
+  });
+
+  const ModeStatus.loading() : this._(availability: ModeAvailability.loading);
+
+  const ModeStatus.unavailable()
+      : this._(availability: ModeAvailability.unavailable);
+
+  const ModeStatus.available(ConnectedDeviceMode mode)
+      : this._(
+          availability: ModeAvailability.available,
+          confirmedMode: mode,
+        );
+
+  const ModeStatus.pending({
+    required ConnectedDeviceMode confirmedMode,
+    required ConnectedDeviceMode pendingMode,
+  }) : this._(
+          availability: ModeAvailability.available,
+          confirmedMode: confirmedMode,
+          pendingMode: pendingMode,
+        );
+
+  final ModeAvailability availability;
+  final ConnectedDeviceMode? confirmedMode;
+  final ConnectedDeviceMode? pendingMode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ModeStatus &&
+      other.availability == availability &&
+      other.confirmedMode == confirmedMode &&
+      other.pendingMode == pendingMode;
+
+  @override
+  int get hashCode => Object.hash(availability, confirmedMode, pendingMode);
+}
+
+@immutable
 class DeviceStatusSnapshot {
   const DeviceStatusSnapshot({
     required this.identity,
     required this.battery,
+    required this.mode,
     required this.slots,
   });
 
   final DeviceIdentityStatus identity;
   final BatteryStatus battery;
+  final ModeStatus mode;
   final SlotsStatus slots;
 
   DeviceStatusSnapshot copyWith({
     BatteryStatus? battery,
+    ModeStatus? mode,
     SlotsStatus? slots,
   }) =>
       DeviceStatusSnapshot(
         identity: identity,
         battery: battery ?? this.battery,
+        mode: mode ?? this.mode,
         slots: slots ?? this.slots,
       );
 
@@ -291,10 +350,11 @@ class DeviceStatusSnapshot {
       other is DeviceStatusSnapshot &&
       other.identity == identity &&
       other.battery == battery &&
+      other.mode == mode &&
       other.slots == slots;
 
   @override
-  int get hashCode => Object.hash(identity, battery, slots);
+  int get hashCode => Object.hash(identity, battery, mode, slots);
 }
 
 class StatusPresence {
@@ -323,6 +383,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             connectionType: session.connector.connectionType,
           ),
           battery: const BatteryStatus.loading(),
+          mode: session.connector.device == ChameleonDevice.lite
+              ? const ModeStatus.available(ConnectedDeviceMode.emulator)
+              : const ModeStatus.loading(),
           slots: SlotsStatus.loading(),
         ) {
     WidgetsBinding.instance.addObserver(this);
@@ -337,6 +400,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Timer? _batteryTimer;
   Future<void>? _batteryRefresh;
+  Future<void>? _modeRefresh;
   Future<void>? _slotsRefresh;
   final Object _backgroundOperationGroup = Object();
   int _homePresenceCount = 0;
@@ -363,8 +427,162 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _refreshHomeOnEntry() async {
     final batteryRefresh = refreshBattery();
+    final modeRefresh = refreshMode();
+    final slotsRefresh = refreshSlots();
+    await Future.wait([batteryRefresh, modeRefresh, slotsRefresh]);
+  }
+
+  Future<void> _refreshHomeAfterResume() async {
+    final batteryRefresh = refreshBattery();
     final slotsRefresh = refreshSlots();
     await Future.wait([batteryRefresh, slotsRefresh]);
+  }
+
+  Future<void> refreshMode() {
+    if (_session.connector.device == ChameleonDevice.lite) {
+      return Future.value();
+    }
+    final currentRefresh = _modeRefresh;
+    if (currentRefresh != null) {
+      return currentRefresh;
+    }
+
+    final refresh = _refreshMode();
+    _modeRefresh = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_modeRefresh, refresh)) {
+        _modeRefresh = null;
+      }
+    });
+  }
+
+  Future<void> _refreshMode() async {
+    try {
+      while (_canPublish) {
+        final result = await _rfOperations.tryRunBackground<bool>(
+          _session.communicator.isReaderDeviceMode,
+          group: _backgroundOperationGroup,
+        );
+        if (result.acquired) {
+          if (_canPublish) {
+            _publish(
+              _snapshot.copyWith(
+                mode: ModeStatus.available(
+                  result.value!
+                      ? ConnectedDeviceMode.reader
+                      : ConnectedDeviceMode.emulator,
+                ),
+              ),
+            );
+          }
+          return;
+        }
+        await _rfOperations.waitUntilIdle();
+      }
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to read connected-device mode',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish && _snapshot.mode.confirmedMode == null) {
+        _publish(_snapshot.copyWith(mode: const ModeStatus.unavailable()));
+      }
+    }
+  }
+
+  Future<ModeActionOutcome> switchMode(ConnectedDeviceMode target) async {
+    if (!_canPublish) {
+      return ModeActionOutcome.connectionChanged;
+    }
+    if (_session.connector.device == ChameleonDevice.lite) {
+      return target == ConnectedDeviceMode.emulator
+          ? ModeActionOutcome.confirmed
+          : ModeActionOutcome.unsupported;
+    }
+
+    final previous = _snapshot.mode;
+    if (previous.pendingMode != null) {
+      return ModeActionOutcome.busy;
+    }
+    if (previous.availability != ModeAvailability.available ||
+        previous.confirmedMode == null) {
+      return ModeActionOutcome.failed;
+    }
+    if (previous.confirmedMode == target) {
+      return ModeActionOutcome.confirmed;
+    }
+
+    _publish(
+      _snapshot.copyWith(
+        mode: ModeStatus.pending(
+          confirmedMode: previous.confirmedMode!,
+          pendingMode: target,
+        ),
+      ),
+    );
+    return _rfOperations.runForeground(() async {
+      if (!_canPublish) {
+        return ModeActionOutcome.connectionChanged;
+      }
+
+      Object? commandError;
+      StackTrace? commandStackTrace;
+      try {
+        await _session.communicator.setReaderDeviceMode(
+          target == ConnectedDeviceMode.reader,
+        );
+      } catch (error, stackTrace) {
+        commandError = error;
+        commandStackTrace = stackTrace;
+      }
+
+      bool? isReader;
+      Object? readError;
+      StackTrace? readStackTrace;
+      try {
+        isReader = await _session.communicator.isReaderDeviceMode();
+      } catch (error, stackTrace) {
+        readError = error;
+        readStackTrace = stackTrace;
+      }
+
+      if (!_canPublish) {
+        return ModeActionOutcome.connectionChanged;
+      }
+      if (commandError != null) {
+        _session.appState.log?.w(
+          'Unable to change connected-device mode',
+          error: commandError,
+          stackTrace: commandStackTrace,
+        );
+      }
+      if (readError != null) {
+        _session.appState.log?.w(
+          'Unable to confirm connected-device mode',
+          error: readError,
+          stackTrace: readStackTrace,
+        );
+      }
+
+      final confirmed = isReader == null
+          ? null
+          : isReader
+              ? ConnectedDeviceMode.reader
+              : ConnectedDeviceMode.emulator;
+      if (commandError == null && readError == null && confirmed == target) {
+        _publish(_snapshot.copyWith(mode: ModeStatus.available(target)));
+        return ModeActionOutcome.confirmed;
+      }
+
+      if (commandError == null && readError == null) {
+        _session.appState.log?.w(
+          'Connected-device mode did not match the requested mode',
+        );
+      }
+      _publish(_snapshot.copyWith(mode: previous));
+      return ModeActionOutcome.failed;
+    });
   }
 
   Future<void> refreshSlots() {
@@ -745,7 +963,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshHomeOnEntry());
+      unawaited(_refreshHomeAfterResume());
       _startBatteryTimer();
     } else {
       _batteryTimer?.cancel();

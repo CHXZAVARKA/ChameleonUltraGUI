@@ -44,7 +44,7 @@ void main() {
     expect(find.byIcon(Icons.settings), findsOneWidget);
   });
 
-  testWidgets('legacy status failure keeps the Home shell usable',
+  testWidgets('mode status failure keeps the Home shell usable',
       (tester) async {
     final communicator = _BatteryCommunicator.failingLegacyStatus();
     final appState = _connectedState(communicator);
@@ -57,7 +57,8 @@ void main() {
     expect(find.text('Used Slots: 0/8'), findsOneWidget);
     expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
     expect(find.byIcon(Icons.settings), findsOneWidget);
-    expect(find.textContaining('legacy status unavailable'), findsOneWidget);
+    expect(find.textContaining('legacy status unavailable'), findsNothing);
+    expect(find.byKey(const Key('home-mode-retry')), findsOneWidget);
     expect(serial.connected, isTrue);
     expect(serial.disconnects, 0);
   });
