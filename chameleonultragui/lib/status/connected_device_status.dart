@@ -6,9 +6,191 @@ import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/widgets.dart';
 
-enum StatusSurface { home }
+enum StatusSurface { home, slotManager }
 
 enum BatteryAvailability { loading, available, unavailable }
+
+enum SlotFieldAvailability { confirmed, unavailable }
+
+enum SlotsAvailability { loading, available, partial, stale, unavailable }
+
+enum SlotFacet { types, enabledStates, names, activeSlot }
+
+@immutable
+class SlotField<T> {
+  const SlotField.confirmed(this.value)
+      : availability = SlotFieldAvailability.confirmed;
+
+  const SlotField.unavailable()
+      : availability = SlotFieldAvailability.unavailable,
+        value = null;
+
+  final SlotFieldAvailability availability;
+  final T? value;
+
+  bool get isConfirmed => availability == SlotFieldAvailability.confirmed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SlotField<T> &&
+      other.availability == availability &&
+      other.value == value;
+
+  @override
+  int get hashCode => Object.hash(availability, value);
+}
+
+@immutable
+class SlotFrequencyStatus {
+  const SlotFrequencyStatus({
+    required this.type,
+    required this.enabled,
+    required this.name,
+  });
+
+  const SlotFrequencyStatus.unavailable()
+      : type = const SlotField<TagType>.unavailable(),
+        enabled = const SlotField<bool>.unavailable(),
+        name = const SlotField<String>.unavailable();
+
+  final SlotField<TagType> type;
+  final SlotField<bool> enabled;
+  final SlotField<String> name;
+
+  bool get isConfigured => type.value != null && type.value != TagType.unknown;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SlotFrequencyStatus &&
+      other.type == type &&
+      other.enabled == enabled &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(type, enabled, name);
+}
+
+@immutable
+class DeviceSlotStatus {
+  const DeviceSlotStatus({
+    required this.index,
+    required this.hf,
+    required this.lf,
+  });
+
+  const DeviceSlotStatus.unavailable(int index)
+      : this(
+          index: index,
+          hf: const SlotFrequencyStatus.unavailable(),
+          lf: const SlotFrequencyStatus.unavailable(),
+        );
+
+  final int index;
+  final SlotFrequencyStatus hf;
+  final SlotFrequencyStatus lf;
+
+  bool get isConfigured => hf.isConfigured || lf.isConfigured;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DeviceSlotStatus &&
+      other.index == index &&
+      other.hf == hf &&
+      other.lf == lf;
+
+  @override
+  int get hashCode => Object.hash(index, hf, lf);
+}
+
+@immutable
+class SlotsStatus {
+  SlotsStatus({
+    required this.availability,
+    required List<DeviceSlotStatus> slots,
+    required this.activeSlot,
+    Set<SlotFacet> unavailableFacets = const {},
+    Set<SlotFacet> staleFacets = const {},
+  })  : assert(slots.length == 8),
+        slots = List.unmodifiable(slots),
+        unavailableFacets = Set.unmodifiable(unavailableFacets),
+        staleFacets = Set.unmodifiable(staleFacets);
+
+  factory SlotsStatus.loading() => SlotsStatus(
+        availability: SlotsAvailability.loading,
+        slots: List.generate(8, DeviceSlotStatus.unavailable),
+        activeSlot: const SlotField<int>.unavailable(),
+        unavailableFacets: SlotFacet.values.toSet(),
+      );
+
+  final SlotsAvailability availability;
+  final List<DeviceSlotStatus> slots;
+  final SlotField<int> activeSlot;
+  final Set<SlotFacet> unavailableFacets;
+  final Set<SlotFacet> staleFacets;
+
+  bool get hasConfirmedData => slots.any(
+        (slot) =>
+            slot.hf.type.isConfirmed ||
+            slot.hf.enabled.isConfirmed ||
+            slot.hf.name.isConfirmed ||
+            slot.lf.type.isConfirmed ||
+            slot.lf.enabled.isConfirmed ||
+            slot.lf.name.isConfirmed,
+      );
+
+  bool get hasConfirmedTypes =>
+      !unavailableFacets.contains(SlotFacet.types) &&
+      slots.every(
+          (slot) => slot.hf.type.isConfirmed && slot.lf.type.isConfirmed);
+
+  SlotsStatus copyWith({
+    SlotsAvailability? availability,
+    List<DeviceSlotStatus>? slots,
+    SlotField<int>? activeSlot,
+    Set<SlotFacet>? unavailableFacets,
+    Set<SlotFacet>? staleFacets,
+  }) =>
+      SlotsStatus(
+        availability: availability ?? this.availability,
+        slots: slots ?? this.slots,
+        activeSlot: activeSlot ?? this.activeSlot,
+        unavailableFacets: unavailableFacets ?? this.unavailableFacets,
+        staleFacets: staleFacets ?? this.staleFacets,
+      );
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! SlotsStatus ||
+        other.availability != availability ||
+        other.activeSlot != activeSlot ||
+        !_setEquals(other.unavailableFacets, unavailableFacets) ||
+        !_setEquals(other.staleFacets, staleFacets) ||
+        other.slots.length != slots.length) {
+      return false;
+    }
+    for (var index = 0; index < slots.length; index++) {
+      if (other.slots[index] != slots[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        availability,
+        activeSlot,
+        Object.hashAll(slots),
+        unavailableFacets.fold<int>(
+          0,
+          (hash, facet) => hash ^ facet.hashCode,
+        ),
+        staleFacets.fold<int>(0, (hash, facet) => hash ^ facet.hashCode),
+      );
+}
+
+bool _setEquals<T>(Set<T> left, Set<T> right) =>
+    left.length == right.length && left.containsAll(right);
 
 @immutable
 class DeviceIdentityStatus {
@@ -76,23 +258,32 @@ class DeviceStatusSnapshot {
   const DeviceStatusSnapshot({
     required this.identity,
     required this.battery,
+    required this.slots,
   });
 
   final DeviceIdentityStatus identity;
   final BatteryStatus battery;
+  final SlotsStatus slots;
 
-  DeviceStatusSnapshot copyWith({BatteryStatus? battery}) =>
+  DeviceStatusSnapshot copyWith({
+    BatteryStatus? battery,
+    SlotsStatus? slots,
+  }) =>
       DeviceStatusSnapshot(
-          identity: identity, battery: battery ?? this.battery);
+        identity: identity,
+        battery: battery ?? this.battery,
+        slots: slots ?? this.slots,
+      );
 
   @override
   bool operator ==(Object other) =>
       other is DeviceStatusSnapshot &&
       other.identity == identity &&
-      other.battery == battery;
+      other.battery == battery &&
+      other.slots == slots;
 
   @override
-  int get hashCode => Object.hash(identity, battery);
+  int get hashCode => Object.hash(identity, battery, slots);
 }
 
 class StatusPresence {
@@ -121,6 +312,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             connectionType: session.connector.connectionType,
           ),
           battery: const BatteryStatus.loading(),
+          slots: SlotsStatus.loading(),
         ) {
     WidgetsBinding.instance.addObserver(this);
   }
@@ -134,7 +326,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Timer? _batteryTimer;
   Future<void>? _batteryRefresh;
+  Future<void>? _slotsRefresh;
   int _homePresenceCount = 0;
+  int _slotManagerPresenceCount = 0;
   bool _disposed = false;
 
   StatusPresence present(StatusSurface surface) {
@@ -142,11 +336,252 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       case StatusSurface.home:
         _homePresenceCount++;
         if (_homePresenceCount == 1 && _isAppActive) {
-          unawaited(refreshBattery());
+          unawaited(_refreshHomeOnEntry());
           _startBatteryTimer();
         }
         return StatusPresence._(() => _leaveHome());
+      case StatusSurface.slotManager:
+        _slotManagerPresenceCount++;
+        if (_slotManagerPresenceCount == 1 && _isAppActive) {
+          unawaited(refreshSlots());
+        }
+        return StatusPresence._(() => _leaveSlotManager());
     }
+  }
+
+  Future<void> _refreshHomeOnEntry() async {
+    await refreshSlots();
+    if (_homePresenceCount > 0 && _isAppActive) {
+      await refreshBattery();
+    }
+  }
+
+  Future<void> refreshSlots() {
+    final currentRefresh = _slotsRefresh;
+    if (currentRefresh != null) {
+      return currentRefresh;
+    }
+
+    final refresh = _refreshSlots();
+    _slotsRefresh = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_slotsRefresh, refresh)) {
+        _slotsRefresh = null;
+      }
+    });
+  }
+
+  Future<void> _refreshSlots() async {
+    final previous = _snapshot.slots;
+    try {
+      final result = await _rfOperations.tryRunBackground<_SlotReadBatch>(
+        () => _readSlots(previous),
+      );
+      if (!result.acquired || !_canPublish) {
+        return;
+      }
+      _publish(_snapshot.copyWith(slots: result.value!.status));
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to refresh connected-device slots',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish) {
+        _publish(_snapshot.copyWith(slots: _failedSlots(previous)));
+      }
+    }
+  }
+
+  Future<bool> activateSlot(int slot) async {
+    if (slot < 0 || slot >= 8 || !_canPublish) {
+      return false;
+    }
+    try {
+      return await _rfOperations.runForeground(() async {
+        if (!_session.isCurrent) {
+          return false;
+        }
+        await _session.communicator.activateSlot(slot);
+        final confirmedSlot = await _session.communicator.getActiveSlot();
+        if (!_canPublish || confirmedSlot < 0 || confirmedSlot >= 8) {
+          return false;
+        }
+        final currentSlots = _snapshot.slots;
+        _publish(
+          _snapshot.copyWith(
+            slots: currentSlots.copyWith(
+              activeSlot: SlotField.confirmed(confirmedSlot),
+              staleFacets: {
+                ...currentSlots.staleFacets,
+              }..remove(SlotFacet.activeSlot),
+            ),
+          ),
+        );
+        return confirmedSlot == slot;
+      });
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to activate connected-device slot',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish && _snapshot.slots.activeSlot.isConfirmed) {
+        final currentSlots = _snapshot.slots;
+        _publish(
+          _snapshot.copyWith(
+            slots: currentSlots.copyWith(
+              availability: SlotsAvailability.stale,
+              staleFacets: {
+                ...currentSlots.staleFacets,
+                SlotFacet.activeSlot,
+              },
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<_SlotReadBatch> _readSlots(SlotsStatus previous) async {
+    final failures = <SlotFacet>{};
+    List<SlotTypes>? types;
+    List<EnabledSlotInfo>? enabled;
+    List<SlotNames>? names;
+    int? activeSlot;
+
+    try {
+      types = await _session.communicator.getSlotTagTypes();
+      if (types.length != 8) {
+        throw StateError('Expected 8 slot type records, got ${types.length}');
+      }
+    } catch (error, stackTrace) {
+      types = null;
+      failures.add(SlotFacet.types);
+      _logSlotFacetFailure(SlotFacet.types, error, stackTrace);
+    }
+    try {
+      enabled = await _session.communicator.getEnabledSlots();
+      if (enabled.length != 8) {
+        throw StateError(
+          'Expected 8 enabled-slot records, got ${enabled.length}',
+        );
+      }
+    } catch (error, stackTrace) {
+      enabled = null;
+      failures.add(SlotFacet.enabledStates);
+      _logSlotFacetFailure(SlotFacet.enabledStates, error, stackTrace);
+    }
+    try {
+      names = await _session.communicator.getSlotTagNames();
+      if (names.length != 8) {
+        throw StateError('Expected 8 slot-name records, got ${names.length}');
+      }
+    } catch (error, stackTrace) {
+      names = null;
+      failures.add(SlotFacet.names);
+      _logSlotFacetFailure(SlotFacet.names, error, stackTrace);
+    }
+    try {
+      final readActiveSlot = await _session.communicator.getActiveSlot();
+      if (readActiveSlot < 0 || readActiveSlot >= 8) {
+        throw RangeError.range(readActiveSlot, 0, 7, 'activeSlot');
+      }
+      activeSlot = readActiveSlot;
+    } catch (error, stackTrace) {
+      failures.add(SlotFacet.activeSlot);
+      _logSlotFacetFailure(SlotFacet.activeSlot, error, stackTrace);
+    }
+
+    final hadConfirmedData = previous.hasConfirmedData;
+    final normalized = List.generate(8, (index) {
+      final old = previous.slots[index];
+      final type = index < (types?.length ?? 0) ? types![index] : null;
+      final enabledInfo =
+          index < (enabled?.length ?? 0) ? enabled![index] : null;
+      final slotNames = index < (names?.length ?? 0) ? names![index] : null;
+      return DeviceSlotStatus(
+        index: index,
+        hf: SlotFrequencyStatus(
+          type: type == null
+              ? _preservedOrUnavailable(old.hf.type, hadConfirmedData)
+              : SlotField.confirmed(type.hf),
+          enabled: enabledInfo == null
+              ? _preservedOrUnavailable(old.hf.enabled, hadConfirmedData)
+              : SlotField.confirmed(enabledInfo.hf),
+          name: slotNames == null
+              ? _preservedOrUnavailable(old.hf.name, hadConfirmedData)
+              : SlotField.confirmed(slotNames.hf),
+        ),
+        lf: SlotFrequencyStatus(
+          type: type == null
+              ? _preservedOrUnavailable(old.lf.type, hadConfirmedData)
+              : SlotField.confirmed(type.lf),
+          enabled: enabledInfo == null
+              ? _preservedOrUnavailable(old.lf.enabled, hadConfirmedData)
+              : SlotField.confirmed(enabledInfo.lf),
+          name: slotNames == null
+              ? _preservedOrUnavailable(old.lf.name, hadConfirmedData)
+              : SlotField.confirmed(slotNames.lf),
+        ),
+      );
+    });
+
+    final staleFacets = hadConfirmedData ? failures : const <SlotFacet>{};
+    final unavailableFacets = hadConfirmedData ? const <SlotFacet>{} : failures;
+    final availability = failures.isEmpty
+        ? SlotsAvailability.available
+        : hadConfirmedData
+            ? SlotsAvailability.stale
+            : failures.length == SlotFacet.values.length
+                ? SlotsAvailability.unavailable
+                : SlotsAvailability.partial;
+
+    return _SlotReadBatch(
+      SlotsStatus(
+        availability: availability,
+        slots: normalized,
+        activeSlot: activeSlot == null
+            ? _preservedOrUnavailable(previous.activeSlot, hadConfirmedData)
+            : SlotField.confirmed(activeSlot),
+        unavailableFacets: unavailableFacets,
+        staleFacets: staleFacets,
+      ),
+    );
+  }
+
+  SlotField<T> _preservedOrUnavailable<T>(
+    SlotField<T> previous,
+    bool preserve,
+  ) =>
+      preserve ? previous : SlotField<T>.unavailable();
+
+  SlotsStatus _failedSlots(SlotsStatus previous) {
+    if (previous.hasConfirmedData) {
+      return previous.copyWith(
+        availability: SlotsAvailability.stale,
+        staleFacets: SlotFacet.values.toSet(),
+      );
+    }
+    return SlotsStatus(
+      availability: SlotsAvailability.unavailable,
+      slots: previous.slots,
+      activeSlot: previous.activeSlot,
+      unavailableFacets: SlotFacet.values.toSet(),
+    );
+  }
+
+  void _logSlotFacetFailure(
+    SlotFacet facet,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _session.appState.log?.w(
+      'Unable to read connected-device slot facet: ${facet.name}',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   Future<void> refreshBattery() {
@@ -230,13 +665,22 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  void _leaveSlotManager() {
+    if (_slotManagerPresenceCount > 0) {
+      _slotManagerPresenceCount--;
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_homePresenceCount == 0) {
+      if (state == AppLifecycleState.resumed && _slotManagerPresenceCount > 0) {
+        unawaited(refreshSlots());
+      }
       return;
     }
     if (state == AppLifecycleState.resumed) {
-      unawaited(refreshBattery());
+      unawaited(_refreshHomeOnEntry());
       _startBatteryTimer();
     } else {
       _batteryTimer?.cancel();
@@ -255,4 +699,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+}
+
+class _SlotReadBatch {
+  const _SlotReadBatch(this.status);
+
+  final SlotsStatus status;
 }

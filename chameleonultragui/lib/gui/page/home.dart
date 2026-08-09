@@ -51,17 +51,8 @@ class HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<(String, List<String>, bool, bool)> getFutureData() async {
-    var appState = context.read<ChameleonGUIState>();
-    List<SlotTypes> slotTypes = [];
-    try {
-      slotTypes = await appState.communicator!.getSlotTagTypes();
-    } catch (e) {
-      appState.log!.e(e);
-    }
-
+  Future<(List<String>, bool, bool)> getFutureData() async {
     return (
-      await getUsedSlotsOut8(slotTypes),
       await getVersion(),
       await isReaderDeviceMode(),
       await areCapabilitiesSupported()
@@ -94,21 +85,6 @@ class HomePageState extends State<HomePage> {
     }
 
     return true;
-  }
-
-  Future<String> getUsedSlotsOut8(List<SlotTypes> slotTypes) async {
-    int usedSlotsOut8 = 0;
-
-    if (slotTypes.isEmpty) {
-      return AppLocalizations.of(context)!.unknown;
-    }
-
-    for (int i = 0; i < 8; i++) {
-      if (slotTypes[i].notMatch()) {
-        usedSlotsOut8++;
-      }
-    }
-    return usedSlotsOut8.toString();
   }
 
   Future<List<String>> getVersion() async {
@@ -211,15 +187,16 @@ class HomePageState extends State<HomePage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return _LegacyHomePlaceholder(
               device: status.snapshot.identity.device,
+              status: status,
             );
           } else if (snapshot.hasError) {
             return _LegacyHomePlaceholder(
               device: status.snapshot.identity.device,
+              status: status,
               errorMessage: snapshot.error.toString(),
             );
           } else {
             final (
-              usedSlots,
               fwVersion,
               isReaderDeviceMode,
               areCapabilitiesSupported,
@@ -230,17 +207,7 @@ class HomePageState extends State<HomePage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 20),
-                  Text("${localizations.used_slots}: $usedSlots/8",
-                      style: TextStyle(
-                        fontSize: min(
-                          MediaQuery.of(context).size.width / 35,
-                          MediaQuery.of(context).size.height / 20,
-                        ),
-                      )),
-                  const FittedBox(
-                      alignment: Alignment.center,
-                      fit: BoxFit.scaleDown,
-                      child: SlotChanger()),
+                  _SharedSlotSummary(status: status),
                   Expanded(
                     child: FractionallySizedBox(
                       widthFactor: 0.4,
@@ -505,10 +472,12 @@ class HomePageState extends State<HomePage> {
 class _LegacyHomePlaceholder extends StatelessWidget {
   const _LegacyHomePlaceholder({
     required this.device,
+    required this.status,
     this.errorMessage,
   });
 
   final ChameleonDevice device;
+  final ConnectedDeviceStatus status;
   final String? errorMessage;
 
   @override
@@ -528,22 +497,7 @@ class _LegacyHomePlaceholder extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 20),
-          Text('${localizations.used_slots}: ${localizations.unknown}/8'),
-          const FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              children: [
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-                Icon(Icons.circle_outlined),
-              ],
-            ),
-          ),
+          _SharedSlotSummary(status: status),
           Expanded(
             child: FractionallySizedBox(
               widthFactor: 0.4,
@@ -581,6 +535,45 @@ class _LegacyHomePlaceholder extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SharedSlotSummary extends StatelessWidget {
+  const _SharedSlotSummary({required this.status});
+
+  final ConnectedDeviceStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    return ListenableBuilder(
+      listenable: status,
+      builder: (context, _) {
+        final slots = status.snapshot.slots;
+        final usedSlots = slots.hasConfirmedTypes
+            ? slots.slots.where((slot) => slot.isConfigured).length.toString()
+            : localizations.unknown;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${localizations.used_slots}: $usedSlots/8',
+              style: TextStyle(
+                fontSize: min(
+                  MediaQuery.of(context).size.width / 35,
+                  MediaQuery.of(context).size.height / 20,
+                ),
+              ),
+            ),
+            FittedBox(
+              alignment: Alignment.center,
+              fit: BoxFit.scaleDown,
+              child: SlotChanger(status: status),
+            ),
+          ],
+        );
+      },
     );
   }
 }

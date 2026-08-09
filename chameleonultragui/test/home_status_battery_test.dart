@@ -39,7 +39,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text('Used Slots: Unknown/8'), findsOneWidget);
+    expect(find.text('Used Slots: 0/8'), findsOneWidget);
     expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
     expect(find.byIcon(Icons.settings), findsOneWidget);
   });
@@ -54,7 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Chameleon Ultra'), findsOneWidget);
-    expect(find.text('Used Slots: Unknown/8'), findsOneWidget);
+    expect(find.text('Used Slots: 0/8'), findsOneWidget);
     expect(find.byIcon(Icons.circle_outlined), findsNWidgets(8));
     expect(find.byIcon(Icons.settings), findsOneWidget);
     expect(find.textContaining('legacy status unavailable'), findsOneWidget);
@@ -432,6 +432,14 @@ class _BatteryCommunicator extends ChameleonCommunicator {
     slotTypeReads++;
     return List.generate(8, (_) => SlotTypes());
   }
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
+      List.generate(8, (_) => EnabledSlotInfo());
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() async =>
+      List.generate(8, (_) => SlotNames());
 
   @override
   Future<FirmwareVersion> getFirmwareVersion() => _completeLegacyStatus
