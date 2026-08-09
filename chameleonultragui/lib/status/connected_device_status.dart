@@ -1152,7 +1152,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             mode = await _readModeAfterSlotMutation();
           }
           if (_canPublish && slots != null) {
-            _publish(_snapshot.copyWith(slots: slots, mode: mode));
+            _publish(
+              _snapshot.copyWith(
+                slots: _mergePendingSlotActivation(slots),
+                mode: _mergePendingModeAction(mode),
+              ),
+            );
           }
         } catch (error, stackTrace) {
           _session.appState.log?.w(
@@ -1174,6 +1179,42 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       mutation.ensureCurrent();
       return result;
     });
+  }
+
+  SlotsStatus _mergePendingSlotActivation(SlotsStatus reconciled) {
+    final current = _snapshot.slots;
+    if (current.pendingActivation == null) {
+      return reconciled;
+    }
+
+    final staleFacets = {...reconciled.staleFacets};
+    final unavailableFacets = {...reconciled.unavailableFacets};
+    if (current.staleFacets.contains(SlotFacet.activeSlot)) {
+      staleFacets.add(SlotFacet.activeSlot);
+    } else {
+      staleFacets.remove(SlotFacet.activeSlot);
+    }
+    if (current.unavailableFacets.contains(SlotFacet.activeSlot)) {
+      unavailableFacets.add(SlotFacet.activeSlot);
+    } else {
+      unavailableFacets.remove(SlotFacet.activeSlot);
+    }
+
+    return reconciled.copyWith(
+      availability: _slotsAvailability(staleFacets, unavailableFacets),
+      activeSlot: current.activeSlot,
+      pendingActivation: current.pendingActivation,
+      staleFacets: staleFacets,
+      unavailableFacets: unavailableFacets,
+    );
+  }
+
+  ModeStatus? _mergePendingModeAction(ModeStatus? reconciled) {
+    if (reconciled == null) {
+      return null;
+    }
+    final current = _snapshot.mode;
+    return current.pendingMode == null ? reconciled : current;
   }
 
   Future<ModeStatus?> _readModeAfterSlotMutation() async {

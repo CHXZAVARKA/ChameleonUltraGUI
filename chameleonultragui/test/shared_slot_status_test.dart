@@ -1187,6 +1187,116 @@ void main() {
     expect(find.textContaining('Workshop'), findsOneWidget);
   });
 
+  testWidgets(
+      'queued activation stays pending through slot mutation reconciliation',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshSlots();
+    final initialSlotReads = communicator.slotTypeReads;
+    final mutationGate = Completer<void>();
+    final mutationStarted = Completer<void>();
+    final activationGate = Completer<void>();
+    communicator.activationGate = activationGate;
+    addTearDown(() {
+      if (!mutationGate.isCompleted) {
+        mutationGate.complete();
+      }
+      if (!activationGate.isCompleted) {
+        activationGate.complete();
+      }
+    });
+
+    final mutation = status.mutateSlots<void>((_) async {
+      mutationStarted.complete();
+      await mutationGate.future;
+    });
+    await mutationStarted.future;
+
+    final activation = status.activateSlot(1);
+    expect(status.snapshot.slots.pendingActivation, 1);
+    expect(await status.activateSlot(1), isFalse);
+
+    mutationGate.complete();
+    await mutation;
+
+    expect(communicator.slotTypeReads, initialSlotReads + 1);
+    expect(status.snapshot.slots.activeSlot.value, 0);
+    expect(status.snapshot.slots.pendingActivation, 1);
+    expect(communicator.activations, [1]);
+    expect(await status.activateSlot(1), isFalse);
+
+    activationGate.complete();
+    expect(await activation, isTrue);
+    expect(status.snapshot.slots.activeSlot.value, 1);
+    expect(status.snapshot.slots.pendingActivation, isNull);
+    expect(communicator.activations, [1]);
+  });
+
+  testWidgets('queued mode switch stays pending through slot reconciliation',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    final status = appState.connectedDeviceStatus!;
+    await status.refreshMode();
+    await status.refreshSlots();
+    final initialModeReads = communicator.modeReads;
+    final mutationGate = Completer<void>();
+    final mutationStarted = Completer<void>();
+    final modeWriteGate = Completer<void>();
+    final modeWriteStarted = Completer<void>();
+    communicator
+      ..modeWriteGate = modeWriteGate
+      ..modeWriteStarted = modeWriteStarted;
+    addTearDown(() {
+      if (!mutationGate.isCompleted) {
+        mutationGate.complete();
+      }
+      if (!modeWriteGate.isCompleted) {
+        modeWriteGate.complete();
+      }
+    });
+
+    final mutation = status.mutateSlots<void>(
+      (_) async {
+        mutationStarted.complete();
+        await mutationGate.future;
+      },
+      reconcileMode: true,
+    );
+    await mutationStarted.future;
+
+    final modeSwitch = status.switchMode(ConnectedDeviceMode.reader);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    expect(status.snapshot.mode.pendingMode, ConnectedDeviceMode.reader);
+    expect(
+      await status.switchMode(ConnectedDeviceMode.reader),
+      ModeActionOutcome.busy,
+    );
+
+    mutationGate.complete();
+    await mutation;
+    await modeWriteStarted.future;
+
+    expect(communicator.modeReads, initialModeReads + 1);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    expect(status.snapshot.mode.pendingMode, ConnectedDeviceMode.reader);
+    expect(
+      await status.switchMode(ConnectedDeviceMode.reader),
+      ModeActionOutcome.busy,
+    );
+
+    modeWriteGate.complete();
+    expect(await modeSwitch, ModeActionOutcome.confirmed);
+    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+    expect(status.snapshot.mode.pendingMode, isNull);
+    expect(
+      communicator.commandEvents.where((event) => event == 'mode:true'),
+      hasLength(1),
+    );
+  });
+
   testWidgets('partial slot mutation failure still reconciles device state',
       (tester) async {
     final communicator = _SlotCommunicator();
