@@ -1694,6 +1694,66 @@ void main() {
     expect(status.snapshot.mode.pendingMode, isNull);
   });
 
+  for (final disconnect in [false, true]) {
+    testWidgets(
+        'pending mode write stops before confirmation after connection '
+        '${disconnect ? 'disconnect' : 'replacement'}', (tester) async {
+      final modeWriteGate = Completer<void>();
+      final modeWriteStarted = Completer<void>();
+      addTearDown(() {
+        if (!modeWriteGate.isCompleted) {
+          modeWriteGate.complete();
+        }
+      });
+      final oldCommunicator = _SlotCommunicator()
+        ..modeWriteGate = modeWriteGate
+        ..modeWriteStarted = modeWriteStarted;
+      final appState = _connectedState(oldCommunicator);
+      final oldStatus = appState.connectedDeviceStatus!;
+      await oldStatus.refreshMode();
+      final initialModeReads = oldCommunicator.modeReads;
+      var latePublications = 0;
+      oldStatus.addListener(() => latePublications++);
+
+      final modeSwitch = oldStatus.switchMode(ConnectedDeviceMode.reader);
+      await modeWriteStarted.future;
+      latePublications = 0;
+
+      _SlotCommunicator? newCommunicator;
+      ConnectedDeviceStatus? newStatus;
+      if (disconnect) {
+        await appState.disconnect(manual: true);
+      } else {
+        newCommunicator = _SlotCommunicator();
+        _replaceConnection(appState, newCommunicator);
+        newStatus = appState.connectedDeviceStatus!;
+      }
+
+      modeWriteGate.complete();
+
+      expect(await modeSwitch, ModeActionOutcome.connectionChanged);
+      expect(oldCommunicator.modeReads, initialModeReads);
+      expect(oldCommunicator.commandEvents, ['mode:true']);
+      expect(latePublications, 0);
+      if (disconnect) {
+        expect(appState.connectedDeviceStatus, isNull);
+      } else {
+        expect(newCommunicator!.commandEvents, isEmpty);
+        expect(newCommunicator.modeReads, 0);
+        expect(newStatus!.snapshot.mode.availability, ModeAvailability.loading);
+
+        await newStatus.refreshMode();
+
+        expect(newCommunicator.commandEvents, isEmpty);
+        expect(newCommunicator.modeReads, 1);
+        expect(
+          newStatus.snapshot.mode.confirmedMode,
+          ConnectedDeviceMode.emulator,
+        );
+      }
+    });
+  }
+
   testWidgets('partial slot mutation failure still reconciles device state',
       (tester) async {
     final communicator = _SlotCommunicator();

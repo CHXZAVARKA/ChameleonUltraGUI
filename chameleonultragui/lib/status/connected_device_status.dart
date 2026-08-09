@@ -198,8 +198,6 @@ class SlotFrequencyStatus {
   final SlotField<bool> enabled;
   final SlotField<String> name;
 
-  bool get isConfigured => type.value != null && type.value != TagType.unknown;
-
   @override
   bool operator ==(Object other) =>
       other is SlotFrequencyStatus &&
@@ -229,8 +227,6 @@ class DeviceSlotStatus {
   final int index;
   final SlotFrequencyStatus hf;
   final SlotFrequencyStatus lf;
-
-  bool get isConfigured => hf.isConfigured || lf.isConfigured;
 
   @override
   bool operator ==(Object other) =>
@@ -275,8 +271,6 @@ class SlotsStatus {
   final Set<SlotFacet> unavailableFacets;
   final Set<SlotFacet> staleFacets;
 
-  bool get hasConfirmedData => SlotFacet.values.any(isFacetConfirmed);
-
   bool isFacetConfirmed(SlotFacet facet) {
     switch (facet) {
       case SlotFacet.types:
@@ -295,11 +289,6 @@ class SlotsStatus {
         return activeSlot.isConfirmed;
     }
   }
-
-  bool get hasConfirmedTypes =>
-      !unavailableFacets.contains(SlotFacet.types) &&
-      slots.every(
-          (slot) => slot.hf.type.isConfirmed && slot.lf.type.isConfirmed);
 
   SlotsStatus copyWith({
     SlotsAvailability? availability,
@@ -1055,6 +1044,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       } catch (error, stackTrace) {
         commandError = error;
         commandStackTrace = stackTrace;
+      }
+      if (!_canPublish) {
+        return ModeActionOutcome.connectionChanged;
       }
 
       bool? isReader;

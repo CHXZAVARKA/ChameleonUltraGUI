@@ -461,6 +461,50 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
   });
 
+  testWidgets(
+      'replaced Home stops a pending mode write before confirmation and error UI',
+      (tester) async {
+    final modeWriteGate = Completer<void>();
+    addTearDown(() {
+      if (!modeWriteGate.isCompleted) {
+        modeWriteGate.complete();
+      }
+    });
+    final oldCommunicator = _ModeCommunicator(initialReaderMode: false)
+      ..nextModeSetGate = modeWriteGate;
+    final appState = _connectedState(oldCommunicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    oldCommunicator.events.clear();
+
+    await tester.tap(find.text('Reader'));
+    await tester.pump();
+    expect(oldCommunicator.modeSets, [true]);
+
+    final newCommunicator = _ModeCommunicator(initialReaderMode: false);
+    _replaceConnection(appState, newCommunicator);
+    appState.changesMade();
+    await tester.pumpAndSettle();
+
+    expect(newCommunicator.modeSets, isEmpty);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+
+    modeWriteGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(oldCommunicator.events, ['mode:set:reader']);
+    expect(newCommunicator.modeSets, isEmpty);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+
+    await tester.tap(find.text('Reader'));
+    await tester.pumpAndSettle();
+
+    expect(newCommunicator.modeSets, [true]);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+  });
+
   testWidgets('late mode result from the old connection is discarded',
       (tester) async {
     final oldCommunicator = _ModeCommunicator(initialReaderMode: false);
