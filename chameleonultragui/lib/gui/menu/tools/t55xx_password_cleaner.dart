@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/tools/dictionary_download.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
 import 'package:chameleonultragui/main.dart';
@@ -47,6 +48,7 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     Dictionary? selectedDictionary =
         dictionaries.where((d) => d.id == selectedDictionaryId).firstOrNull;
     if (selectedDictionary == null) return;
+    final newKey = hexToBytes(newKeyController.text);
 
     setState(() {
       isProcessing = true;
@@ -56,8 +58,15 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
     });
 
     var localizations = AppLocalizations.of(context)!;
+    var sessionCancelled = false;
 
-    try {
+    final result =
+        await appState.runSessionBoundForegroundCatching((session) async {
+      if (!mounted || !session.isCurrent) {
+        sessionCancelled = true;
+        return;
+      }
+
       String targetUID = "DE AD BE EF FF";
 
       for (int i = 0; i < selectedDictionary.keys.length; i++) {
@@ -68,44 +77,76 @@ class T55XXPasswordCleanerMenuState extends State<T55XXPasswordCleanerMenu> {
           currentKey = bytesToHexSpace(selectedDictionary.keys[i]);
         });
 
+        var writeIssued = false;
         try {
-          await appState.communicator!.writeEM410XtoT55XX(hexToBytes(targetUID),
-              hexToBytes(newKeyController.text), [selectedDictionary.keys[i]]);
+          writeIssued = true;
+          await session.communicator.writeEM410XtoT55XX(
+              hexToBytes(targetUID), newKey, [selectedDictionary.keys[i]]);
+          if (!mounted || !session.isCurrent) {
+            sessionCancelled = true;
+            return;
+          }
 
-          var newCard = await appState.communicator!.readEM410X();
+          var newCard = await session.communicator.readEM410X();
+          if (!mounted || !session.isCurrent) {
+            sessionCancelled = true;
+            return;
+          }
+          if (newCard == null) {
+            throw StateError('Password reset write outcome is unknown');
+          }
+          writeIssued = false;
 
-          if (newCard != null && newCard.toString() == targetUID) {
+          if (newCard.toString() == targetUID) {
             setState(() {
               foundPassword = bytesToHexSpace(selectedDictionary.keys[i]);
               isProcessing = false;
             });
 
-            if (mounted) {
-              showSuccessDialog(localizations, foundPassword!);
-            }
+            showSuccessDialog(localizations, foundPassword!);
             return;
           }
-        } catch (e) {
+        } catch (_) {
+          if (!mounted || !session.isCurrent) {
+            sessionCancelled = true;
+            return;
+          }
+          if (writeIssued) rethrow;
           continue;
         }
       }
+    });
+    final session = result.session;
 
-      if (isProcessing) {
+    if (!result.executed ||
+        session == null ||
+        sessionCancelled ||
+        !mounted ||
+        !session.isCurrent) {
+      if (mounted) {
         setState(() {
           isProcessing = false;
         });
-
-        if (mounted) {
-          showFailureDialog(localizations);
-        }
       }
-    } catch (e) {
+      return;
+    }
+
+    final error = result.error;
+    if (error != null) {
+      setState(() {
+        isProcessing = false;
+      });
+      showErrorDialog(error.toString());
+      return;
+    }
+
+    if (isProcessing) {
       setState(() {
         isProcessing = false;
       });
 
       if (mounted) {
-        showErrorDialog(e.toString());
+        showFailureDialog(localizations);
       }
     }
   }

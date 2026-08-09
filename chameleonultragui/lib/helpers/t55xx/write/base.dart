@@ -30,13 +30,13 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      BaseT55XXCardHelper(communicator),
+      inheritOperationContinuation(BaseT55XXCardHelper(communicator)),
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
-    return [BaseT55XXCardHelper(communicator)];
+    return [inheritOperationContinuation(BaseT55XXCardHelper(communicator))];
   }
 
   @override
@@ -146,35 +146,46 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
+    if (!operationCanContinue) return false;
     if (isEM410X(card.tag)) {
       await communicator.writeEM410XtoT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
+      // A write may have reached the tag. Keep only its safety read-back.
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readEM410X();
-      return newCard.toString() == card.uid;
+      return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.hidProx) {
       await communicator.writeHIDProxToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readHIDProx();
-      return newCard.toString() == card.uid;
+      return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.viking) {
       await communicator.writeVikingToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readViking();
-      return newCard.toString() == card.uid;
+      return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.pac) {
       await communicator.writePacToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readPac();
-      return newCard.toString() == card.uid;
+      return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.ioProx) {
       await communicator.writeIoProxToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
       var newCard = await communicator.readIoProx();
-      return newCard.toString() == card.uid;
+      return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.idteck) {
       await communicator.writeIdteckToT55XX(hexToBytes(card.uid),
           hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
@@ -182,7 +193,7 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
       // on the envelope-only tag-emulation ADC path is a follow-up), so we
       // cannot read back the tag for verification. Assume the T55xx write
       // succeeded if the firmware did not raise an error.
-      return true;
+      return operationCanContinue;
     }
 
     return false;
