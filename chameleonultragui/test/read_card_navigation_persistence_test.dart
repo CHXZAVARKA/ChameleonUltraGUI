@@ -27,7 +27,11 @@ void main() {
   testWidgets('Read Card keeps running while another tab is visible', (
     tester,
   ) async {
-    final fixture = await _ReadCardFixture.mount(tester);
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousBothCommunicator(logger, port: connector),
+    );
     final initialState = await fixture.openReadCard();
     final recovery = MifareClassicRecovery(
       appState: fixture.appState,
@@ -35,10 +39,8 @@ void main() {
       localizations: await AppLocalizations.delegate.load(const Locale('en')),
       mifareClassicType: MifareClassicType.m1k,
     );
-    final hfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
-    final lfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
-    addTearDown(hfScanTimer.cancel);
-    addTearDown(lfScanTimer.cancel);
+    await initialState.startContinuousHFScan();
+    await initialState.startContinuousLFScan();
     initialState
       ..hfInfo = HFCardInfo(
         uid: '01 02 03 04',
@@ -50,11 +52,7 @@ void main() {
         type: MifareClassicType.m1k,
         state: MifareClassicState.recovery,
       )..recovery = recovery)
-      ..isContinuousHFScan = true
-      ..isContinuousLFScan = true
       ..scanInProgress = true
-      ..hfScanTimer = hfScanTimer
-      ..lfScanTimer = lfScanTimer
       ..updateMifareClassicInfo();
     await tester.pump();
 
@@ -64,8 +62,8 @@ void main() {
     expect(find.byType(ReadCardPage), findsNothing);
     expect(find.byType(ReadCardPage, skipOffstage: false), findsOneWidget);
     expect(initialState.mounted, isTrue);
-    expect(hfScanTimer.isActive, isTrue);
-    expect(lfScanTimer.isActive, isTrue);
+    expect(initialState.isContinuousHFScan, isTrue);
+    expect(initialState.isContinuousLFScan, isTrue);
 
     recovery.update();
     await tester.pump();
@@ -79,10 +77,8 @@ void main() {
     expect(restoredState.isContinuousHFScan, isTrue);
     expect(restoredState.isContinuousLFScan, isTrue);
     expect(restoredState.scanInProgress, isTrue);
-    expect(restoredState.hfScanTimer, same(hfScanTimer));
-    expect(restoredState.lfScanTimer, same(lfScanTimer));
-    expect(hfScanTimer.isActive, isTrue);
-    expect(lfScanTimer.isActive, isTrue);
+    restoredState.stopContinuousHFScan();
+    restoredState.stopContinuousLFScan();
   });
 
   testWidgets('pending HF read updates the session while Read Card is hidden', (
@@ -364,17 +360,17 @@ void main() {
   testWidgets('disconnect disposes hidden Read Card and cancels its timers', (
     tester,
   ) async {
-    final fixture = await _ReadCardFixture.mount(tester);
+    final fixture = await _ReadCardFixture.mount(
+      tester,
+      communicatorFactory: (logger, connector) =>
+          _ContinuousBothCommunicator(logger, port: connector),
+    );
     final readCardState = await fixture.openReadCard();
-    final hfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
-    final lfScanTimer = Timer.periodic(const Duration(minutes: 5), (_) {});
-    addTearDown(hfScanTimer.cancel);
-    addTearDown(lfScanTimer.cancel);
-    readCardState
-      ..isContinuousHFScan = true
-      ..isContinuousLFScan = true
-      ..hfScanTimer = hfScanTimer
-      ..lfScanTimer = lfScanTimer;
+    final communicator = fixture.communicator as _ContinuousBothCommunicator;
+    await readCardState.startContinuousHFScan();
+    await readCardState.startContinuousLFScan();
+    final hfCallsBeforeDisconnect = communicator.scanCalls;
+    final lfCallsBeforeDisconnect = communicator.readCalls;
 
     await fixture.openSavedCards();
     expect(readCardState.mounted, isTrue);
@@ -384,8 +380,11 @@ void main() {
 
     expect(find.byType(ReadCardPage, skipOffstage: false), findsNothing);
     expect(readCardState.mounted, isFalse);
-    expect(hfScanTimer.isActive, isFalse);
-    expect(lfScanTimer.isActive, isFalse);
+    expect(readCardState.isContinuousHFScan, isFalse);
+    expect(readCardState.isContinuousLFScan, isFalse);
+    await tester.pump(const Duration(seconds: 4));
+    expect(communicator.scanCalls, hfCallsBeforeDisconnect);
+    expect(communicator.readCalls, lfCallsBeforeDisconnect);
   });
 
   testWidgets(
@@ -555,7 +554,7 @@ void main() {
 
     expect(communicator.scanCalls, 2);
     expect(readCardState.mounted, isTrue);
-    expect(readCardState.hfScanTimer?.isActive, isTrue);
+    expect(readCardState.isContinuousHFScan, isTrue);
     readCardState.stopContinuousHFScan();
     await tester.pump();
   });
@@ -580,7 +579,7 @@ void main() {
 
     expect(communicator.readCalls, 2);
     expect(readCardState.mounted, isTrue);
-    expect(readCardState.lfScanTimer?.isActive, isTrue);
+    expect(readCardState.isContinuousLFScan, isTrue);
     readCardState.stopContinuousLFScan();
     await tester.pump();
   });
@@ -621,7 +620,6 @@ void main() {
 
       expect(readCardState.hfInfo, same(replacementInfo));
       expect(readCardState.isContinuousHFScan, isTrue);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
 
       await tester.pump(const Duration(seconds: 2));
       await tester.idle();
@@ -662,7 +660,6 @@ void main() {
 
       expect(readCardState.lfInfo, same(replacementInfo));
       expect(readCardState.isContinuousLFScan, isTrue);
-      expect(readCardState.lfScanTimer?.isActive, isTrue);
 
       await tester.pump(const Duration(seconds: 2));
       await tester.idle();
@@ -697,7 +694,6 @@ void main() {
 
     expect(replacement.scanCalls, 0);
     expect(readCardState.isContinuousHFScan, isFalse);
-    expect(readCardState.hfScanTimer, isNull);
   });
 
   testWidgets('continuous LF scan ends on reconnect between ticks', (
@@ -724,7 +720,6 @@ void main() {
 
     expect(replacement.readCalls, 0);
     expect(readCardState.isContinuousLFScan, isFalse);
-    expect(readCardState.lfScanTimer, isNull);
   });
 
   testWidgets(
@@ -747,7 +742,7 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       await tester.idle();
       expect(communicator.scanCalls, 1);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousHFScan, isTrue);
 
       communicator.completeFirstScan();
       await initialScan;
@@ -755,7 +750,7 @@ void main() {
       await tester.idle();
 
       expect(communicator.scanCalls, 2);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousHFScan, isTrue);
       readCardState.stopContinuousHFScan();
       await tester.pump();
     },
@@ -781,7 +776,7 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       await tester.idle();
       expect(communicator.readCalls, 1);
-      expect(readCardState.lfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousLFScan, isTrue);
 
       communicator.completeFirstRead();
       await initialScan;
@@ -789,7 +784,7 @@ void main() {
       await tester.idle();
 
       expect(communicator.readCalls, 2);
-      expect(readCardState.lfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousLFScan, isTrue);
       readCardState.stopContinuousLFScan();
       await tester.pump();
     },
@@ -812,7 +807,6 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(readCardState.isContinuousHFScan, isFalse);
-    expect(readCardState.hfScanTimer, isNull);
     expect(
       await fixture.appState.rfOperations.runForeground(() async => true),
       isTrue,
@@ -892,7 +886,7 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       expect(communicator.readerModeCalls, readerModeBaseline + 1);
       expect(communicator.scanCalls, 1);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousHFScan, isTrue);
 
       communicator.completeContinuousScan();
       await initialScan;
@@ -904,7 +898,7 @@ void main() {
 
       await tester.pump(const Duration(seconds: 4));
       expect(communicator.readerModeCalls, readerModeBaseline + 2);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousHFScan, isTrue);
       communicator.allowPreflight.complete();
       await tester.pumpAndSettle();
       communicator.gatePreflight = false;
@@ -922,7 +916,7 @@ void main() {
 
       await tester.pump(const Duration(seconds: 4));
       expect(communicator.readerModeCalls, readerModeBaseline + 3);
-      expect(readCardState.hfScanTimer?.isActive, isTrue);
+      expect(readCardState.isContinuousHFScan, isTrue);
       communicator.allowExecute.complete();
       await tester.pumpAndSettle();
 
@@ -1006,8 +1000,7 @@ class _ReadCardFixture {
         child: directReadCard
             ? MaterialApp(
                 locale: preferences.getLocale(),
-                localizationsDelegates:
-                    AppLocalizations.localizationsDelegates,
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
                 supportedLocales: AppLocalizations.supportedLocales,
                 home: const ReadCardPage(),
               )
@@ -1169,6 +1162,18 @@ class _ContinuousHFCommunicator extends ChameleonCommunicator {
 
   @override
   Future<bool> isReaderDeviceMode() async => true;
+
+  @override
+  Future<CardData?> scan14443aTag() async {
+    scanCalls++;
+    return null;
+  }
+}
+
+class _ContinuousBothCommunicator extends _ContinuousLFCommunicator {
+  _ContinuousBothCommunicator(super.logger, {super.port});
+
+  int scanCalls = 0;
 
   @override
   Future<CardData?> scan14443aTag() async {

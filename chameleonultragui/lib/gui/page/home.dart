@@ -207,11 +207,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _setReaderDeviceMode(bool readerMode) async {
     final appState = context.read<ChameleonGUIState>();
-    final session = ConnectedDeviceSession.capture(appState);
-    if (session == null) {
-      return;
-    }
-    await appState.rfOperations.runForeground(() async {
+    await appState.runSessionBoundForeground((session) async {
       if (!mounted || !session.isCurrent) {
         return;
       }
