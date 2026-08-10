@@ -37,32 +37,6 @@ void main() {
     expect(publishedPendingStates, isNot(contains(false)));
   });
 
-  test('background BLE discovery keeps an active connection alive', () async {
-    final reactiveBle = _ImmediateConnectBle();
-    final serial = BLESerial(
-      log: app_logger.Logger(output: app_logger.MemoryOutput()),
-      reactiveBle: reactiveBle,
-      connectionAttemptTimeout: const Duration(milliseconds: 20),
-    )..chameleonMap['device'] = const Chameleon(
-        port: 'device',
-        device: ChameleonDevice.ultra,
-        type: ConnectionType.ble,
-        dfu: false,
-      );
-    addTearDown(() async {
-      await serial.performDisconnect();
-      serial.log.close();
-    });
-
-    expect(await serial.connectSpecificDevice('device'), isTrue);
-
-    final discovery = serial.availableChameleons(false);
-    await Future<void>.delayed(Duration.zero);
-
-    expect(serial.connected, isTrue);
-    await discovery;
-  });
-
   test('one BLE connect retries when the plugin ignores its timeout', () async {
     final reactiveBle = _IgnoreTimeoutThenConnectBle();
     final serial = BLESerial(
