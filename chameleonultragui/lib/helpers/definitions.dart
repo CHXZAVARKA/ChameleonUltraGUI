@@ -23,6 +23,7 @@ enum ChameleonCommand {
   getEnabledSlots(1023),
   deleteSlotInfo(1024),
   getAllSlotNicks(1038),
+  swapSlots(1041),
 
   // bootloader
   enterBootloader(1010),
@@ -283,6 +284,16 @@ class SlotActivationRejected implements Exception {
   @override
   String toString() =>
       'Slot activation failed with status 0x${status.toRadixString(16)}';
+}
+
+class SlotReorderRejected implements Exception {
+  const SlotReorderRejected(this.status);
+
+  final int status;
+
+  @override
+  String toString() =>
+      'Slot reorder failed with status 0x${status.toRadixString(16)}';
 }
 
 enum NTLevel { static, weak, hard, backdoor, unknown }

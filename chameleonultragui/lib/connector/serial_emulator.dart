@@ -147,6 +147,34 @@ class EmulatorSerial extends AbstractSerial {
       case ChameleonCommand.setActiveSlot:
         _activeSlot = data.first.clamp(0, 7);
         responseData = Uint8List(0);
+      case ChameleonCommand.swapSlots:
+        if (data.length != 2 ||
+            data[0] >= _slots.length ||
+            data[1] >= _slots.length) {
+          return _makeResponseFrame(commandValue, Uint8List(0), status: 0x66);
+        }
+        final source = data[0];
+        final target = data[1];
+        if (source != target) {
+          final sourceBundle = _slots[source];
+          _slots[source] = _slots[target];
+          _slots[target] = sourceBundle;
+          if (_activeSlot == source) {
+            _activeSlot = target;
+          } else if (_activeSlot == target) {
+            _activeSlot = source;
+          }
+        }
+        responseData = Uint8List(0);
+      case ChameleonCommand.getDeviceCapabilities:
+        final existingResponse =
+            hexToBytes(emulatedCommands[bytesToHex(frame)]!);
+        final existingLength =
+            (existingResponse[6] << 8) | existingResponse[7];
+        responseData = Uint8List.fromList([
+          ...existingResponse.sublist(9, 9 + existingLength),
+          ...u16ToBytes(ChameleonCommand.swapSlots.value),
+        ]);
       case ChameleonCommand.getSlotInfo:
         responseData = Uint8List.fromList([
           for (final slot in _slots) ...[
@@ -225,12 +253,13 @@ class EmulatorSerial extends AbstractSerial {
     return handled ? _makeResponseFrame(commandValue, responseData!) : null;
   }
 
-  Uint8List _makeResponseFrame(int command, Uint8List data) {
+  Uint8List _makeResponseFrame(int command, Uint8List data,
+      {int status = ChameleonStatus.success}) {
     final frame = <int>[
       0x11,
       0xef,
       ...u16ToBytes(command),
-      ...u16ToBytes(ChameleonStatus.success),
+      ...u16ToBytes(status),
       ...u16ToBytes(data.length),
     ];
     frame.add(_lrc(frame.sublist(2, 8)));
