@@ -12,6 +12,7 @@ import 'package:chameleonultragui/bridge/dfu.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/protobuf/dfu-cc.pb.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'dart:math';
 
@@ -19,6 +20,12 @@ typedef FirmwareArchiveLoader = Future<Uint8List> Function(
   ChameleonDevice device,
   FirmwareChannel channel,
 );
+
+FirmwareChannel resolveFirmwareChannel(
+  SharedPreferencesProvider preferences, [
+  FirmwareChannel? override,
+]) =>
+    override ?? preferences.getFirmwareChannel();
 
 Future<Uint8List> fetchFirmware(
   ChameleonDevice device, {
@@ -96,13 +103,17 @@ void validateFiles(Uint8List dat, Uint8List bin) {
 Future<void> flashFirmware(ChameleonGUIState appState,
     {ScaffoldMessengerState? scaffoldMessenger,
     ChameleonDevice? device,
-    FirmwareChannel channel = FirmwareChannel.official,
+    FirmwareChannel? channel,
     bool enterDFU = true}) async {
   Uint8List applicationDat, applicationBin;
+  final selectedChannel = resolveFirmwareChannel(
+    appState.sharedPreferencesProvider,
+    channel,
+  );
 
   Uint8List content = await fetchFirmware(
     (device != null) ? device : appState.connector!.device,
-    channel: channel,
+    channel: selectedChannel,
   );
 
   (applicationDat, applicationBin) = await unpackFirmware(content);

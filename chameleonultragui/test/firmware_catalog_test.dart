@@ -158,6 +158,24 @@ void main() {
   });
 
   group('firmware download channel', () {
+    test('all flash surfaces inherit Custom unless they override the channel',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'firmware_channel': FirmwareChannel.custom.name,
+      });
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+
+      expect(
+        resolveFirmwareChannel(preferences),
+        FirmwareChannel.custom,
+      );
+      expect(
+        resolveFirmwareChannel(preferences, FirmwareChannel.official),
+        FirmwareChannel.official,
+      );
+    });
+
     test('selects one latest release for both commit and archive', () {
       final release = selectLatestFirmwareRelease(
         [
