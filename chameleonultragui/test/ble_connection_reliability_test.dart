@@ -7,6 +7,68 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart' as app_logger;
 
 void main() {
+  test('BLE connect does not publish an idle state after the user starts it',
+      () async {
+    final reactiveBle = _ImmediateConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      connectionAttemptTimeout: const Duration(milliseconds: 20),
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(() async {
+      await serial.performDisconnect();
+      serial.log.close();
+    });
+    final publishedPendingStates = <bool>[];
+    serial
+      ..pendingConnection = true
+      ..connectionStateCallback = () {
+        publishedPendingStates.add(serial.pendingConnection);
+      };
+
+    final connected = await serial.connectSpecificDevice('device');
+
+    expect(connected, isTrue);
+    expect(publishedPendingStates, isNot(contains(false)));
+  });
+
+  test('one BLE connect retries when the plugin ignores its timeout', () async {
+    final reactiveBle = _IgnoreTimeoutThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      connectionAttemptTimeout: const Duration(milliseconds: 20),
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(() async {
+      await serial.performDisconnect();
+      serial.log.close();
+    });
+    final publishedPendingStates = <bool>[];
+    serial
+      ..pendingConnection = true
+      ..connectionStateCallback = () {
+        publishedPendingStates.add(serial.pendingConnection);
+      };
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 100));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectionAttempts, 2);
+    expect(publishedPendingStates, isNot(contains(false)));
+  });
+
   test('one BLE connect retries after a stalled attempt', () async {
     final reactiveBle = _StallThenConnectBle();
     final serial = BLESerial(
@@ -90,6 +152,12 @@ void main() {
         dfu: false,
       );
     addTearDown(serial.log.close);
+    final publishedPendingStates = <bool>[];
+    serial
+      ..pendingConnection = true
+      ..connectionStateCallback = () {
+        publishedPendingStates.add(serial.pendingConnection);
+      };
 
     final connected = await serial
         .connectSpecificDevice('device')
@@ -99,6 +167,8 @@ void main() {
     expect(reactiveBle.connectionAttempts, 5);
     expect(reactiveBle.cancelledConnections, 5);
     expect(serial.pendingConnection, isFalse);
+    expect(publishedPendingStates.where((pending) => !pending), hasLength(1));
+    expect(publishedPendingStates.last, isFalse);
   });
 
   test('late handshake cannot overwrite a newer successful retry', () async {
@@ -131,6 +201,53 @@ void main() {
     expect(serial.activeDevicePort, 'device');
     expect(reactiveBle.cancelledConnections, 1);
   });
+}
+
+class _ImmediateConnectBle extends _StallThenConnectBle {
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
+  }
+}
+
+class _IgnoreTimeoutThenConnectBle extends _StallThenConnectBle {
+  final _ignoredTimeout = StreamController<ConnectionStateUpdate>();
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    if (connectionAttempts == 1) {
+      return _ignoredTimeout.stream;
+    }
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
+  }
 }
 
 class _StallThenConnectBle implements ReactiveBleClient {

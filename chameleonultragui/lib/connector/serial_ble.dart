@@ -113,14 +113,17 @@ class BLESerial extends AbstractSerial {
     required super.log,
     ReactiveBleClient? reactiveBle,
     Duration handshakeTimeout = defaultHandshakeTimeout,
+    Duration connectionAttemptTimeout = defaultConnectionAttemptTimeout,
   })  : _reactiveBle = reactiveBle ?? FlutterReactiveBleClient(),
-        _handshakeTimeout = handshakeTimeout;
+        _handshakeTimeout = handshakeTimeout,
+        _connectionAttemptTimeout = connectionAttemptTimeout;
 
-  static const connectionAttemptTimeout = Duration(seconds: 7);
+  static const defaultConnectionAttemptTimeout = Duration(seconds: 7);
   static const defaultHandshakeTimeout = Duration(seconds: 3);
 
   final ReactiveBleClient _reactiveBle;
   final Duration _handshakeTimeout;
+  final Duration _connectionAttemptTimeout;
   QualifiedCharacteristic? txCharacteristic;
   QualifiedCharacteristic? rxCharacteristic;
   QualifiedCharacteristic? firmwareCharacteristic;
@@ -236,6 +239,10 @@ class BLESerial extends AbstractSerial {
       }
     }
 
+    if (!ret) {
+      notifyConnectionStateChanged();
+    }
+
     return ret;
   }
 
@@ -245,22 +252,28 @@ class BLESerial extends AbstractSerial {
       services = [dfuUUID, dfuControl, dfuFirmware];
     }
 
-    await performDisconnect();
+    await _performDisconnect(notify: false);
     final attempt = _BleConnectionAttempt();
     _activeConnectionAttempt = attempt;
     pendingConnection = true;
+    notifyConnectionStateChanged();
     final connectionStream = _reactiveBle.connectToAdvertisingDevice(
       id: devicePort,
       withServices: services,
       prescanDuration: const Duration(seconds: 5),
-      connectionTimeout: connectionAttemptTimeout,
+      connectionTimeout: _connectionAttemptTimeout,
     );
+    attempt.connectionWatchdog = Timer(_connectionAttemptTimeout, () async {
+      await _disconnectConnectionAttempt(attempt);
+    });
     final subscription = connectionStream.listen((connectionState) async {
       log.w(connectionState);
       if (!_ownsConnectionAttempt(attempt)) {
         return;
       }
       if (connectionState.connectionState == DeviceConnectionState.connected) {
+        attempt.connectionWatchdog?.cancel();
+        attempt.connectionWatchdog = null;
         if (chameleonMap[devicePort]!.dfu) {
           connected = true;
           pendingConnection = false;
@@ -388,10 +401,12 @@ class BLESerial extends AbstractSerial {
   }
 
   @override
-  Future<bool> performDisconnect() async {
+  Future<bool> performDisconnect() => _performDisconnect();
+
+  Future<bool> _performDisconnect({bool notify = true}) async {
     final attempt = _activeConnectionAttempt;
     if (attempt != null) {
-      return _disconnectConnectionAttempt(attempt);
+      return _disconnectConnectionAttempt(attempt, notify: notify);
     }
 
     final hadState = hasConnectionState || connection != null;
@@ -404,13 +419,13 @@ class BLESerial extends AbstractSerial {
       await connection!.cancel();
       connection = null;
       connected = false;
-      if (hadState) {
+      if (hadState && notify) {
         notifyConnectionStateChanged();
       }
       return true;
     }
     connected = false; // For debug button
-    if (hadState) {
+    if (hadState && notify) {
       notifyConnectionStateChanged();
     }
     return false;
@@ -420,14 +435,18 @@ class BLESerial extends AbstractSerial {
       identical(_activeConnectionAttempt, attempt);
 
   Future<bool> _disconnectConnectionAttempt(
-    _BleConnectionAttempt attempt,
-  ) async {
+    _BleConnectionAttempt attempt, {
+    bool? notify,
+  }) async {
     if (!_ownsConnectionAttempt(attempt)) {
       return false;
     }
 
+    final shouldNotify = notify ?? attempt.result.isCompleted;
     final subscription = attempt.subscription;
     final hadState = hasConnectionState || subscription != null;
+    attempt.connectionWatchdog?.cancel();
+    attempt.connectionWatchdog = null;
     _activeConnectionAttempt = null;
     if (identical(connection, subscription)) {
       connection = null;
@@ -441,7 +460,7 @@ class BLESerial extends AbstractSerial {
     if (!attempt.result.isCompleted) {
       attempt.result.complete(false);
     }
-    if (hadState) {
+    if (hadState && shouldNotify) {
       notifyConnectionStateChanged();
     }
     return hadState;
@@ -465,4 +484,5 @@ class BLESerial extends AbstractSerial {
 class _BleConnectionAttempt {
   final result = Completer<bool>();
   StreamSubscription<ConnectionStateUpdate>? subscription;
+  Timer? connectionWatchdog;
 }
