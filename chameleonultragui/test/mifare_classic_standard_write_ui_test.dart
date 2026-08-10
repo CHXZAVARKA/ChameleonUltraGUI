@@ -82,6 +82,29 @@ void main() {
     );
   });
 
+  testWidgets('standard source controls stack at medium width with large text',
+      (tester) async {
+    await _pumpStandardSourceControls(
+      tester,
+      width: 500,
+      textScaler: const TextScaler.linear(2),
+    );
+
+    final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
+    final separator = find.text('OR');
+    final selectSavedCard =
+        find.widgetWithText(OutlinedButton, 'Select saved card');
+    final loadFileRect = tester.getRect(loadFile);
+    final separatorRect = tester.getRect(separator);
+    final selectSavedCardRect = tester.getRect(selectSavedCard);
+
+    expect(loadFileRect.bottom, lessThan(separatorRect.top));
+    expect(separatorRect.bottom, lessThan(selectSavedCardRect.top));
+    expect(loadFileRect.left, selectSavedCardRect.left);
+    expect(loadFileRect.right, selectSavedCardRect.right);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('standard write offers only proven complete saved dumps',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -1243,6 +1266,7 @@ void main() {
 Future<void> _pumpStandardSourceControls(
   WidgetTester tester, {
   required double width,
+  TextScaler textScaler = TextScaler.noScaling,
 }) async {
   if (!_sourceControlTestFontLoaded) {
     final fontLoader = FontLoader('RobotoMono')
@@ -1263,10 +1287,13 @@ Future<void> _pumpStandardSourceControls(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(fontFamily: 'RobotoMono'),
-        home: Center(
-          child: SizedBox(
-            width: width,
-            child: const Scaffold(body: StandardMifareClassicWritePanel()),
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: textScaler),
+          child: Center(
+            child: SizedBox(
+              width: width,
+              child: const Scaffold(body: StandardMifareClassicWritePanel()),
+            ),
           ),
         ),
       ),
