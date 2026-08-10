@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
@@ -15,13 +17,82 @@ import 'package:file_picker/file_picker.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
+class MifareClassicSlotDump {
+  final List<Uint8List> blocks;
+  final bool complete;
+
+  const MifareClassicSlotDump({
+    required this.blocks,
+    required this.complete,
+  });
+}
+
+Future<MifareClassicSlotDump> readMifareClassicSlotDump({
+  required int blockCount,
+  required Future<Uint8List> Function(int firstBlock, int blockCount)
+      readBlocks,
+  int maxBlocksPerRead = 16,
+}) async {
+  if (blockCount <= 0 || maxBlocksPerRead <= 0) {
+    throw ArgumentError('Block counts must be positive');
+  }
+
+  final binData = Uint8List(blockCount * 16);
+  var complete = true;
+
+  for (var firstBlock = 0;
+      firstBlock < blockCount;
+      firstBlock += maxBlocksPerRead) {
+    final remainingBlocks = blockCount - firstBlock;
+    final requestedBlocks =
+        remainingBlocks < maxBlocksPerRead ? remainingBlocks : maxBlocksPerRead;
+    final result = await readBlocks(firstBlock, requestedBlocks);
+    final expectedLength = requestedBlocks * 16;
+
+    if (result.length != expectedLength) {
+      complete = false;
+    }
+
+    final copyLength =
+        result.length < expectedLength ? result.length : expectedLength;
+    final destinationOffset = firstBlock * 16;
+    binData.setRange(
+      destinationOffset,
+      destinationOffset + copyLength,
+      result,
+    );
+  }
+
+  final blocks = <Uint8List>[];
+  for (var offset = 0; offset < binData.length; offset += 16) {
+    blocks.add(Uint8List.fromList(binData.sublist(offset, offset + 16)));
+  }
+
+  return MifareClassicSlotDump(blocks: blocks, complete: complete);
+}
+
+void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
+  target.uid = source.uid;
+  target.tag = source.tag;
+  target.sak = source.sak;
+  target.atqa = source.atqa;
+  target.ats = source.ats;
+  target.data = source.data;
+  target.extraData.mifareClassicDumpComplete = isMifareClassic(source.tag)
+      ? source.extraData.mifareClassicDumpComplete == true &&
+          MifareClassicGeometry.fromSavedCardData(source) != null
+      : null;
+}
+
 class SlotExportMenu extends StatefulWidget {
+  final int slot;
   final SlotNames names;
   final EnabledSlotInfo enabledSlotInfo;
   final SlotTypes slotTypes;
 
   const SlotExportMenu(
       {super.key,
+      required this.slot,
       required this.names,
       required this.enabledSlotInfo,
       required this.slotTypes});
@@ -34,70 +105,107 @@ class SlotExportMenuState extends State<SlotExportMenu> {
   TagFrequency exportFrequency = TagFrequency.unknown;
 
   Future<CardSave?> rebuildCardSaveFromSlot(TagFrequency frequency) async {
-    var appState = context.read<ChameleonGUIState>();
+    final appState = context.read<ChameleonGUIState>();
+    final result = await appState.runSessionBoundForeground((session) async {
+      bool canContinue() => mounted && session.isCurrent;
+      if (!canContinue()) return null;
+      await session.communicator.activateSlot(widget.slot);
+      if (!canContinue()) return null;
+      return _rebuildCardSaveUnderLease(
+        session.communicator,
+        frequency,
+        canContinue,
+      );
+    });
+    return result.executed ? result.value : null;
+  }
+
+  Future<CardSave?> _rebuildCardSaveUnderLease(
+    ChameleonCommunicator communicator,
+    TagFrequency frequency,
+    bool Function() canContinue,
+  ) async {
+    Future<T?> read<T>(Future<T> Function() operation) async {
+      if (!canContinue()) return null;
+      final value = await operation();
+      return canContinue() ? value : null;
+    }
 
     if (frequency == TagFrequency.lf) {
       if (isEM410X(widget.slotTypes.lf)) {
+        final uid = await read(communicator.getEM410XEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: bytesToHexSpace(
-              await appState.communicator!.getEM410XEmulatorID()),
+          uid: bytesToHexSpace(uid),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.hidProx) {
+        final uid = await read(communicator.getHIDProxEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: (await appState.communicator!.getHIDProxEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.viking) {
+        final uid = await read(communicator.getVikingEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: (await appState.communicator!.getVikingEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.pac) {
+        final uid = await read(communicator.getPacEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: (await appState.communicator!.getPacEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.ioProx) {
+        final uid = await read(communicator.getIoProxEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: (await appState.communicator!.getIoProxEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       } else if (widget.slotTypes.lf == TagType.idteck) {
+        final uid = await read(communicator.getIdteckEmulatorID);
+        if (uid == null) return null;
         return CardSave(
-          uid: (await appState.communicator!.getIdteckEmulatorID()).toString(),
+          uid: uid.toString(),
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
       }
     } else {
-      CardData data = await appState.communicator!.mf1GetAntiCollData();
+      final data = await read(communicator.mf1GetAntiCollData);
+      if (data == null) return null;
 
       if (isMifareUltralight(widget.slotTypes.hf)) {
         int pageCount = mfUltralightGetPagesCount(widget.slotTypes.hf);
         List<Uint8List> pages = [];
 
         for (int page = 0; page < pageCount; page++) {
-          Uint8List pageData =
-              await appState.communicator!.mf0EmulatorReadPages(page, 1);
+          final pageData =
+              await read(() => communicator.mf0EmulatorReadPages(page, 1));
+          if (pageData == null) return null;
           pages.add(pageData);
         }
 
         CardSaveExtra extraData = CardSaveExtra();
 
-        Uint8List version =
-            await appState.communicator!.mf0EmulatorGetVersionData();
+        final version = await read(communicator.mf0EmulatorGetVersionData);
+        if (version == null) return null;
         if (version.isNotEmpty) {
           extraData.ultralightVersion = version;
         }
 
-        Uint8List signature =
-            await appState.communicator!.mf0EmulatorGetSignatureData();
+        final signature = await read(communicator.mf0EmulatorGetSignatureData);
+        if (signature == null) return null;
         if (signature.isNotEmpty) {
           extraData.ultralightSignature = signature;
         }
@@ -107,8 +215,9 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           int counterCount = mfUltralightGetCounterCount(widget.slotTypes.hf);
 
           for (int i = 0; i < counterCount; i++) {
-            var counterData =
-                await appState.communicator!.mf0EmulatorGetCounterData(i);
+            final counterData =
+                await read(() => communicator.mf0EmulatorGetCounterData(i));
+            if (counterData == null) return null;
             counters.add(counterData.$1);
           }
 
@@ -130,36 +239,20 @@ class SlotExportMenuState extends State<SlotExportMenu> {
       } else {
         int blockCount = mfClassicGetBlockCount(
             chameleonTagTypeGetMfClassicType(widget.slotTypes.hf));
-
-        Uint8List binData = Uint8List(blockCount * 16);
-
-        int readCount = 16;
-        int binDataIndex = 0;
-
-        for (int currentBlock = 0;
-            currentBlock < blockCount;
-            currentBlock += readCount) {
-          Uint8List result = await appState.communicator!
-              .mf1GetEmulatorBlock(currentBlock, readCount);
-
-          binData.setAll(binDataIndex, result);
-          binDataIndex += result.length;
-        }
-
-        int remainingBlocks = blockCount % readCount;
-
-        if (remainingBlocks != 0) {
-          Uint8List result = await appState.communicator!.mf1GetEmulatorBlock(
-              blockCount - remainingBlocks, remainingBlocks);
-          binData.setAll(binDataIndex, result);
-        }
-
-        List<Uint8List> blocks = [];
-
-        for (int i = 0; i < binData.length; i += 16) {
-          Uint8List block = Uint8List.fromList(binData.sublist(i, i + 16));
-          blocks.add(block);
-        }
+        var sessionLost = false;
+        final dump = await readMifareClassicSlotDump(
+          blockCount: blockCount,
+          readBlocks: (firstBlock, readBlockCount) async {
+            final result = await read(() =>
+                communicator.mf1GetEmulatorBlock(firstBlock, readBlockCount));
+            if (result == null) {
+              sessionLost = true;
+              return Uint8List(0);
+            }
+            return result;
+          },
+        );
+        if (sessionLost) return null;
 
         return CardSave(
           uid: bytesToHexSpace(data.uid),
@@ -168,7 +261,10 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           atqa: data.atqa,
           ats: data.ats,
           tag: widget.slotTypes.hf,
-          data: blocks,
+          data: dump.blocks,
+          extraData: CardSaveExtra(
+            mifareClassicDumpComplete: dump.complete,
+          ),
         );
       }
     }
@@ -190,12 +286,7 @@ class SlotExportMenuState extends State<SlotExportMenu> {
     }
 
     // modify only changeable values
-    modify.uid = newCard.uid;
-    modify.tag = newCard.tag;
-    modify.sak = newCard.sak;
-    modify.atqa = newCard.atqa;
-    modify.ats = newCard.ats;
-    modify.data = newCard.data;
+    overwriteCardSaveFromSlot(modify, newCard);
 
     var tags = appState.sharedPreferencesProvider.getCards();
     var index = tags.indexWhere((element) => element.id == modify.id);

@@ -14,7 +14,23 @@ import 'package:flutter/material.dart';
 
 abstract class AbstractWriteHelper {
   final ChameleonCommunicator communicator;
-  AbstractWriteHelper(this.communicator);
+  bool Function() _operationCanContinue;
+
+  AbstractWriteHelper(
+    this.communicator, {
+    required bool Function() operationCanContinue,
+  }) : _operationCanContinue = operationCanContinue;
+
+  void setOperationContinuation(bool Function() canContinue) {
+    _operationCanContinue = canContinue;
+  }
+
+  bool get operationCanContinue => _operationCanContinue();
+
+  T inheritOperationContinuation<T extends AbstractWriteHelper>(T helper) {
+    helper.setOperationContinuation(() => operationCanContinue);
+    return helper;
+  }
 
   bool readSupported = false; // can read data without authorization
   bool writeSupported = false; // can write data without authorization
@@ -48,9 +64,16 @@ abstract class AbstractWriteHelper {
       TagType type,
       ChameleonGUIState appState,
       void Function() update,
-      AppLocalizations localizations) {
+      AppLocalizations localizations,
+      {required bool Function() operationCanContinue}) {
+    final communicator = appState.communicator;
+    if (communicator == null) {
+      return null;
+    }
+
     if (isMifareClassic(type)) {
-      return BaseMifareClassicWriteHelper(appState.communicator!,
+      return BaseMifareClassicWriteHelper(communicator,
+          operationCanContinue: operationCanContinue,
           recovery: MifareClassicRecovery(
               appState: appState,
               update: update,
@@ -58,7 +81,10 @@ abstract class AbstractWriteHelper {
     }
 
     if (isMifareUltralight(type)) {
-      return BaseMifareUltralightWriteHelper(appState.communicator!);
+      return BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: operationCanContinue,
+      );
     }
 
     if (isEM410X(type) ||
@@ -67,7 +93,10 @@ abstract class AbstractWriteHelper {
         type == TagType.pac ||
         type == TagType.ioProx ||
         type == TagType.idteck) {
-      return BaseT55XXCardHelper(appState.communicator!);
+      return BaseT55XXCardHelper(
+        communicator,
+        operationCanContinue: operationCanContinue,
+      );
     }
 
     return null; // writing is not supported

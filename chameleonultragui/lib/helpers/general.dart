@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
-import 'package:chameleonultragui/gui/page/read_card.dart';
+import 'package:chameleonultragui/helpers/card_info.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/mifare_ultralight/types.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -379,9 +380,21 @@ Future<void> saveTag(CardSave tag, BuildContext context, bool bin) async {
   if (bin) {
     Uint8List tagDump;
     if (isMifareClassic(tag.tag)) {
+      final geometry = MifareClassicGeometry.fromSavedCard(tag);
+      if (geometry == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(localizations.mifare_classic_partial_bin_export_blocked),
+          ));
+        }
+        return;
+      }
       tagDump = mfClassicGetExportBytes(
-          chameleonTagTypeGetMfClassicType(tag.tag), tag.data,
-          isEV1: chameleonTagSaveCheckForMifareClassicEV1(tag));
+        geometry.type,
+        tag.data,
+        isEV1: geometry.isEV1,
+      );
     } else {
       List<int> dump = [];
       for (var block in tag.data) {
@@ -600,7 +613,10 @@ bool isEM410X(TagType type) {
 }
 
 Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
-    BuildContext context, dynamic updateMifareClassicRecovery) async {
+  BuildContext context,
+  dynamic updateMifareClassicRecovery, {
+  bool Function()? canContinue,
+}) async {
   var appState = Provider.of<ChameleonGUIState>(context, listen: false);
   var localizations = AppLocalizations.of(context)!;
 
@@ -608,11 +624,34 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
   MifareClassicInfo mfcInfo = MifareClassicInfo();
   MifareUltralightInfo mfuInfo = MifareUltralightInfo();
 
-  if (!await appState.communicator!.isReaderDeviceMode()) {
-    await appState.communicator!.setReaderDeviceMode(true);
+  final communicator = appState.communicator;
+  if (communicator == null) {
+    return (hfInfo, mfcInfo, mfuInfo);
+  }
+  bool mayContinue() =>
+      (canContinue?.call() ?? true) &&
+      context.mounted &&
+      appState.hasConnectedCommunicator(communicator);
+
+  if (!mayContinue()) {
+    return (hfInfo, mfcInfo, mfuInfo);
   }
 
-  CardData? card = await appState.communicator!.scan14443aTag();
+  final isReaderMode = await communicator.isReaderDeviceMode();
+  if (!mayContinue()) {
+    return (hfInfo, mfcInfo, mfuInfo);
+  }
+  if (!isReaderMode) {
+    await communicator.setReaderDeviceMode(true);
+    if (!mayContinue()) {
+      return (hfInfo, mfcInfo, mfuInfo);
+    }
+  }
+
+  CardData? card = await communicator.scan14443aTag();
+  if (!mayContinue()) {
+    return (hfInfo, mfcInfo, mfuInfo);
+  }
 
   if (card == null) {
     hfInfo.cardExist = false;
@@ -622,13 +661,32 @@ Future<(HFCardInfo, MifareClassicInfo, MifareUltralightInfo)> readHFInfo(
   try {
     TagType type = TagType.unknown;
 
-    if (!await appState.communicator!.detectMf1Support()) {
-      (type, mfuInfo) =
-          await performMifareUltralightScan(appState.communicator!, mfuInfo);
+    final supportsMifareClassic = await communicator.detectMf1Support();
+    if (!mayContinue()) {
+      return (hfInfo, mfcInfo, mfuInfo);
+    }
+    if (!supportsMifareClassic) {
+      (type, mfuInfo) = await performMifareUltralightScan(
+        communicator,
+        mfuInfo,
+        canContinue: mayContinue,
+      );
+      if (!mayContinue()) {
+        return (hfInfo, mfcInfo, mfuInfo);
+      }
     } else {
-      if (context.mounted) {
-        (type, mfcInfo) = await performMifareClassicScan(appState.communicator!,
-            mfcInfo, context, updateMifareClassicRecovery);
+      if (!context.mounted) {
+        return (hfInfo, mfcInfo, mfuInfo);
+      }
+      (type, mfcInfo) = await performMifareClassicScan(
+        communicator,
+        mfcInfo,
+        context,
+        updateMifareClassicRecovery,
+        canContinue: mayContinue,
+      );
+      if (!mayContinue()) {
+        return (hfInfo, mfcInfo, mfuInfo);
       }
     }
 

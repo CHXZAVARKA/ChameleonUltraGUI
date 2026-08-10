@@ -8,6 +8,10 @@ import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance_progress.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
+import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -66,13 +70,79 @@ class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   ChameleonGUIState(this.sharedPreferencesProvider);
 
+  ReadCardSession _readCardSession = ReadCardSession();
+  final RfOperationCoordinator rfOperations = RfOperationCoordinator();
+
+  AbstractSerial? _connectedDeviceSessionConnector;
+  ChameleonCommunicator? _connectedDeviceSessionCommunicator;
+  bool _connectedDeviceSessionConnected = false;
+  bool _connectedDeviceSessionDfu = false;
+  bool _connectedDeviceSessionBindingInitialized = false;
+  Object _connectedDeviceSessionToken = Object();
+  StandardWriteActivity? _standardWriteActivity;
+
+  final Map<Object, (AbstractSerial, ChameleonCommunicator)>
+      _sessionWakelockOwners = {};
+  bool _flashingWakelock = false;
+  bool _wakelockRequested = false;
+  Future<void> _wakelockUpdates = Future.value();
+
   SharedPreferencesProvider? _sharedPreferencesProvider;
   Logger? log; // Logger
 
   // Android uses AndroidSerial, iOS can only use BLESerial
   // The rest (desktops?) can use NativeSerial
-  AbstractSerial? connector;
-  ChameleonCommunicator? communicator;
+  AbstractSerial? _connector;
+  ChameleonCommunicator? _communicator;
+
+  AbstractSerial? get connector => _connector;
+  set connector(AbstractSerial? value) {
+    if (identical(_connector, value)) {
+      return;
+    }
+    _connector = value;
+    _synchronizeConnectedDeviceSession();
+  }
+
+  ChameleonCommunicator? get communicator => _communicator;
+  set communicator(ChameleonCommunicator? value) {
+    if (identical(_communicator, value)) {
+      return;
+    }
+    _communicator = value;
+    _synchronizeConnectedDeviceSession();
+  }
+
+  ReadCardSession get readCardSession {
+    _synchronizeConnectedDeviceSession();
+    return _readCardSession;
+  }
+
+  Object get connectedDeviceSessionToken {
+    _synchronizeConnectedDeviceSession();
+    return _connectedDeviceSessionToken;
+  }
+
+  StandardWriteActivity? get standardWriteActivity {
+    _synchronizeConnectedDeviceSession();
+    return _standardWriteActivity;
+  }
+
+  void publishStandardWriteActivity({
+    required AbstractSerial connector,
+    required ChameleonCommunicator communicator,
+    required StandardWriteActivity activity,
+  }) {
+    _synchronizeConnectedDeviceSession();
+    if (!_connectedDeviceSessionConnected ||
+        _connectedDeviceSessionDfu ||
+        !identical(_connector, connector) ||
+        !identical(_communicator, communicator)) {
+      return;
+    }
+    _standardWriteActivity = activity;
+    notifyListeners();
+  }
 
   bool devMode = false;
   double? progress; // DFU
@@ -85,6 +155,7 @@ class ChameleonGUIState extends ChangeNotifier {
   Size? navigationRailSize;
 
   void changesMade() {
+    _synchronizeConnectedDeviceSession();
     notifyListeners();
   }
 
@@ -93,7 +164,82 @@ class ChameleonGUIState extends ChangeNotifier {
       communicator = null;
       progress = null;
     }
+    _synchronizeConnectedDeviceSession();
     notifyListeners();
+  }
+
+  void _synchronizeConnectedDeviceSession() {
+    final connector = _connector;
+    final communicator = _communicator;
+    final connected = connector?.connected == true;
+    final isDfu = connector?.isDFU == true;
+    final bindingChanged = !_connectedDeviceSessionBindingInitialized ||
+        !identical(_connectedDeviceSessionConnector, connector) ||
+        !identical(_connectedDeviceSessionCommunicator, communicator) ||
+        _connectedDeviceSessionConnected != connected ||
+        _connectedDeviceSessionDfu != isDfu;
+    if (!bindingChanged) {
+      return;
+    }
+
+    if (_connectedDeviceSessionBindingInitialized) {
+      _readCardSession = ReadCardSession();
+      _connectedDeviceSessionToken = Object();
+      _standardWriteActivity = null;
+      _sessionWakelockOwners.clear();
+      _updateWakelock();
+    }
+    _connectedDeviceSessionConnector = connector;
+    _connectedDeviceSessionCommunicator = communicator;
+    _connectedDeviceSessionConnected = connected;
+    _connectedDeviceSessionDfu = isDfu;
+    _connectedDeviceSessionBindingInitialized = true;
+  }
+
+  Object? acquireSessionWakelock({
+    required AbstractSerial connector,
+    required ChameleonCommunicator communicator,
+  }) {
+    _synchronizeConnectedDeviceSession();
+    if (!_connectedDeviceSessionConnected ||
+        _connectedDeviceSessionDfu ||
+        !identical(_connector, connector) ||
+        !identical(_communicator, communicator)) {
+      return null;
+    }
+
+    final owner = Object();
+    _sessionWakelockOwners[owner] = (connector, communicator);
+    _updateWakelock();
+    return owner;
+  }
+
+  void releaseSessionWakelock(Object? owner) {
+    if (owner == null || _sessionWakelockOwners.remove(owner) == null) {
+      return;
+    }
+    _updateWakelock();
+  }
+
+  void setFlashingWakelock(bool enable) {
+    if (_flashingWakelock == enable) {
+      return;
+    }
+    _flashingWakelock = enable;
+    _updateWakelock();
+  }
+
+  void _updateWakelock() {
+    final enable = _flashingWakelock || _sessionWakelockOwners.isNotEmpty;
+    if (_wakelockRequested == enable) {
+      return;
+    }
+    _wakelockRequested = enable;
+    _wakelockUpdates = _wakelockUpdates.then((_) async {
+      try {
+        await WakelockPlus.toggle(enable: enable);
+      } catch (_) {}
+    });
   }
 
   bool isAutoReconnectSuppressed(dynamic devicePort) {
@@ -135,7 +281,30 @@ class ChameleonGUIState extends ChangeNotifier {
     progress = value;
     notifyListeners();
   }
+
+  bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
+    return connector?.connected == true &&
+        connector?.isDFU != true &&
+        identical(communicator, candidate);
+  }
 }
+
+enum StandardWriteActivityState { active, succeeded, failed, cancelled }
+
+class StandardWriteActivity {
+  const StandardWriteActivity({
+    required this.state,
+    required this.progress,
+  });
+
+  final StandardWriteActivityState state;
+  final MifareClassicMaintenanceProgress progress;
+
+  bool get isActive => state == StandardWriteActivityState.active;
+}
+
+const _readCardNavigationIndex = 3;
+const _writeCardNavigationIndex = 4;
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key, required this.sharedPreferencesProvider});
@@ -148,6 +317,9 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   var selectedIndex = 0;
+  Object? _writeCardPageSessionToken;
+  GlobalKey<WriteCardPageState> _writeCardPageKey =
+      GlobalKey<WriteCardPageState>();
 
   @override
   void initState() {
@@ -203,6 +375,9 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
+    const readCardPage = ReadCardPage(
+      key: ValueKey('read-card-page'),
+    );
     appState._sharedPreferencesProvider = widget.sharedPreferencesProvider;
     appState.log ??= getLogger(appState);
     appState.connector ??= getConnector(appState);
@@ -219,6 +394,13 @@ class _MainPageState extends State<MainPage> {
     }
 
     appState.devMode = appState.sharedPreferencesProvider.isDebugMode();
+    final connectedDeviceSessionToken = appState.connectedDeviceSessionToken;
+    if (!identical(_writeCardPageSessionToken, connectedDeviceSessionToken)) {
+      _writeCardPageSessionToken = connectedDeviceSessionToken;
+      _writeCardPageKey = GlobalKey<WriteCardPageState>();
+    }
+    final writeCardPage = WriteCardPage(key: _writeCardPageKey);
+    final standardWriteActivity = appState.standardWriteActivity;
 
     Widget page; // Set Page
     if (!appState.connector!.connected &&
@@ -254,11 +436,11 @@ class _MainPageState extends State<MainPage> {
       case 2:
         page = const SavedCardsPage();
         break;
-      case 3:
-        page = const ReadCardPage();
+      case _readCardNavigationIndex:
+        page = readCardPage;
         break;
-      case 4:
-        page = const WriteCardPage();
+      case _writeCardNavigationIndex:
+        page = writeCardPage;
         break;
       case 5:
         page = const ToolsPage();
@@ -273,9 +455,41 @@ class _MainPageState extends State<MainPage> {
         throw UnimplementedError('no widget for $selectedIndex');
     }
 
-    try {
-      WakelockPlus.toggle(enable: page is FlashingPage);
-    } catch (_) {}
+    final isDfu = appState.connector!.connected && appState.connector!.isDFU;
+    final foregroundPage = isDfu ? const FlashingPage() : page;
+    final canMountReadCard = appState.connector!.connected && !isDfu;
+    final isReadCardVisible =
+        canMountReadCard && selectedIndex == _readCardNavigationIndex;
+    final canMountWriteCard = appState.connector!.connected && !isDfu;
+    final isWriteCardVisible =
+        canMountWriteCard && selectedIndex == _writeCardNavigationIndex;
+
+    appState.setFlashingWakelock(foregroundPage is FlashingPage);
+
+    final pageContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (canMountReadCard)
+          Offstage(
+            key: const ValueKey('persistent-read-card'),
+            offstage: !isReadCardVisible,
+            child: readCardPage,
+          ),
+        if (canMountWriteCard)
+          Offstage(
+            key: const ValueKey('persistent-write-card'),
+            offstage: !isWriteCardVisible,
+            child: writeCardPage,
+          ),
+        if (!isReadCardVisible && !isWriteCardVisible)
+          KeyedSubtree(
+            key: ValueKey(
+              isDfu ? 'foreground-page-dfu' : 'foreground-page-$selectedIndex',
+            ),
+            child: foregroundPage,
+          ),
+      ],
+    );
 
     return MaterialApp(
       title: 'Chameleon Ultra GUI', // App Name
@@ -316,6 +530,12 @@ class _MainPageState extends State<MainPage> {
       themeMode: widget.sharedPreferencesProvider.getTheme(), // Dark Theme
       home: LayoutBuilder(// Build Page
           builder: (context, constraints) {
+        final standardWriteProgress = standardWriteActivity?.isActive == true
+            ? MifareClassicMaintenanceProgressPresenter(
+                standardWriteActivity!.progress,
+                AppLocalizations.of(context)!,
+              )
+            : null;
         return SafeArea(
           left: false,
           right: false,
@@ -357,7 +577,25 @@ class _MainPageState extends State<MainPage> {
                               ),
                               NavigationRailDestination(
                                 disabled: !appState.connector!.connected,
-                                icon: const Icon(Icons.system_update_alt),
+                                icon: standardWriteProgress == null
+                                    ? const Icon(Icons.system_update_alt)
+                                    : Semantics(
+                                        key: const ValueKey(
+                                          'standard-write-navigation-activity',
+                                        ),
+                                        container: true,
+                                        label:
+                                            '${AppLocalizations.of(context)!.write_card}. '
+                                            '${standardWriteProgress.label}',
+                                        child: ExcludeSemantics(
+                                          child: Badge(
+                                            smallSize: 8,
+                                            child: const Icon(
+                                              Icons.system_update_alt,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                 label: Text(
                                     AppLocalizations.of(context)!.write_card),
                               ),
@@ -390,12 +628,19 @@ class _MainPageState extends State<MainPage> {
                   Expanded(
                     child: Container(
                       color: Theme.of(context).colorScheme.primaryContainer,
-                      child: page,
+                      child: pageContent,
                     ),
                   ),
                 ],
               ),
-              bottomNavigationBar: const BottomProgressBar()),
+              bottomNavigationBar: BottomProgressBar(
+                onStandardWriteTap: () {
+                  _writeCardPageKey.currentState?.selectStandardMode();
+                  setState(() {
+                    selectedIndex = _writeCardNavigationIndex;
+                  });
+                },
+              )),
         );
       }),
     );
@@ -403,17 +648,68 @@ class _MainPageState extends State<MainPage> {
 }
 
 class BottomProgressBar extends StatelessWidget {
-  const BottomProgressBar({super.key});
+  const BottomProgressBar({
+    super.key,
+    required this.onStandardWriteTap,
+  });
+
+  final VoidCallback onStandardWriteTap;
 
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<ChameleonGUIState>();
-    return (appState.connector!.connected && appState.connector!.isDFU)
-        ? LinearProgressIndicator(
-            value: appState.progress,
-            backgroundColor: Colors.grey[300],
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-          )
-        : const SizedBox();
+    if (appState.connector!.connected && appState.connector!.isDFU) {
+      return LinearProgressIndicator(
+        value: appState.progress,
+        backgroundColor: Colors.grey[300],
+        valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+      );
+    }
+
+    final activity = appState.standardWriteActivity;
+    if (activity == null || !activity.isActive) {
+      return const SizedBox();
+    }
+    final localizations = AppLocalizations.of(context)!;
+    final progress = MifareClassicMaintenanceProgressPresenter(
+      activity.progress,
+      localizations,
+    );
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Semantics(
+        key: const ValueKey('standard-write-global-progress'),
+        container: true,
+        label: '${localizations.write_card}. ${progress.label}',
+        hint: localizations.write_card,
+        liveRegion: true,
+        button: true,
+        onTap: onStandardWriteTap,
+        onTapHint: localizations.write_card,
+        child: ExcludeSemantics(
+          child: InkWell(
+            onTap: onStandardWriteTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.system_update_alt, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(progress.label)),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(value: progress.fraction),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

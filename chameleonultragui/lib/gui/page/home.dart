@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -24,52 +25,91 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   int selectedSlot = 1;
   bool isLegacyFirmware = false;
+  Future<_HomeStatusData?>? _statusFuture;
+  Object? _statusConnector;
+  Object? _statusCommunicator;
 
   @override
   void initState() {
     super.initState();
   }
 
-  Future<((Icon, BatteryCharge), String, List<String>, bool, bool)>
-      getFutureData() async {
-    var appState = context.read<ChameleonGUIState>();
-    List<SlotTypes> slotTypes = [];
-    try {
-      slotTypes = await appState.communicator!.getSlotTagTypes();
-    } catch (e) {
-      appState.log!.e(e);
+  Future<_HomeStatusData?> _getFutureData() async {
+    final appState = context.read<ChameleonGUIState>();
+    final result = await appState
+        .runSessionBoundForegroundCatching<_HomeStatusData>((session) async {
+      _ensureCurrent(session);
+
+      List<SlotTypes> slotTypes = [];
+      try {
+        slotTypes = await session.communicator.getSlotTagTypes();
+      } catch (error) {
+        appState.log!.e(error);
+      }
+      _ensureCurrent(session);
+
+      final batteryInfo = await _getBatteryInfo(session);
+      final version = await _getVersion(session);
+      final readerDeviceMode = await _isReaderDeviceMode(session);
+      final capabilitiesSupported = await _areCapabilitiesSupported(session);
+      _ensureCurrent(session);
+
+      return _HomeStatusData(
+        batteryInfo: batteryInfo,
+        usedSlots: _getUsedSlotsOut8(slotTypes),
+        firmwareVersion: version.$1,
+        readerDeviceMode: readerDeviceMode,
+        capabilitiesSupported: capabilitiesSupported,
+        legacyFirmware: version.$2,
+      );
+    });
+
+    if (!result.executed ||
+        result.error is _StaleHomeStatus ||
+        result.session?.isCurrent != true ||
+        !mounted) {
+      return null;
+    }
+    if (result.error != null) {
+      Error.throwWithStackTrace(result.error!, result.stackTrace!);
     }
 
-    return (
-      await getBatteryInfo(),
-      await getUsedSlotsOut8(slotTypes),
-      await getVersion(),
-      await isReaderDeviceMode(),
-      await areCapabilitiesSupported()
-    );
+    final data = result.value!;
+    isLegacyFirmware = data.legacyFirmware;
+    if (isLegacyFirmware) {
+      _showLegacyFirmwareDialog(appState);
+    }
+    return data;
   }
 
-  Future<bool> areCapabilitiesSupported() async {
+  void _ensureCurrent(ConnectedDeviceSession session) {
+    if (!mounted || !session.isCurrent) {
+      throw const _StaleHomeStatus();
+    }
+  }
+
+  Future<bool> _areCapabilitiesSupported(ConnectedDeviceSession session) async {
     // Checks that firmware supports all functions of current app
     // If not, prompt user to update firmware (as outdated firmware might break app)
 
     int ultraCapability = ChameleonCommand.setIdteckEmulatorID.value;
     int liteCapability = ChameleonCommand.setIdteckEmulatorID.value;
 
-    var appState = context.read<ChameleonGUIState>();
     List<int> capabilities;
     try {
-      capabilities = await appState.communicator!.getDeviceCapabilities();
+      capabilities = await session.communicator.getDeviceCapabilities();
     } catch (_) {
+      _ensureCurrent(session);
       return false;
     }
+    _ensureCurrent(session);
 
-    if (appState.connector!.device == ChameleonDevice.ultra &&
+    if (session.connector.device == ChameleonDevice.ultra &&
         !capabilities.contains(ultraCapability)) {
       return false;
     }
 
-    if (appState.connector!.device == ChameleonDevice.lite &&
+    if (session.connector.device == ChameleonDevice.lite &&
         !capabilities.contains(liteCapability)) {
       return false;
     }
@@ -77,14 +117,15 @@ class HomePageState extends State<HomePage> {
     return true;
   }
 
-  Future<(Icon, BatteryCharge)> getBatteryInfo() async {
-    var appState = context.read<ChameleonGUIState>();
+  Future<(Icon, BatteryCharge)> _getBatteryInfo(
+      ConnectedDeviceSession session) async {
     var icon = const Icon(Icons.battery_unknown);
     BatteryCharge battery = BatteryCharge(percent: 0, voltage: 0);
 
     try {
-      battery = await appState.communicator!.getBatteryCharge();
+      battery = await session.communicator.getBatteryCharge();
     } catch (_) {}
+    _ensureCurrent(session);
 
     if (battery.percent > 98) {
       icon = const Icon(Icons.battery_full);
@@ -109,7 +150,7 @@ class HomePageState extends State<HomePage> {
     return (icon, battery);
   }
 
-  Future<String> getUsedSlotsOut8(List<SlotTypes> slotTypes) async {
+  String _getUsedSlotsOut8(List<SlotTypes> slotTypes) {
     int usedSlotsOut8 = 0;
 
     if (slotTypes.isEmpty) {
@@ -124,17 +165,17 @@ class HomePageState extends State<HomePage> {
     return usedSlotsOut8.toString();
   }
 
-  Future<List<String>> getVersion() async {
-    var appState = context.read<ChameleonGUIState>();
-
+  Future<(List<String>, bool)> _getVersion(
+      ConnectedDeviceSession session) async {
     String commitHash = "";
-    var firmware = await appState.communicator!.getFirmwareVersion();
-    isLegacyFirmware = firmware.legacyProtocol;
+    var firmware = await session.communicator.getFirmwareVersion();
+    _ensureCurrent(session);
     String firmwareVersion = numToVerCode(firmware.version);
 
     try {
-      commitHash = await appState.communicator!.getGitCommitHash();
+      commitHash = await session.communicator.getGitCommitHash();
     } catch (_) {}
+    _ensureCurrent(session);
 
     if (commitHash.isEmpty) {
       if (mounted) {
@@ -144,75 +185,107 @@ class HomePageState extends State<HomePage> {
       }
     }
 
-    if (mounted && isLegacyFirmware) {
-      var localizations = AppLocalizations.of(context)!;
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text(localizations.outdated_protocol),
-            content: SingleChildScrollView(
-              child: ListBody(
-                children: <Widget>[
-                  Text(localizations.outdated_protocol_description_1),
-                  Text(localizations.outdated_protocol_description_2),
-                  Text(localizations.outdated_protocol_description_3),
-                ],
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: Text(localizations.update),
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  var localizations = AppLocalizations.of(context)!;
-                  var scaffoldMessenger = ScaffoldMessenger.of(context);
-                  var snackBar = SnackBar(
-                    content: Text(localizations.downloading_fw(
-                        chameleonDeviceName(appState.connector!.device))),
-                    action: SnackBarAction(
-                      label: localizations.close,
-                      onPressed: () {
-                        scaffoldMessenger.hideCurrentSnackBar();
-                      },
-                    ),
-                  );
-
-                  scaffoldMessenger.showSnackBar(snackBar);
-                  await flashFirmware(appState,
-                      scaffoldMessenger: scaffoldMessenger);
-                },
-              ),
-              TextButton(
-                child: Text(localizations.skip),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        },
-      );
-    }
-
-    return ["$firmwareVersion ($commitHash)", commitHash];
+    return (
+      ["$firmwareVersion ($commitHash)", commitHash],
+      firmware.legacyProtocol
+    );
   }
 
-  Future<bool> isReaderDeviceMode() async {
-    var appState = context.read<ChameleonGUIState>();
-    return await appState.communicator!.isReaderDeviceMode();
+  Future<bool> _isReaderDeviceMode(ConnectedDeviceSession session) async {
+    final readerDeviceMode = await session.communicator.isReaderDeviceMode();
+    _ensureCurrent(session);
+    return readerDeviceMode;
+  }
+
+  void _showLegacyFirmwareDialog(ChameleonGUIState appState) {
+    var localizations = AppLocalizations.of(context)!;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(localizations.outdated_protocol),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(localizations.outdated_protocol_description_1),
+                Text(localizations.outdated_protocol_description_2),
+                Text(localizations.outdated_protocol_description_3),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text(localizations.update),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                var localizations = AppLocalizations.of(context)!;
+                var scaffoldMessenger = ScaffoldMessenger.of(context);
+                var snackBar = SnackBar(
+                  content: Text(localizations.downloading_fw(
+                      chameleonDeviceName(appState.connector!.device))),
+                  action: SnackBarAction(
+                    label: localizations.close,
+                    onPressed: () {
+                      scaffoldMessenger.hideCurrentSnackBar();
+                    },
+                  ),
+                );
+
+                scaffoldMessenger.showSnackBar(snackBar);
+                await flashFirmware(appState,
+                    scaffoldMessenger: scaffoldMessenger);
+              },
+            ),
+            TextButton(
+              child: Text(localizations.skip),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _setReaderDeviceMode(bool readerMode) async {
+    final appState = context.read<ChameleonGUIState>();
+    await appState.runSessionBoundForeground((session) async {
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      await session.communicator.setReaderDeviceMode(readerMode);
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      setState(() {
+        _statusConnector = appState.connector;
+        _statusCommunicator = appState.communicator;
+        _statusFuture = _getFutureData();
+      });
+      appState.changesMade();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.read<ChameleonGUIState>();
+    var appState = context.watch<ChameleonGUIState>();
     var localizations = AppLocalizations.of(context)!;
     var scaffoldMessenger = ScaffoldMessenger.of(context);
-    return FutureBuilder(
-        future: getFutureData(),
-        builder: (BuildContext context, AsyncSnapshot snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+    if (_statusFuture == null ||
+        !identical(_statusConnector, appState.connector) ||
+        !identical(_statusCommunicator, appState.communicator)) {
+      _statusConnector = appState.connector;
+      _statusCommunicator = appState.communicator;
+      _statusFuture = _getFutureData();
+    }
+    return FutureBuilder<_HomeStatusData?>(
+        future: _statusFuture,
+        builder:
+            (BuildContext context, AsyncSnapshot<_HomeStatusData?> snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting ||
+              (!snapshot.hasError && snapshot.data == null)) {
             return Scaffold(
               appBar: AppBar(
                 title: Text(localizations.home),
@@ -220,7 +293,6 @@ class HomePageState extends State<HomePage> {
               body: const Center(child: CircularProgressIndicator()),
             );
           } else if (snapshot.hasError) {
-            appState.disconnect();
             return Scaffold(
               appBar: AppBar(
                 title: Text(localizations.home),
@@ -229,13 +301,12 @@ class HomePageState extends State<HomePage> {
                   child: ErrorPage(errorMessage: snapshot.error.toString())),
             );
           } else {
-            final (
-              batteryInfo,
-              usedSlots,
-              fwVersion,
-              isReaderDeviceMode,
-              areCapabilitiesSupported,
-            ) = snapshot.data;
+            final data = snapshot.data!;
+            final batteryInfo = data.batteryInfo;
+            final usedSlots = data.usedSlots;
+            final fwVersion = data.firmwareVersion;
+            final isReaderDeviceMode = data.readerDeviceMode;
+            final areCapabilitiesSupported = data.capabilitiesSupported;
 
             return Scaffold(
               appBar: AppBar(
@@ -539,10 +610,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(false);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(false);
                                     },
                                     tooltip: localizations.emulator_mode,
                                     icon: const Icon(Icons.nfc_sharp),
@@ -552,10 +620,7 @@ class HomePageState extends State<HomePage> {
                                   padding: const EdgeInsets.all(8.0),
                                   child: IconButton(
                                     onPressed: () async {
-                                      await appState.communicator!
-                                          .setReaderDeviceMode(true);
-                                      setState(() {});
-                                      appState.changesMade();
+                                      await _setReaderDeviceMode(true);
                                     },
                                     tooltip: localizations.reader_mode,
                                     icon: const Icon(Icons.barcode_reader),
@@ -581,4 +646,26 @@ class HomePageState extends State<HomePage> {
           }
         });
   }
+}
+
+class _HomeStatusData {
+  const _HomeStatusData({
+    required this.batteryInfo,
+    required this.usedSlots,
+    required this.firmwareVersion,
+    required this.readerDeviceMode,
+    required this.capabilitiesSupported,
+    required this.legacyFirmware,
+  });
+
+  final (Icon, BatteryCharge) batteryInfo;
+  final String usedSlots;
+  final List<String> firmwareVersion;
+  final bool readerDeviceMode;
+  final bool capabilitiesSupported;
+  final bool legacyFirmware;
+}
+
+class _StaleHomeStatus implements Exception {
+  const _StaleHomeStatus();
 }

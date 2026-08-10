@@ -273,6 +273,8 @@ class ChameleonMessage {
 
 enum NTLevel { static, weak, hard, backdoor, unknown }
 
+typedef CardScanContinuation = bool Function();
+
 enum DarksideResult {
   vulnerable,
   fixed,

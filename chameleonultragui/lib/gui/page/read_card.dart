@@ -3,83 +3,21 @@ import 'package:chameleonultragui/gui/component/mifare/classic.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/mifare/ultralight.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
+import 'package:chameleonultragui/helpers/continuous_scan_controller.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'dart:async';
 
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-
-enum MifareClassicState {
-  none,
-  checkKeys,
-  checkKeysOngoing,
-  recovery,
-  recoveryOngoing,
-  dump,
-  dumpOngoing,
-  save
-}
-
-// cardExist true because we don't show error to user if nothing is done
-class HFCardInfo {
-  String uid;
-  String sak;
-  String atqa;
-  String tech;
-  String ats;
-  TagType type;
-  bool cardExist;
-
-  HFCardInfo(
-      {this.uid = '',
-      this.sak = '',
-      this.atqa = '',
-      this.tech = '',
-      this.ats = '',
-      this.type = TagType.unknown,
-      this.cardExist = true});
-}
-
-class LFCardInfo {
-  LFCard? card;
-  bool cardExist;
-
-  LFCardInfo({this.cardExist = true});
-}
-
-class MifareClassicInfo {
-  bool isEV1;
-  MifareClassicRecovery? recovery;
-  MifareClassicType type;
-  MifareClassicState state;
-  NTLevel? ntLevel;
-  bool? hasBackdoor;
-
-  MifareClassicInfo({
-    MifareClassicRecovery? recovery,
-    this.isEV1 = false,
-    this.type = MifareClassicType.none,
-    this.state = MifareClassicState.none,
-    NTLevel? ntLevel,
-    bool? hasBackdoor,
-  });
-}
-
-class MifareUltralightInfo {
-  Uint8List? version;
-  Uint8List? signature;
-
-  MifareUltralightInfo();
-}
 
 class ReadCardPage extends StatefulWidget {
   const ReadCardPage({super.key});
@@ -89,164 +27,333 @@ class ReadCardPage extends StatefulWidget {
 }
 
 class ReadCardPageState extends State<ReadCardPage> {
-  String dumpName = "";
-  HFCardInfo hfInfo = HFCardInfo();
-  LFCardInfo lfInfo = LFCardInfo();
-  MifareClassicInfo mfcInfo = MifareClassicInfo();
-  MifareUltralightInfo mfuInfo = MifareUltralightInfo();
+  late ChameleonGUIState _appState;
+  late ReadCardSession _session;
+  bool _dependenciesInitialized = false;
 
-  bool isContinuousHFScan = false;
-  bool isContinuousLFScan = false;
+  String get dumpName => _session.dumpName;
+  set dumpName(String value) => _session.dumpName = value;
+
+  HFCardInfo get hfInfo => _session.hfInfo;
+  set hfInfo(HFCardInfo value) => _session.hfInfo = value;
+
+  LFCardInfo get lfInfo => _session.lfInfo;
+  set lfInfo(LFCardInfo value) => _session.lfInfo = value;
+
+  MifareClassicInfo get mfcInfo => _session.mfcInfo;
+  set mfcInfo(MifareClassicInfo value) => _session.mfcInfo = value;
+
+  MifareUltralightInfo get mfuInfo => _session.mfuInfo;
+  set mfuInfo(MifareUltralightInfo value) => _session.mfuInfo = value;
+
+  final ContinuousScanController _continuousHFScan = ContinuousScanController();
+  final ContinuousScanController _continuousLFScan = ContinuousScanController();
+
+  bool get isContinuousHFScan => _continuousHFScan.isActive;
+  bool get isContinuousLFScan => _continuousLFScan.isActive;
   bool scanInProgress = false;
-  Timer? hfScanTimer;
-  Timer? lfScanTimer;
+  ConnectedDeviceSession? _manualReadSession;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final appState = Provider.of<ChameleonGUIState>(context);
+    final session = appState.readCardSession;
+    final dependenciesChanged = _dependenciesInitialized &&
+        (!identical(_appState, appState) || !identical(_session, session));
+    _appState = appState;
+    _session = session;
+    _dependenciesInitialized = true;
+
+    if (dependenciesChanged) {
+      _continuousHFScan.stop();
+      _continuousLFScan.stop();
+    }
+    mfcInfo.recovery?.update = updateMifareClassicRecovery;
+
+    final activeSession = _manualReadSession;
+    if (activeSession != null &&
+        (!identical(activeSession.appState, _appState) ||
+            !activeSession.isCurrent)) {
+      _manualReadSession = null;
+      scanInProgress = false;
+    }
+  }
 
   void updateMifareClassicRecovery() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       mfcInfo.recovery = mfcInfo.recovery;
     });
   }
 
   void updateMifareClassicInfo() {
+    if (!mounted) {
+      return;
+    }
     setState(() {
       mfcInfo = mfcInfo;
     });
   }
 
-  Future<void> readLFInfo() async {
-    var appState = Provider.of<ChameleonGUIState>(context, listen: false);
-
-    setState(() {
-      lfInfo = LFCardInfo();
-    });
-
-    if (!await appState.communicator!.isReaderDeviceMode()) {
-      await appState.communicator!.setReaderDeviceMode(true);
+  bool _commitHFInfo(
+      (HFCardInfo, MifareClassicInfo, MifareUltralightInfo) info,
+      ConnectedDeviceSession session,
+      ChameleonGUIState appState,
+      ReadCardSession model) {
+    if (!_isCurrentModel(appState, model, session)) {
+      return false;
     }
 
-    LFCard? card = await appState.communicator!.readEM410X();
-    card ??= await appState.communicator!.readHIDProx();
-    card ??= await appState.communicator!.readViking();
-    card ??= await appState.communicator!.readPac();
-    card ??= await appState.communicator!.readIoProx();
+    setState(() {
+      model.hfInfo = info.$1;
+      model.mfcInfo = info.$2;
+      model.mfuInfo = info.$3;
+    });
+    return true;
+  }
 
+  bool _isCurrentModel(
+    ChameleonGUIState appState,
+    ReadCardSession model,
+    ConnectedDeviceSession session,
+  ) =>
+      mounted &&
+      identical(_appState, appState) &&
+      identical(_session, model) &&
+      identical(appState.readCardSession, model) &&
+      session.isCurrent;
 
+  Future<bool> _readAndCommitHFInfoUnderLease({
+    required ConnectedDeviceSession session,
+    required ChameleonGUIState appState,
+    required ReadCardSession model,
+    bool Function()? canContinue,
+  }) async {
+    bool mayContinue() =>
+        _isCurrentModel(appState, model, session) &&
+        (canContinue?.call() ?? true);
+    if (!mayContinue()) {
+      return false;
+    }
+    final info = await readHFInfo(
+      context,
+      updateMifareClassicRecovery,
+      canContinue: mayContinue,
+    );
+    if (!mayContinue()) {
+      return false;
+    }
+    return _commitHFInfo(
+      info,
+      session,
+      appState,
+      model,
+    );
+  }
+
+  Future<bool> _readAndCommitHFInfo() async {
+    final appState = _appState;
+    final model = _session;
+    final result = await appState.runSessionBoundForeground(
+      (session) => _readAndCommitHFInfoUnderLease(
+        session: session,
+        appState: appState,
+        model: model,
+      ),
+    );
+    return result.executed && result.value == true;
+  }
+
+  Future<void> _runManualRead(Future<bool> Function() read) async {
+    final session = ConnectedDeviceSession.capture(_appState);
+    if (!mounted || scanInProgress || session == null) {
+      return;
+    }
+
+    setState(() {
+      _manualReadSession = session;
+      scanInProgress = true;
+    });
+
+    try {
+      await read();
+    } finally {
+      if (identical(_manualReadSession, session)) {
+        _manualReadSession = null;
+        if (mounted) {
+          setState(() {
+            scanInProgress = false;
+          });
+        }
+      }
+    }
+  }
+
+  Future<bool> _readLFInfoUnderLease(
+    ConnectedDeviceSession session, {
+    required ChameleonGUIState appState,
+    required ReadCardSession model,
+    bool Function()? canContinue,
+  }) async {
+    bool mayContinue() =>
+        _isCurrentModel(appState, model, session) &&
+        (canContinue?.call() ?? true);
+    if (!mayContinue()) {
+      return false;
+    }
+    final communicator = session.communicator;
+
+    setState(() {
+      model.lfInfo = LFCardInfo();
+    });
+
+    if (!await communicator.isReaderDeviceMode()) {
+      if (!mayContinue()) {
+        return false;
+      }
+      await communicator.setReaderDeviceMode(true);
+    }
+    if (!mayContinue()) {
+      return false;
+    }
+
+    LFCard? card = await communicator.readEM410X();
+    if (!mayContinue()) {
+      return false;
+    }
+    if (card == null) {
+      card = await communicator.readHIDProx();
+      if (!mayContinue()) {
+        return false;
+      }
+    }
+    if (card == null) {
+      card = await communicator.readViking();
+      if (!mayContinue()) {
+        return false;
+      }
+    }
+    if (card == null) {
+      card = await communicator.readPac();
+      if (!mayContinue()) {
+        return false;
+      }
+    }
+    if (card == null) {
+      card = await communicator.readIoProx();
+      if (!mayContinue()) {
+        return false;
+      }
+    }
+
+    if (!mayContinue()) {
+      return false;
+    }
     if (card != null) {
       setState(() {
-        lfInfo.card = card;
-        scanInProgress = false;
+        model.lfInfo.card = card;
       });
     } else {
       setState(() {
-        lfInfo.cardExist = false;
-        scanInProgress = false;
+        model.lfInfo.cardExist = false;
       });
     }
+    return true;
+  }
+
+  Future<bool> readLFInfo() async {
+    final appState = _appState;
+    final model = _session;
+    final result = await appState.runSessionBoundForeground(
+      (session) => _readLFInfoUnderLease(
+        session,
+        appState: appState,
+        model: model,
+      ),
+    );
+    return result.executed && result.value == true;
   }
 
   Future<void> startContinuousHFScan() async {
-    if (isContinuousHFScan) return;
-
-    setState(() {
-      isContinuousHFScan = true;
-    });
-
-    const scanInterval = Duration(seconds: 2);
-    const maxDuration = Duration(minutes: 1);
-
-    DateTime startTime = DateTime.now();
-
-    hfScanTimer = Timer.periodic(scanInterval, (timer) async {
-      if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
-        stopContinuousHFScan();
-        return;
-      }
-
-      var info = await readHFInfo(context, updateMifareClassicRecovery);
-      setState(() {
-        hfInfo = info.$1;
-        mfcInfo = info.$2;
-        mfuInfo = info.$3;
-      });
-
-      if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
-        stopContinuousHFScan();
-      }
-    });
-
-    var info = await readHFInfo(context, updateMifareClassicRecovery);
-    setState(() {
-      hfInfo = info.$1;
-      mfcInfo = info.$2;
-      mfuInfo = info.$3;
-    });
-
-    if (hfInfo.cardExist && hfInfo.uid.isNotEmpty) {
-      stopContinuousHFScan();
-    }
+    final appState = _appState;
+    final model = _session;
+    await _continuousHFScan.start(
+      appState: appState,
+      isAvailable: () =>
+          mounted &&
+          identical(_appState, appState) &&
+          identical(_session, model) &&
+          identical(appState.readCardSession, model),
+      read: (session, canContinue) => _readAndCommitHFInfoUnderLease(
+        session: session,
+        appState: appState,
+        model: model,
+        canContinue: canContinue,
+      ),
+      hasResult: () => hfInfo.cardExist && hfInfo.uid.isNotEmpty,
+      onStateChanged: (_) {
+        if (mounted &&
+            identical(_appState, appState) &&
+            identical(_session, model)) {
+          setState(() {});
+        }
+      },
+      onError: (error, stackTrace, session) {
+        (appState.log ?? session.communicator.log).e(
+          'Continuous HF scan failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
   }
 
-  void stopContinuousHFScan() {
-    if (hfScanTimer != null) {
-      hfScanTimer?.cancel();
-      hfScanTimer = null;
-
-      if (mounted) {
-        setState(() {
-          isContinuousHFScan = false;
-        });
-      }
-    }
-  }
+  void stopContinuousHFScan() => _continuousHFScan.stop();
 
   Future<void> startContinuousLFScan() async {
-    if (isContinuousLFScan) return;
-
-    setState(() {
-      isContinuousLFScan = true;
-    });
-
-    const scanInterval = Duration(seconds: 2);
-    const maxDuration = Duration(minutes: 1);
-
-    DateTime startTime = DateTime.now();
-
-    lfScanTimer = Timer.periodic(scanInterval, (timer) async {
-      if (DateTime.now().difference(startTime) > maxDuration || !mounted) {
-        stopContinuousLFScan();
-        return;
-      }
-
-      await readLFInfo();
-
-      if (lfInfo.cardExist && lfInfo.card != null) {
-        stopContinuousLFScan();
-      }
-    });
-
-    await readLFInfo();
-    if (lfInfo.cardExist && lfInfo.card != null) {
-      stopContinuousLFScan();
-    }
+    final appState = _appState;
+    final model = _session;
+    await _continuousLFScan.start(
+      appState: appState,
+      isAvailable: () =>
+          mounted &&
+          identical(_appState, appState) &&
+          identical(_session, model) &&
+          identical(appState.readCardSession, model),
+      read: (session, canContinue) => _readLFInfoUnderLease(
+        session,
+        appState: appState,
+        model: model,
+        canContinue: canContinue,
+      ),
+      hasResult: () => lfInfo.cardExist && lfInfo.card != null,
+      onStateChanged: (_) {
+        if (mounted &&
+            identical(_appState, appState) &&
+            identical(_session, model)) {
+          setState(() {});
+        }
+      },
+      onError: (error, stackTrace, session) {
+        (appState.log ?? session.communicator.log).e(
+          'Continuous LF scan failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
   }
 
-  void stopContinuousLFScan() {
-    if (lfScanTimer != null) {
-      lfScanTimer?.cancel();
-      lfScanTimer = null;
-
-      if (mounted) {
-        setState(() {
-          isContinuousLFScan = false;
-        });
-      }
-    }
-  }
+  void stopContinuousLFScan() => _continuousLFScan.stop();
 
   @override
   void dispose() {
-    stopContinuousHFScan();
-    stopContinuousLFScan();
+    _manualReadSession = null;
+    _continuousHFScan.dispose();
+    _continuousLFScan.dispose();
     super.dispose();
   }
 
@@ -385,23 +492,72 @@ class ReadCardPageState extends State<ReadCardPage> {
                                               });
 
                                               if (isMifareClassic(newValue!)) {
-                                                var info =
-                                                    await performMifareClassicScan(
-                                                        appState.communicator!,
-                                                        mfcInfo,
-                                                        context,
-                                                        updateMifareClassicRecovery,
-                                                        override: newValue);
+                                                final pendingInfo =
+                                                    MifareClassicInfo(
+                                                        state: mfcInfo.state);
+                                                final result = await _appState
+                                                    .runSessionBoundForeground(
+                                                        (session) async {
+                                                  if (!session.isCurrent ||
+                                                      !mounted) {
+                                                    return null;
+                                                  }
+                                                  return performMifareClassicScan(
+                                                    session.communicator,
+                                                    pendingInfo,
+                                                    context,
+                                                    updateMifareClassicRecovery,
+                                                    override: newValue,
+                                                    canContinue: () =>
+                                                        mounted &&
+                                                        session.isCurrent,
+                                                  );
+                                                });
+                                                final info = result.value;
+                                                if (info == null) {
+                                                  return;
+                                                }
+                                                final session = result.session!;
+                                                if (!mounted ||
+                                                    !session.isCurrent) {
+                                                  return;
+                                                }
                                                 setState(() {
                                                   mfcInfo = info.$2;
                                                 });
                                               } else if (isMifareUltralight(
                                                   newValue)) {
-                                                var info =
-                                                    await performMifareUltralightScan(
-                                                        appState.communicator!,
-                                                        mfuInfo,
-                                                        override: newValue);
+                                                final pendingInfo =
+                                                    MifareUltralightInfo()
+                                                      ..version =
+                                                          mfuInfo.version
+                                                      ..signature =
+                                                          mfuInfo.signature;
+                                                final result = await _appState
+                                                    .runSessionBoundForeground(
+                                                        (session) async {
+                                                  if (!mounted ||
+                                                      !session.isCurrent) {
+                                                    return null;
+                                                  }
+                                                  return performMifareUltralightScan(
+                                                    session.communicator,
+                                                    pendingInfo,
+                                                    override: newValue,
+                                                    canContinue: () =>
+                                                        mounted &&
+                                                        session.isCurrent,
+                                                  );
+                                                });
+                                                final info = result.value;
+                                                if (info == null) {
+                                                  return;
+                                                }
+                                                final session = result.session!;
+                                                if (!mounted ||
+                                                    !session.isCurrent) {
+                                                  return;
+                                                }
                                                 setState(() {
                                                   mfuInfo = info.$2;
                                                 });
@@ -481,18 +637,9 @@ class ReadCardPageState extends State<ReadCardPage> {
                                         : () async {
                                             if (appState.connector!.device ==
                                                 ChameleonDevice.ultra) {
-                                              setState(() {
-                                                scanInProgress = true;
-                                              });
-                                              var info = await readHFInfo(
-                                                  context,
-                                                  updateMifareClassicRecovery);
-                                              setState(() {
-                                                hfInfo = info.$1;
-                                                mfcInfo = info.$2;
-                                                mfuInfo = info.$3;
-                                                scanInProgress = false;
-                                              });
+                                              await _runManualRead(
+                                                _readAndCommitHFInfo,
+                                              );
                                             } else if (appState
                                                     .connector!.device ==
                                                 ChameleonDevice.lite) {
@@ -581,42 +728,45 @@ class ReadCardPageState extends State<ReadCardPage> {
                               children: [
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: () async {
-                                      if (appState.connector!.device ==
-                                          ChameleonDevice.ultra) {
-                                        var info = await readHFInfo(context,
-                                            updateMifareClassicRecovery);
-                                        setState(() {
-                                          hfInfo = info.$1;
-                                          mfcInfo = info.$2;
-                                          mfuInfo = info.$3;
-                                        });
-                                      } else if (appState.connector!.device ==
-                                          ChameleonDevice.lite) {
-                                        showDialog<String>(
-                                          context: context,
-                                          builder: (BuildContext context) =>
-                                              AlertDialog(
-                                            title: Text(
-                                                localizations.no_supported),
-                                            content: Text(
-                                                localizations.lite_no_read,
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, localizations.ok),
-                                                child: Text(localizations.ok),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      } else {
-                                        appState.changesMade();
-                                      }
-                                    },
+                                    onPressed: scanInProgress
+                                        ? null
+                                        : () async {
+                                            if (appState.connector!.device ==
+                                                ChameleonDevice.ultra) {
+                                              await _runManualRead(
+                                                _readAndCommitHFInfo,
+                                              );
+                                            } else if (appState
+                                                    .connector!.device ==
+                                                ChameleonDevice.lite) {
+                                              showDialog<String>(
+                                                context: context,
+                                                builder:
+                                                    (BuildContext context) =>
+                                                        AlertDialog(
+                                                  title: Text(localizations
+                                                      .no_supported),
+                                                  content: Text(
+                                                      localizations
+                                                          .lite_no_read,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  actions: <Widget>[
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(context,
+                                                              localizations.ok),
+                                                      child: Text(
+                                                          localizations.ok),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            } else {
+                                              appState.changesMade();
+                                            }
+                                          },
                                     style: customCardButtonStyle(appState),
                                     child: Text(localizations.read),
                                   ),
@@ -765,10 +915,7 @@ class ReadCardPageState extends State<ReadCardPage> {
                                         : () async {
                                             if (appState.connector!.device ==
                                                 ChameleonDevice.ultra) {
-                                              setState(() {
-                                                scanInProgress = true;
-                                              });
-                                              await readLFInfo();
+                                              await _runManualRead(readLFInfo);
                                             } else if (appState
                                                     .connector!.device ==
                                                 ChameleonDevice.lite) {
@@ -857,36 +1004,43 @@ class ReadCardPageState extends State<ReadCardPage> {
                               children: [
                                 Expanded(
                                   child: ElevatedButton(
-                                    onPressed: () async {
-                                      if (appState.connector!.device ==
-                                          ChameleonDevice.ultra) {
-                                        await readLFInfo();
-                                      } else if (appState.connector!.device ==
-                                          ChameleonDevice.lite) {
-                                        showDialog<String>(
-                                          context: context,
-                                          builder: (BuildContext context) =>
-                                              AlertDialog(
-                                            title: Text(
-                                                localizations.no_supported),
-                                            content: Text(
-                                                localizations.lite_no_read,
-                                                style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, localizations.ok),
-                                                child: Text(localizations.ok),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      } else {
-                                        appState.changesMade();
-                                      }
-                                    },
+                                    onPressed: scanInProgress
+                                        ? null
+                                        : () async {
+                                            if (appState.connector!.device ==
+                                                ChameleonDevice.ultra) {
+                                              await _runManualRead(readLFInfo);
+                                            } else if (appState
+                                                    .connector!.device ==
+                                                ChameleonDevice.lite) {
+                                              showDialog<String>(
+                                                context: context,
+                                                builder:
+                                                    (BuildContext context) =>
+                                                        AlertDialog(
+                                                  title: Text(localizations
+                                                      .no_supported),
+                                                  content: Text(
+                                                      localizations
+                                                          .lite_no_read,
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  actions: <Widget>[
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(context,
+                                                              localizations.ok),
+                                                      child: Text(
+                                                          localizations.ok),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            } else {
+                                              appState.changesMade();
+                                            }
+                                          },
                                     style: customCardButtonStyle(appState),
                                     child: Text(localizations.read),
                                   ),

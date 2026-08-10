@@ -169,8 +169,7 @@ class BLESerial extends AbstractSerial {
               try {
                 await messageCallback(Uint8List.fromList(data));
               } catch (_) {
-                log.w(
-                    "Received unexpected data: ${bytesToHex(Uint8List.fromList(data))}");
+                logUnexpectedSerialData(Uint8List.fromList(data));
               }
             }
           }, onError: (dynamic error) async {
@@ -206,8 +205,7 @@ class BLESerial extends AbstractSerial {
               try {
                 await messageCallback(Uint8List.fromList(data));
               } catch (_) {
-                log.w(
-                    "Received unexpected data: ${bytesToHex(Uint8List.fromList(data))}");
+                logUnexpectedSerialData(Uint8List.fromList(data));
               }
             }
           }, onError: (dynamic error) async {

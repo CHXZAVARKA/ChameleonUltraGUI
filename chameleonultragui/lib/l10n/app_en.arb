@@ -174,6 +174,390 @@
   "tag_type": "Tag type",
   "select_save_format": "Select save format",
   "key_count": "Key count",
+  "mifare_classic_assigned_key_profile": "Assigned key profile",
+  "@mifare_classic_assigned_key_profile": {
+    "description": "Label for the key profile assigned to a MIFARE Classic card"
+  },
+  "mifare_classic_assigned_key_profiles": "Assigned key profiles",
+  "@mifare_classic_assigned_key_profiles": {
+    "description": "Heading for saved MIFARE Classic key profiles"
+  },
+  "mifare_classic_import_key_profile": "Import key profile",
+  "@mifare_classic_import_key_profile": {
+    "description": "Action that imports a MIFARE Classic key profile"
+  },
+  "mifare_classic_export_key_profile": "Export key profile",
+  "@mifare_classic_export_key_profile": {
+    "description": "Action that exports a MIFARE Classic key profile"
+  },
+  "mifare_classic_delete_key_profile": "Delete key profile",
+  "@mifare_classic_delete_key_profile": {
+    "description": "Action that deletes a saved MIFARE Classic key profile"
+  },
+  "mifare_classic_key_profile_summary": "{cardType} · {keyCount, plural, =1{1 key} other{{keyCount} keys}}",
+  "@mifare_classic_key_profile_summary": {
+    "description": "Summary of a MIFARE Classic key profile without a saved card UID",
+    "placeholders": {
+      "cardType": {
+        "type": "String",
+        "example": "MIFARE Classic 4K"
+      },
+      "keyCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "mifare_classic_key_profile_summary_with_uid": "{cardType} · {keyCount, plural, =1{1 key} other{{keyCount} keys}} · UID {uid}",
+  "@mifare_classic_key_profile_summary_with_uid": {
+    "description": "Summary of a MIFARE Classic key profile with its saved card UID",
+    "placeholders": {
+      "cardType": {
+        "type": "String",
+        "example": "MIFARE Classic 4K"
+      },
+      "keyCount": {
+        "type": "int",
+        "example": "2"
+      },
+      "uid": {
+        "type": "String",
+        "example": "01020304"
+      }
+    }
+  },
+  "mifare_classic_key_profile_option": "{name} ({keyCount, plural, =1{1 key} other{{keyCount} keys}})",
+  "@mifare_classic_key_profile_option": {
+    "description": "MIFARE Classic key profile option without a saved card UID",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Office doors"
+      },
+      "keyCount": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "mifare_classic_key_profile_option_with_uid": "{name} ({keyCount, plural, =1{1 key} other{{keyCount} keys}}) · UID {uid}",
+  "@mifare_classic_key_profile_option_with_uid": {
+    "description": "MIFARE Classic key profile option with its saved card UID",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Office doors"
+      },
+      "keyCount": {
+        "type": "int",
+        "example": "2"
+      },
+      "uid": {
+        "type": "String",
+        "example": "01020304"
+      }
+    }
+  },
+  "mifare_classic_key_a_sectors": "Key A sectors: {sectors}",
+  "@mifare_classic_key_a_sectors": {
+    "description": "Sectors assigned to a key as MIFARE Classic Key A",
+    "placeholders": {
+      "sectors": {
+        "type": "String",
+        "example": "0, 1, 2"
+      }
+    }
+  },
+  "mifare_classic_key_b_sectors": "Key B sectors: {sectors}",
+  "@mifare_classic_key_b_sectors": {
+    "description": "Sectors assigned to a key as MIFARE Classic Key B",
+    "placeholders": {
+      "sectors": {
+        "type": "String",
+        "example": "0, 1, 2"
+      }
+    }
+  },
+  "mifare_classic_save_key_profile": "Save assigned key profile",
+  "@mifare_classic_save_key_profile": {
+    "description": "Action that saves the verified keys assigned to MIFARE Classic sectors"
+  },
+  "mifare_classic_save_key_profile_in_app": "Save in app",
+  "@mifare_classic_save_key_profile_in_app": {
+    "description": "Action that stores a MIFARE Classic key profile in the application"
+  },
+  "mifare_classic_export_key_profile_to_file": "Export to JSON file",
+  "@mifare_classic_export_key_profile_to_file": {
+    "description": "Action that exports a MIFARE Classic key profile to a JSON file"
+  },
+  "mifare_classic_enter_key_profile_name": "Enter key profile name",
+  "@mifare_classic_enter_key_profile_name": {
+    "description": "Prompt for the name of a MIFARE Classic key profile"
+  },
+  "mifare_classic_key_profile_saved": "Key profile saved",
+  "@mifare_classic_key_profile_saved": {
+    "description": "Confirmation that a MIFARE Classic key profile was saved"
+  },
+  "mifare_classic_key_profile_imported": "Key profile imported",
+  "@mifare_classic_key_profile_imported": {
+    "description": "Confirmation that a MIFARE Classic key profile was imported"
+  },
+  "mifare_classic_key_profile_import_failed": "Could not import key profile",
+  "@mifare_classic_key_profile_import_failed": {
+    "description": "User-facing error shown when a MIFARE Classic key profile cannot be imported"
+  },
+  "mifare_classic_key_profile_uid_mismatch": "Key profile UID differs",
+  "@mifare_classic_key_profile_uid_mismatch": {
+    "description": "Title of the warning shown when a key profile was saved for another card UID"
+  },
+  "mifare_classic_key_profile_uid_mismatch_description": "This profile was saved for another UID. Use it only if both cards intentionally share the same sector keys.",
+  "@mifare_classic_key_profile_uid_mismatch_description": {
+    "description": "Explains the risk of using a MIFARE Classic key profile saved for another UID"
+  },
+  "mifare_classic_use_key_profile": "Use profile",
+  "@mifare_classic_use_key_profile": {
+    "description": "Action that accepts a selected MIFARE Classic key profile"
+  },
+  "mifare_classic_key_profile_plaintext_warning": "The profile stores sector keys as plain text. Keep exported files private.",
+  "@mifare_classic_key_profile_plaintext_warning": {
+    "description": "Warns that saved and exported MIFARE Classic key profiles contain unencrypted keys"
+  },
+  "mifare_classic_partial_bin_export_blocked": "BIN export requires a complete MIFARE Classic dump. Save this partial recovery in the app instead.",
+  "@mifare_classic_partial_bin_export_blocked": {
+    "description": "Explains why a partial or structurally invalid MIFARE Classic dump cannot be exported as a BIN file"
+  },
+  "mifare_classic_magic_card_mode": "Magic card",
+  "@mifare_classic_magic_card_mode": {
+    "description": "Write Card mode that writes a saved image to a Magic card"
+  },
+  "mifare_classic_standard_card_mode": "Standard MIFARE Classic",
+  "@mifare_classic_standard_card_mode": {
+    "description": "Write Card mode that restores data blocks on a standard MIFARE Classic card"
+  },
+  "mifare_classic_standard_write_title": "Write the card's own dump to a standard card",
+  "@mifare_classic_standard_write_title": {
+    "description": "Heading for the safe Standard MIFARE Classic writer"
+  },
+  "mifare_classic_standard_write_description": "Select a complete Mini, 1K, 1K EV1, 2K, or 4K dump and its assigned key profile.",
+  "@mifare_classic_standard_write_description": {
+    "description": "Explains which dump and key profile the Standard MIFARE Classic writer needs"
+  },
+  "mifare_classic_standard_safe_blocks_note": "Only data blocks are written. Block 0, keys, and access bits are left unchanged.",
+  "@mifare_classic_standard_safe_blocks_note": {
+    "description": "Safety note describing which parts of a standard MIFARE Classic card the writer leaves unchanged"
+  },
+  "mifare_classic_standard_select_bin_dump": "Select .bin dump",
+  "@mifare_classic_standard_select_bin_dump": {
+    "description": "Action that selects a MIFARE Classic BIN dump for the Standard writer"
+  },
+  "mifare_classic_standard_load_file": "Load file",
+  "@mifare_classic_standard_load_file": {
+    "description": "Action that loads a supported single-card MIFARE Classic dump file for the Standard writer"
+  },
+  "mifare_classic_standard_or": "OR",
+  "@mifare_classic_standard_or": {
+    "description": "Separator between loading a dump file and choosing a saved card"
+  },
+  "mifare_classic_standard_no_usable_saved_dumps": "No usable saved MIFARE Classic dumps",
+  "@mifare_classic_standard_no_usable_saved_dumps": {
+    "description": "Error shown when Saved Cards contains no complete or confirmable MIFARE Classic dump"
+  },
+  "mifare_classic_standard_legacy_dump_title": "Unverified legacy dump",
+  "@mifare_classic_standard_legacy_dump_title": {
+    "description": "Title of the confirmation dialog for a saved dump that predates completeness tracking"
+  },
+  "mifare_classic_standard_legacy_dump_description": "This saved card predates completeness tracking. Its block structure is valid, but the app cannot prove that every block was read successfully. Continue only if this is a complete dump; missing reads may contain zeros.",
+  "@mifare_classic_standard_legacy_dump_description": {
+    "description": "Explains the risk of using a legacy MIFARE Classic dump with unknown completeness"
+  },
+  "mifare_classic_standard_use_legacy_dump": "Use saved dump",
+  "@mifare_classic_standard_use_legacy_dump": {
+    "description": "Action that confirms use of a legacy MIFARE Classic dump with unknown completeness"
+  },
+  "mifare_classic_standard_select_key_profile": "Select key profile",
+  "@mifare_classic_standard_select_key_profile": {
+    "description": "Label for the key profile selector in the Standard MIFARE Classic writer"
+  },
+  "mifare_classic_standard_run_preflight": "Run preflight",
+  "@mifare_classic_standard_run_preflight": {
+    "description": "Action that checks a standard MIFARE Classic card before writing"
+  },
+  "mifare_classic_standard_start": "Start",
+  "@mifare_classic_standard_start": {
+    "description": "Action that checks, writes, and verifies a standard MIFARE Classic card"
+  },
+  "mifare_classic_standard_phase_preflight": "Checking the card",
+  "@mifare_classic_standard_phase_preflight": {
+    "description": "Progress phase while the Standard writer checks the card and builds its change plan"
+  },
+  "mifare_classic_standard_phase_revalidating": "Revalidating the card",
+  "@mifare_classic_standard_phase_revalidating": {
+    "description": "Progress phase while the Standard writer confirms that checked data has not changed"
+  },
+  "mifare_classic_standard_phase_writing": "Writing changed blocks",
+  "@mifare_classic_standard_phase_writing": {
+    "description": "Progress phase while the Standard writer writes changed data blocks"
+  },
+  "mifare_classic_standard_phase_verifying": "Verifying written blocks",
+  "@mifare_classic_standard_phase_verifying": {
+    "description": "Progress phase while the Standard writer reads back a written data block"
+  },
+  "mifare_classic_standard_progress": "{phase}: {completed}/{total}",
+  "@mifare_classic_standard_progress": {
+    "description": "Current Standard writer phase and completed work count",
+    "placeholders": {
+      "phase": {
+        "type": "String",
+        "example": "Checking the card"
+      },
+      "completed": {
+        "type": "int",
+        "example": "4"
+      },
+      "total": {
+        "type": "int",
+        "example": "16"
+      }
+    }
+  },
+  "mifare_classic_standard_preflight_running": "Preflight is running. Nothing is written until it completes.",
+  "@mifare_classic_standard_preflight_running": {
+    "description": "Progress message shown while the Standard writer checks the card without writing"
+  },
+  "mifare_classic_standard_preflight_ready": "Preflight passed: {changedBlocks, plural, one {{changedBlocks} block will change} other {{changedBlocks} blocks will change}} and {unchangedBlocks, plural, one {{unchangedBlocks} block already matches} other {{unchangedBlocks} blocks already match}}.",
+  "@mifare_classic_standard_preflight_ready": {
+    "description": "Summary shown after Standard writer preflight passes",
+    "placeholders": {
+      "changedBlocks": {
+        "type": "int",
+        "example": "3"
+      },
+      "unchangedBlocks": {
+        "type": "int",
+        "example": "44"
+      }
+    }
+  },
+  "mifare_classic_standard_authorized_confirmation": "I confirm this is my card and I am authorized to change its data.",
+  "@mifare_classic_standard_authorized_confirmation": {
+    "description": "Confirmation required before writing data to a standard MIFARE Classic card"
+  },
+  "mifare_classic_standard_write_and_verify": "Write and verify",
+  "@mifare_classic_standard_write_and_verify": {
+    "description": "Action that writes and reads back changed MIFARE Classic data blocks"
+  },
+  "mifare_classic_standard_keep_card_stable": "Keep the card and Chameleon Ultra still.",
+  "@mifare_classic_standard_keep_card_stable": {
+    "description": "Progress message shown while the Standard writer changes and verifies card data"
+  },
+  "mifare_classic_standard_write_complete": "Complete: {count, plural, one {{count} block written and verified} other {{count} blocks written and verified}}.",
+  "@mifare_classic_standard_write_complete": {
+    "description": "Completion message for a successful Standard MIFARE Classic write",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "mifare_classic_standard_write_complete_summary": "Complete: {verifiedBlocks, plural, one {{verifiedBlocks} block written and verified} other {{verifiedBlocks} blocks written and verified}}; {unchangedBlocks, plural, one {{unchangedBlocks} block already matched} other {{unchangedBlocks} blocks already matched}}.",
+  "@mifare_classic_standard_write_complete_summary": {
+    "description": "Completion message with written, verified, and unchanged Standard MIFARE Classic block counts",
+    "placeholders": {
+      "verifiedBlocks": {
+        "type": "int",
+        "example": "3"
+      },
+      "unchangedBlocks": {
+        "type": "int",
+        "example": "44"
+      }
+    }
+  },
+  "mifare_classic_standard_verified_before_stop": "Progress retained: {verifiedBlocks, plural, one {{verifiedBlocks} block was written and verified} other {{verifiedBlocks} blocks were written and verified}} before the operation stopped.",
+  "@mifare_classic_standard_verified_before_stop": {
+    "description": "Partial Standard writer result retained when an operation stops",
+    "placeholders": {
+      "verifiedBlocks": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "mifare_classic_standard_unknown_write_outcome": "The outcome of the last write is unknown. Start again before writing.",
+  "@mifare_classic_standard_unknown_write_outcome": {
+    "description": "Warning shown when Standard writer cannot determine whether the last block write changed the card"
+  },
+  "mifare_classic_standard_operation_failed": "Operation stopped: {reason}",
+  "@mifare_classic_standard_operation_failed": {
+    "description": "Safe user-facing Standard writer error with a localized reason",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Communication with Chameleon was lost. Reconnect and try again."
+      }
+    }
+  },
+  "mifare_classic_standard_unsupported_dump_size": "Unsupported dump size: {byteCount, plural, one {{byteCount} byte} other {{byteCount} bytes}}. Expected 320, 1024, 1152, 2048, or 4096 bytes.",
+  "@mifare_classic_standard_unsupported_dump_size": {
+    "description": "Error shown when a selected MIFARE Classic BIN dump has an unsupported byte count",
+    "placeholders": {
+      "byteCount": {
+        "type": "int",
+        "example": "512"
+      }
+    }
+  },
+  "mifare_classic_standard_selected_dump_summary": "✓ {name} · {byteCount} bytes · {cardType}",
+  "@mifare_classic_standard_selected_dump_summary": {
+    "description": "Summary of the dump selected for the Standard MIFARE Classic writer",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Office card"
+      },
+      "byteCount": {
+        "type": "int",
+        "example": "4096"
+      },
+      "cardType": {
+        "type": "String",
+        "example": "MIFARE Classic 4K"
+      }
+    }
+  },
+  "mifare_classic_maintenance_invalid_image": "The selected dump is not supported.",
+  "@mifare_classic_maintenance_invalid_image": {
+    "description": "Safe failure shown when Standard writer maintenance receives an invalid card image"
+  },
+  "mifare_classic_maintenance_incompatible_profile": "The selected key profile is not compatible with this dump.",
+  "@mifare_classic_maintenance_incompatible_profile": {
+    "description": "Safe failure shown when a key profile does not match the selected MIFARE Classic dump"
+  },
+  "mifare_classic_maintenance_communication_lost": "Communication with Chameleon was lost. Reconnect and try again.",
+  "@mifare_classic_maintenance_communication_lost": {
+    "description": "Safe failure shown when communication is lost during Standard writer maintenance"
+  },
+  "mifare_classic_maintenance_stale_plan": "The card check expired. Start again.",
+  "@mifare_classic_maintenance_stale_plan": {
+    "description": "Safe failure shown when a Standard writer preflight plan can no longer be used"
+  },
+  "mifare_classic_maintenance_card_mismatch": "The presented card does not match the selected dump.",
+  "@mifare_classic_maintenance_card_mismatch": {
+    "description": "Safe failure shown when the card presented after selection or preflight is different"
+  },
+  "mifare_classic_maintenance_authentication_failed": "The selected key profile could not authenticate this card.",
+  "@mifare_classic_maintenance_authentication_failed": {
+    "description": "Safe failure shown when assigned keys cannot authenticate the presented MIFARE Classic card"
+  },
+  "mifare_classic_maintenance_change_not_allowed": "This card does not allow the requested change with the selected key profile.",
+  "@mifare_classic_maintenance_change_not_allowed": {
+    "description": "Safe failure shown for invalid access bits, read-only data, or unavailable read-back permissions"
+  },
+  "mifare_classic_maintenance_cancelled": "The operation was cancelled.",
+  "@mifare_classic_maintenance_cancelled": {
+    "description": "Safe failure shown when Standard writer maintenance is cancelled"
+  },
   "all": "All",
   "no_name": "No name",
   "connecting_to_ble": "Connecting to BLE device...",
@@ -570,5 +954,6 @@
   "lf_sniff_load_file": "Load .bin file",
   "lf_sniff_load_failed": "Failed to load file: {error}",
   "lf_sniff_loaded": "Loaded {count} sample(s) from file.",
-  "sniff_device_required_hint": "No device connected. Connect a Chameleon to capture, or load a saved file."
+  "sniff_device_required_hint": "No device connected. Connect a Chameleon to capture, or load a saved file.",
+  "view_dump": "View dump"
 }

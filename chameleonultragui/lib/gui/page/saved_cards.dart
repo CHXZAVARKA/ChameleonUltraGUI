@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/element_button.dart';
+import 'package:chameleonultragui/gui/component/mifare/saved_key_profiles.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/card/view.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/view.dart';
@@ -29,7 +30,14 @@ import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 class SavedCardsPage extends StatefulWidget {
-  const SavedCardsPage({super.key});
+  final Future<PlatformFile?> Function()? pickFile;
+  final Future<Uint8List> Function(PlatformFile file)? readFile;
+
+  const SavedCardsPage({
+    super.key,
+    this.pickFile,
+    this.readFile,
+  });
 
   @override
   SavedCardsPageState createState() => SavedCardsPageState();
@@ -773,12 +781,15 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                             Expanded(
                               child: ElevatedButton(
                                 onPressed: importCard = () async {
-                                  PlatformFile? result =
-                                      await FilePicker.pickFile();
+                                  final result =
+                                      await (widget.pickFile?.call() ??
+                                          FilePicker.pickFile());
 
                                   if (result != null) {
-                                    File file = File(result.path!);
-                                    var contents = await file.readAsBytes();
+                                    final file = File(result.path!);
+                                    final contents =
+                                        await (widget.readFile?.call(result) ??
+                                            file.readAsBytes());
                                     try {
                                       var string =
                                           const Utf8Decoder().convert(contents);
@@ -788,35 +799,20 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                       } catch (_) {
                                         // Non-JSON formats are handled below.
                                       }
-                                      if (decodedJson is Map &&
-                                          decodedJson['format'] ==
-                                              'chameleon-ultra-gui-folder') {
+                                      if (isCardFolderBundleJson(decodedJson)) {
                                         await _importFolderSource(string);
                                         return;
                                       }
                                       var tags = appState
                                           .sharedPreferencesProvider
                                           .getCards();
-                                      CardSave tag;
-                                      if (string.contains(
-                                          "\"Created\": \"proxmark3\",")) {
-                                        // PM3 JSON
-                                        tag = pm3JsonToCardSave(string);
-                                      } else if (string.contains(
-                                          "Filetype: Flipper NFC device")) {
-                                        // Flipper NFC
-                                        tag = flipperNfcToCardSave(string);
-                                      } else if (string
-                                          .contains("+Sector: 0")) {
-                                        // Mifare Classic Tool
-                                        tag = mctToCardSave(string);
-                                      } else if (string.contains(
-                                          "Filetype: Flipper RFID key")) {
-                                        // Flipper RFID
-                                        tag = flipperRfidToCardSave(string);
-                                      } else {
-                                        tag = CardSave.fromJson(string);
-                                      }
+                                      final tag = cardSaveFromText(
+                                        string,
+                                        format: detectCardSaveTextFormat(
+                                          string,
+                                          decodedJson: decodedJson,
+                                        ),
+                                      );
 
                                       tag.name = basename(file.path)
                                               .contains('.')
@@ -1147,6 +1143,12 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                             uid4Controller.text,
                                                         tag: selectedType,
                                                         data: blocks);
+                                                    tag.extraData
+                                                            .mifareClassicDumpComplete =
+                                                        MifareClassicGeometry
+                                                                .fromSavedCardData(
+                                                                    tag) !=
+                                                            null;
                                                     tag.folderId =
                                                         currentFolderId;
                                                     tags.add(tag);
@@ -1222,6 +1224,12 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                                       uid: uid7Controller.text,
                                                       tag: selectedType,
                                                       data: blocks);
+                                                  tag.extraData
+                                                          .mifareClassicDumpComplete =
+                                                      MifareClassicGeometry
+                                                              .fromSavedCardData(
+                                                                  tag) !=
+                                                          null;
                                                   tag.folderId =
                                                       currentFolderId;
                                                   tags.add(tag);
@@ -1370,17 +1378,21 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                           title: Text(
                                               localizations.select_save_format),
                                           actions: [
-                                            ElevatedButton(
-                                              onPressed: () async {
-                                                await saveTag(
-                                                    tag, context, true);
-                                                if (context.mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                              child: Text(localizations
-                                                  .save_as(".bin")),
-                                            ),
+                                            if (!isMifareClassic(tag.tag) ||
+                                                MifareClassicGeometry
+                                                        .fromSavedCard(tag) !=
+                                                    null)
+                                              ElevatedButton(
+                                                onPressed: () async {
+                                                  await saveTag(
+                                                      tag, context, true);
+                                                  if (context.mounted) {
+                                                    Navigator.pop(context);
+                                                  }
+                                                },
+                                                child: Text(localizations
+                                                    .save_as(".bin")),
+                                              ),
                                             ElevatedButton(
                                               onPressed: () async {
                                                 await saveTag(
@@ -1692,6 +1704,7 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                           }))),
             ])),
           ),
+          const Expanded(child: MifareClassicKeyProfilesCard()),
         ],
       ),
     );

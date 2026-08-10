@@ -298,7 +298,19 @@ class CardViewMenuState extends State<CardViewMenu> {
                               tag: widget.tagSave.tag,
                               data: dumpData,
                               ats: widget.tagSave.ats,
-                              extraData: widget.tagSave.extraData,
+                              extraData: CardSaveExtra(
+                                ultralightSignature: widget
+                                    .tagSave.extraData.ultralightSignature,
+                                ultralightVersion:
+                                    widget.tagSave.extraData.ultralightVersion,
+                                ultralightCounters:
+                                    widget.tagSave.extraData.ultralightCounters,
+                                mifareClassicDumpComplete:
+                                    isMifareClassic(widget.tagSave.tag)
+                                        ? false
+                                        : widget.tagSave.extraData
+                                            .mifareClassicDumpComplete,
+                              ),
                               folderId: widget.tagSave.folderId,
                               color: widget.tagSave.color,
                             );
@@ -331,7 +343,9 @@ class CardViewMenuState extends State<CardViewMenu> {
                       return AlertDialog(
                         title: Text(localizations.select_save_format),
                         actions: [
-                          if (isMifareClassic(currentSavedCard.tag))
+                          if (MifareClassicGeometry.fromSavedCard(
+                                  currentSavedCard) !=
+                              null)
                             ElevatedButton(
                               onPressed: () async {
                                 await saveTag(currentSavedCard, context, true);

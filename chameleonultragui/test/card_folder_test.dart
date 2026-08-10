@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -17,6 +18,70 @@ void main() {
     final decoded = CardSave.fromJson(card.toJson());
 
     expect(decoded.folderId, isNull);
+  });
+
+  test('card JSON keeps legacy MIFARE Classic dump completeness unknown', () {
+    final source = CardSave(
+      id: 'legacy-mifare-card',
+      uid: '01 02 03 04',
+      name: 'Legacy MIFARE Classic card',
+      tag: TagType.mifare1K,
+    ).toJson();
+    final json = jsonDecode(source) as Map<String, dynamic>;
+    final decoded = CardSave.fromJson(jsonEncode(json));
+
+    expect(
+      (
+        (json['extra'] as Map<String, dynamic>).containsKey(
+          'mifareClassicDumpComplete',
+        ),
+        decoded.extraData.mifareClassicDumpComplete,
+      ),
+      (false, null),
+    );
+  });
+
+  test(
+    'card JSON explicitly round-trips an incomplete MIFARE Classic dump',
+    () {
+      final source = CardSave(
+        id: 'incomplete-mifare-card',
+        uid: '01 02 03 04',
+        name: 'Incomplete MIFARE Classic card',
+        tag: TagType.mifare1K,
+        extraData: CardSaveExtra(mifareClassicDumpComplete: false),
+      ).toJson();
+      final json = jsonDecode(source) as Map<String, dynamic>;
+      final decoded = CardSave.fromJson(source);
+
+      expect(
+        (
+          (json['extra'] as Map<String, dynamic>)['mifareClassicDumpComplete'],
+          decoded.extraData.mifareClassicDumpComplete,
+        ),
+        (false, false),
+      );
+    },
+  );
+
+  test('card JSON round-trips a complete MIFARE Classic dump', () {
+    final source = CardSave(
+      id: 'complete-mifare-card',
+      uid: '01 02 03 04',
+      name: 'Complete MIFARE Classic card',
+      tag: TagType.mifare1K,
+      extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+    ).toJson();
+    final json = jsonDecode(source) as Map<String, dynamic>;
+    final decoded = CardSave.fromJson(source);
+
+    expect(
+      (
+        (json['extra'] as Map<String, dynamic>)['mifareClassicDumpComplete'],
+        decoded.extraData.mifareClassicDumpComplete,
+      ),
+      (true, true),
+    );
   });
 
   test('folder bundle round-trips nested folders and cards', () {

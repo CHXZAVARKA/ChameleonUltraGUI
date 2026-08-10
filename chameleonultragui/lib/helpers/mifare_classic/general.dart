@@ -3,14 +3,17 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/types.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+export 'package:chameleonultragui/helpers/mifare_classic/types.dart';
 
 // Mifare Classic keys from Proxmark3
 final gMifareClassicKeysList = {
@@ -71,13 +74,140 @@ final gMifareClassicBackdoorKeysList = {
   0x73B9836CF168,
 };
 
-enum MifareClassicType {
-  none,
-  mini,
-  m1k,
-  m2k,
-  m4k
-} // can't start with number...
+class MifareClassicGeometry {
+  final MifareClassicType type;
+  final bool isEV1;
+  final int blockCount;
+  final int sectorCount;
+
+  const MifareClassicGeometry._({
+    required this.type,
+    required this.isEV1,
+    required this.blockCount,
+    required this.sectorCount,
+  });
+
+  int get imageSize => blockCount * 16;
+  int get dataBlockCount => blockCount - sectorCount - 1;
+  String get cardType => type.name;
+
+  String get label {
+    if (type == MifareClassicType.mini) {
+      return 'MIFARE Classic Mini';
+    }
+    if (type == MifareClassicType.m1k && isEV1) {
+      return 'MIFARE Classic 1K EV1';
+    }
+    if (type == MifareClassicType.m1k) {
+      return 'MIFARE Classic 1K';
+    }
+    if (type == MifareClassicType.m2k) {
+      return 'MIFARE Classic 2K';
+    }
+    if (type == MifareClassicType.m4k) {
+      return 'MIFARE Classic 4K';
+    }
+    return 'MIFARE Classic';
+  }
+
+  static MifareClassicGeometry? fromImageSize(int imageSize) {
+    switch (imageSize) {
+      case 320:
+        return fromType(MifareClassicType.mini);
+      case 1024:
+        return fromType(MifareClassicType.m1k);
+      case 1152:
+        return fromType(MifareClassicType.m1k, isEV1: true);
+      case 2048:
+        return fromType(MifareClassicType.m2k);
+      case 4096:
+        return fromType(MifareClassicType.m4k);
+      default:
+        return null;
+    }
+  }
+
+  static MifareClassicGeometry? fromType(MifareClassicType type,
+      {bool isEV1 = false}) {
+    final blockCount = mfClassicGetBlockCount(type, isEV1: isEV1);
+    final sectorCount = mfClassicGetSectorCount(type, isEV1: isEV1);
+    if (blockCount == 0 || sectorCount == 0) {
+      return null;
+    }
+    return MifareClassicGeometry._(
+      type: type,
+      isEV1: isEV1,
+      blockCount: blockCount,
+      sectorCount: sectorCount,
+    );
+  }
+
+  bool matchesBlockData(List<Uint8List> data) {
+    if (data.length < blockCount) {
+      return false;
+    }
+    for (var block = 0; block < blockCount; block++) {
+      if (data[block].length != 16) {
+        return false;
+      }
+    }
+    for (var block = blockCount; block < data.length; block++) {
+      if (data[block].isNotEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static MifareClassicGeometry? fromSavedCard(CardSave card) {
+    if (!isMifareClassic(card.tag) ||
+        card.extraData.mifareClassicDumpComplete != true) {
+      return null;
+    }
+    return fromSavedCardData(card);
+  }
+
+  /// Returns the geometry when all expected MIFARE Classic blocks are present.
+  ///
+  /// Legacy saved cards do not have the completeness flag. Their structure can
+  /// still be validated, but callers must ask the user to confirm them before
+  /// treating the dump as complete.
+  static MifareClassicGeometry? fromSavedCardData(CardSave card) {
+    if (!isMifareClassic(card.tag)) {
+      return null;
+    }
+    final type = chameleonTagTypeGetMfClassicType(card.tag);
+    final geometry = fromType(
+      type,
+      isEV1: chameleonTagSaveCheckForMifareClassicEV1(card),
+    );
+    if (geometry == null || !geometry.matchesBlockData(card.data)) {
+      return null;
+    }
+    return geometry;
+  }
+}
+
+extension MifareClassicKeyProfileGeometry on MifareClassicKeyProfile {
+  MifareClassicGeometry? get geometry {
+    MifareClassicType? type;
+    for (final candidate in MifareClassicType.values) {
+      if (candidate.name == cardType) {
+        type = candidate;
+        break;
+      }
+    }
+    if (type == null) {
+      return null;
+    }
+
+    final geometry = MifareClassicGeometry.fromType(
+      type,
+      isEV1: type == MifareClassicType.m1k && sectorCount == 18,
+    );
+    return geometry?.sectorCount == sectorCount ? geometry : null;
+  }
+}
 
 final gMifareClassicKeys = gMifareClassicKeysList
     .map((key) => Uint8List.fromList([
@@ -101,37 +231,66 @@ final gMifareClassicBackdoorKeys = gMifareClassicBackdoorKeysList
         ]))
     .toList();
 
+bool _canContinueCardScan(CardScanContinuation? canContinue) =>
+    canContinue?.call() ?? true;
+
 Future<MifareClassicType> mfClassicGetType(
-    ChameleonCommunicator communicator) async {
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 255]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  ChameleonCommunicator communicator, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  final m4kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 255]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m4kResponse.length == 4) {
     return MifareClassicType.m4k;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 80]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  final m2kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 80]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m2kResponse.length == 4) {
     return MifareClassicType.m2k;
   }
 
-  if ((await communicator.send14ARaw(Uint8List.fromList([0x60, 63]),
-              checkResponseCrc: false))
-          .length ==
-      4) {
+  final m1kResponse = await communicator.send14ARaw(
+    Uint8List.fromList([0x60, 63]),
+    checkResponseCrc: false,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return MifareClassicType.none;
+  }
+  if (m1kResponse.length == 4) {
     return MifareClassicType.m1k;
   }
 
   return MifareClassicType.mini;
 }
 
-Future<bool> mfClassicHasBackdoor(ChameleonCommunicator communicator) async {
+Future<bool> mfClassicHasBackdoor(
+  ChameleonCommunicator communicator, {
+  CardScanContinuation? canContinue,
+}) async {
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
   Uint8List data = await communicator.send14ARaw(
       Uint8List.fromList([0x64, 0x00]),
       autoSelect: true,
       checkResponseCrc: false);
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
 
   if (data.length != 4) {
     return false;
@@ -139,6 +298,9 @@ Future<bool> mfClassicHasBackdoor(ChameleonCommunicator communicator) async {
 
   (int, NestedNonces, NestedNonces, Uint8List)? response =
       await communicator.getMf1StaticEncryptedNestedAcquire(sectorCount: 1);
+  if (!_canContinueCardScan(canContinue)) {
+    return false;
+  }
 
   return response != null;
 }
@@ -594,21 +756,35 @@ Future<(TagType, MifareClassicInfo)> performMifareClassicScan(
     MifareClassicInfo mfcInfo,
     BuildContext context,
     dynamic updateMifareClassicRecovery,
-    {TagType? override}) async {
+    {TagType? override,
+    CardScanContinuation? canContinue}) async {
   var appState = Provider.of<ChameleonGUIState>(context, listen: false);
   var localizations = AppLocalizations.of(context)!;
   MifareClassicType mifareClassicType;
 
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
+
   if (override != null) {
     mifareClassicType = chameleonTagTypeGetMfClassicType(override);
   } else {
-    mifareClassicType = await mfClassicGetType(communicator);
+    mifareClassicType = await mfClassicGetType(
+      communicator,
+      canContinue: canContinue,
+    );
+    if (!_canContinueCardScan(canContinue)) {
+      return (TagType.unknown, mfcInfo);
+    }
   }
 
   NTLevel ntLevel = NTLevel.unknown;
 
   bool isMifareClassicEV1 =
       await communicator.mf1Auth(0x45, 0x61, gMifareClassicKeys[3]);
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
   MifareClassicRecovery recovery = MifareClassicRecovery(
       update: updateMifareClassicRecovery,
@@ -616,12 +792,24 @@ Future<(TagType, MifareClassicInfo)> performMifareClassicScan(
       mifareClassicType: mifareClassicType,
       localizations: localizations,
       isMifareClassicEV1: isMifareClassicEV1);
+  if (isMifareClassicEV1) {
+    recovery.setKeyAsFound(17, 1, gMifareClassicKeys[3]);
+  }
 
   try {
     ntLevel = await communicator.getMf1NTLevel();
   } catch (_) {}
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
-  bool hasBackdoor = await mfClassicHasBackdoor(communicator);
+  bool hasBackdoor = await mfClassicHasBackdoor(
+    communicator,
+    canContinue: canContinue,
+  );
+  if (!_canContinueCardScan(canContinue)) {
+    return (TagType.unknown, mfcInfo);
+  }
 
   mfcInfo.recovery = recovery;
   mfcInfo.ntLevel = ntLevel;
