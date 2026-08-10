@@ -142,6 +142,14 @@ void main() {
       findsOneWidget,
     );
     expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byKey(const Key('home-slot-1-reorder-progress')),
+          )
+          .value,
+      isNull,
+    );
+    expect(
       find.byKey(const Key('home-slot-2-reorder-progress')),
       findsOneWidget,
     );
@@ -628,6 +636,20 @@ void main() {
     expect(
       find.byKey(const Key('home-slot-1-reorder-progress')),
       findsOneWidget,
+    );
+    for (final slot in [1, 2]) {
+      final progress = find.byKey(Key('home-slot-$slot-reorder-progress'));
+      expect(progress, findsOneWidget);
+      expect(tester.widget<LinearProgressIndicator>(progress).value, 1);
+    }
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byKey(const Key('home-slot-1-reorder-progress')),
+          )
+          .value,
+      1,
     );
     gate.complete();
     await tester.pumpAndSettle();

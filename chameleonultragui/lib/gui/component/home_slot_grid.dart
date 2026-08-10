@@ -1157,6 +1157,9 @@ class _SlotColumn extends StatelessWidget {
                           key: Key(
                             'home-slot-${index + 1}-reorder-progress',
                           ),
+                          value: MediaQuery.disableAnimationsOf(context)
+                              ? 1
+                              : null,
                           minHeight: 2,
                         ),
                       ),
