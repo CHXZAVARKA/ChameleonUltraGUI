@@ -371,7 +371,9 @@ class CardEditMenuState extends State<CardEditMenu> {
                   mifareClassicDumpComplete:
                       _generatedWholeCard && isMifareClassic(selectedType)
                           ? true
-                          : widget.tagSave.extraData.mifareClassicDumpComplete,
+                          : isMifareClassic(selectedType)
+                              ? false
+                              : null,
                   ultralightSignature:
                       hexToBytes(ultralightSignatureController.text),
                   ultralightVersion:
