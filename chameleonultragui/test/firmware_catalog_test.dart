@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
+import 'package:chameleonultragui/helpers/github.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -157,6 +158,42 @@ void main() {
   });
 
   group('firmware download channel', () {
+    test('selects one latest release for both commit and archive', () {
+      final release = selectLatestFirmwareRelease(
+        [
+          {
+            'author': {'login': 'github-actions[bot]'},
+            'prerelease': true,
+            'target_commitish': 'new-commit',
+            'assets': [
+              {
+                'name': 'ultra-dfu-app.zip',
+                'browser_download_url': 'https://example.test/new-ultra.zip',
+              },
+            ],
+          },
+          {
+            'author': {'login': 'github-actions[bot]'},
+            'prerelease': true,
+            'target_commitish': 'old-commit',
+            'assets': [
+              {
+                'name': 'ultra-dfu-app.zip',
+                'browser_download_url': 'https://example.test/old-ultra.zip',
+              },
+            ],
+          },
+        ],
+        ChameleonDevice.ultra,
+      );
+
+      expect(release?.commit, 'new-commit');
+      expect(
+        release?.applicationArchiveFor(ChameleonDevice.ultra),
+        Uri.parse('https://example.test/new-ultra.zip'),
+      );
+    });
+
     test('Custom downloads the model-specific release without Actions',
         () async {
       var actionCalls = 0;

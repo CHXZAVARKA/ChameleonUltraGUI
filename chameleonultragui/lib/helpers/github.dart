@@ -50,6 +50,61 @@ List<Map<String, String>> developers = [
   }
 ];
 
+class GitHubFirmwareRelease {
+  const GitHubFirmwareRelease({
+    required this.commit,
+    required this.applicationArchives,
+  });
+
+  final String commit;
+  final Map<ChameleonDevice, Uri> applicationArchives;
+
+  Uri? applicationArchiveFor(ChameleonDevice device) =>
+      applicationArchives[device];
+}
+
+GitHubFirmwareRelease? selectLatestFirmwareRelease(
+  Object? payload,
+  ChameleonDevice device,
+) {
+  if (payload is! List) {
+    return null;
+  }
+
+  final archiveName =
+      '${device == ChameleonDevice.ultra ? "ultra" : "lite"}-dfu-app.zip';
+  for (final candidate in payload) {
+    if (candidate is! Map || candidate['prerelease'] != true) {
+      continue;
+    }
+    final author = candidate['author'];
+    if (author is! Map || author['login'] != 'github-actions[bot]') {
+      continue;
+    }
+    final commit = candidate['target_commitish'];
+    final assets = candidate['assets'];
+    if (commit is! String || commit.isEmpty || assets is! List) {
+      continue;
+    }
+
+    for (final asset in assets) {
+      if (asset is! Map || asset['name'] != archiveName) {
+        continue;
+      }
+      final downloadUrl = asset['browser_download_url'];
+      final uri = downloadUrl is String ? Uri.tryParse(downloadUrl) : null;
+      if (uri == null || !uri.hasScheme) {
+        continue;
+      }
+      return GitHubFirmwareRelease(
+        commit: commit,
+        applicationArchives: {device: uri},
+      );
+    }
+  }
+  return null;
+}
+
 List<String> excludedAccounts = ["github-actions[bot]", "ChameleonHelper"];
 
 Future<List<Map<String, String>>> fetchGitHubContributors() async {
@@ -101,17 +156,10 @@ Future<Uint8List> fetchFirmwareFromReleases(
       throw error;
     }
 
-    for (var release in releases) {
-      if (release["prerelease"]) {
-        for (var file in release["assets"]) {
-          if (file["name"] ==
-              "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app.zip") {
-            content =
-                await http.readBytes(Uri.parse(file["browser_download_url"]));
-            break;
-          }
-        }
-      }
+    final release = selectLatestFirmwareRelease(releases, device);
+    final archive = release?.applicationArchiveFor(device);
+    if (archive != null) {
+      content = await http.readBytes(archive);
     }
   } catch (_) {}
 
@@ -202,12 +250,7 @@ Future<String> latestAvailableCommit(
       throw error;
     }
 
-    for (var release in releases) {
-      if (release["author"]["login"] == "github-actions[bot]" &&
-          release["prerelease"]) {
-        return release["target_commitish"];
-      }
-    }
+    return selectLatestFirmwareRelease(releases, device)?.commit ?? '';
   } catch (_) {}
 
   if (error.isNotEmpty) {
