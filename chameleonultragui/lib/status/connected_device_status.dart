@@ -604,6 +604,13 @@ class SlotMutationConnectionChanged implements Exception {
   String toString() => 'The connected-device session changed';
 }
 
+class SlotMutationBusy implements Exception {
+  const SlotMutationBusy();
+
+  @override
+  String toString() => 'Another slot mutation is in progress';
+}
+
 class SlotMutationScope {
   const SlotMutationScope._(this._session);
 
@@ -736,15 +743,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish) {
           return SlotReorderCapability.unknown;
         }
-        final capability =
-            result.value!.contains(ChameleonCommand.swapSlots.value)
-                ? SlotReorderCapability.supported
-                : SlotReorderCapability.unsupported;
-        _publish(
-          _snapshot.copyWith(
-            slots: _snapshot.slots.copyWith(reorderCapability: capability),
-          ),
-        );
+        final capability = _deriveSlotReorderCapability(result.value!);
+        _publishSlotReorderCapability(capability);
         return capability;
       }
     } catch (error, stackTrace) {
@@ -1286,6 +1286,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     Future<T> Function(SlotMutationScope mutation) operation, {
     bool reconcileMode = false,
   }) {
+    if (_snapshot.slots.pendingReorder != null) {
+      return Future<T>.error(const SlotMutationBusy());
+    }
     return _rfOperations.runForeground(() async {
       final mutation = SlotMutationScope._(_session);
       mutation.ensureCurrent();
@@ -1407,25 +1410,43 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish || readBack == null) {
           return SlotReorderOutcome.connectionChanged;
         }
-        final reconciled = _preciseReorderReconciliation(
+        var reconciled = _preciseReorderReconciliation(
+          previous,
           readBack,
           source,
           target,
         ).copyWith(pendingReorder: null);
-        _publish(_snapshot.copyWith(slots: reconciled));
 
         if (_reorderReconciliationUnresolved(reconciled)) {
+          _publish(_snapshot.copyWith(slots: reconciled));
           return replyWasAmbiguous
               ? SlotReorderOutcome.ambiguous
               : SlotReorderOutcome.reconciliationFailed;
         }
-        if (!replyWasAmbiguous ||
-            _matchesExpectedSwap(previous, reconciled, source, target)) {
+        if (!replyWasAmbiguous) {
+          _publish(_snapshot.copyWith(slots: reconciled));
           return SlotReorderOutcome.confirmed;
         }
-        return _matchesConfirmedOrder(previous, reconciled)
-            ? SlotReorderOutcome.failed
-            : SlotReorderOutcome.ambiguous;
+
+        final matchesExpected =
+            _matchesExpectedSwap(previous, reconciled, source, target);
+        final matchesPrevious = _matchesConfirmedOrder(previous, reconciled);
+        if (matchesExpected && !matchesPrevious) {
+          _publish(_snapshot.copyWith(slots: reconciled));
+          return SlotReorderOutcome.confirmed;
+        }
+        if (!matchesExpected && matchesPrevious) {
+          _publish(_snapshot.copyWith(slots: reconciled));
+          return SlotReorderOutcome.failed;
+        }
+
+        reconciled = _markReorderPositionsStale(
+          reconciled,
+          source,
+          target,
+        );
+        _publish(_snapshot.copyWith(slots: reconciled));
+        return SlotReorderOutcome.ambiguous;
       });
     } catch (error, stackTrace) {
       _session.appState.log?.w(
@@ -1451,14 +1472,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       if (!_canPublish) {
         return SlotReorderCapability.unknown;
       }
-      final capability = capabilities.contains(ChameleonCommand.swapSlots.value)
-          ? SlotReorderCapability.supported
-          : SlotReorderCapability.unsupported;
-      _publish(
-        _snapshot.copyWith(
-          slots: _snapshot.slots.copyWith(reorderCapability: capability),
-        ),
-      );
+      final capability = _deriveSlotReorderCapability(capabilities);
+      _publishSlotReorderCapability(capability);
       return capability;
     } catch (error, stackTrace) {
       _session.appState.log?.w(
@@ -1480,10 +1495,25 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<List<int>> _readDeviceCapabilitiesOnce() =>
-      _deviceCapabilitiesRead ??=
-          _session.communicator.getDeviceCapabilities();
+      _deviceCapabilitiesRead ??= _session.communicator.getDeviceCapabilities();
+
+  SlotReorderCapability _deriveSlotReorderCapability(
+    List<int> capabilities,
+  ) =>
+      capabilities.contains(ChameleonCommand.swapSlots.value)
+          ? SlotReorderCapability.supported
+          : SlotReorderCapability.unsupported;
+
+  void _publishSlotReorderCapability(SlotReorderCapability capability) {
+    _publish(
+      _snapshot.copyWith(
+        slots: _snapshot.slots.copyWith(reorderCapability: capability),
+      ),
+    );
+  }
 
   SlotsStatus _preciseReorderReconciliation(
+    SlotsStatus previous,
     SlotsStatus reconciled,
     int source,
     int target,
@@ -1498,7 +1528,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       SlotFacet.enabledStates,
       SlotFacet.names,
     ]) {
-      if (globalStale.remove(facet)) {
+      if (globalStale.contains(facet) &&
+          !previous.staleFacets.contains(facet)) {
+        globalStale.remove(facet);
         staleBySlot.putIfAbsent(source, () => <SlotFacet>{}).add(facet);
         staleBySlot.putIfAbsent(target, () => <SlotFacet>{}).add(facet);
       }
@@ -1510,6 +1542,32 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         staleBySlot,
       ),
       staleFacets: globalStale,
+      staleSlotFacets: staleBySlot,
+    );
+  }
+
+  SlotsStatus _markReorderPositionsStale(
+    SlotsStatus slots,
+    int source,
+    int target,
+  ) {
+    final staleBySlot = <int, Set<SlotFacet>>{
+      for (final entry in slots.staleSlotFacets.entries)
+        entry.key: {...entry.value},
+    };
+    for (final position in [source, target]) {
+      staleBySlot.putIfAbsent(position, () => <SlotFacet>{}).addAll(const {
+        SlotFacet.types,
+        SlotFacet.enabledStates,
+        SlotFacet.names,
+      });
+    }
+    return slots.copyWith(
+      availability: _slotsAvailability(
+        slots.staleFacets,
+        slots.unavailableFacets,
+        staleBySlot,
+      ),
       staleSlotFacets: staleBySlot,
     );
   }

@@ -213,6 +213,116 @@ void main() {
     expect(fixture.status.snapshot.slots.activeSlot.value, 1);
   });
 
+  test('lost reply stays ambiguous when source and target look identical',
+      () async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    fixture.communicator
+      ..makeSlotsVisiblyIdentical(0, 1)
+      ..activeSlot = 7;
+    await fixture.status.refreshSlots();
+    fixture.communicator
+      ..events.clear()
+      ..loseSwapReply = true
+      ..applySwapBeforeLostReply = true;
+
+    expect(
+      await fixture.status.reorderSlots(0, 1),
+      SlotReorderOutcome.ambiguous,
+    );
+
+    final slots = fixture.status.snapshot.slots;
+    expect(fixture.communicator.swapCalls, 1);
+    expect(
+      fixture.communicator.events.where((event) => event.startsWith('swap:')),
+      ['swap:0:1'],
+    );
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, isEmpty);
+    expect(slots.staleSlotFacets.keys, {0, 1});
+    expect(
+      slots.staleSlotFacets[0],
+      {SlotFacet.types, SlotFacet.enabledStates, SlotFacet.names},
+    );
+    expect(
+      slots.staleSlotFacets[1],
+      {SlotFacet.types, SlotFacet.enabledStates, SlotFacet.names},
+    );
+  });
+
+  test('acknowledged reorder confirms visibly identical positions', () async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    fixture.communicator
+      ..makeSlotsVisiblyIdentical(0, 1)
+      ..activeSlot = 7;
+    await fixture.status.refreshSlots();
+    fixture.communicator.events.clear();
+
+    expect(
+      await fixture.status.reorderSlots(0, 1),
+      SlotReorderOutcome.confirmed,
+    );
+
+    final slots = fixture.status.snapshot.slots;
+    expect(fixture.communicator.swapCalls, 1);
+    expect(slots.availability, SlotsAvailability.available);
+    expect(slots.staleFacets, isEmpty);
+    expect(slots.staleSlotFacets, isEmpty);
+  });
+
+  test('slot mutations fail busy during reorder and work after it completes',
+      () async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    await fixture.status.refreshSlots();
+    final gate = Completer<void>();
+    addTearDown(() {
+      if (!gate.isCompleted) {
+        gate.complete();
+      }
+    });
+    fixture.communicator.swapGate = gate;
+
+    final reorder = fixture.status.reorderSlots(0, 1);
+    await fixture.communicator.swapStarted.future;
+    var blockedOperationStarted = false;
+
+    await expectLater(
+      fixture.status.mutateSlots<void>((mutation) async {
+        blockedOperationStarted = true;
+        await mutation.run(
+          (communicator) => communicator.setSlotTagName(
+            2,
+            'Must not run',
+            TagFrequency.hf,
+          ),
+        );
+      }).timeout(const Duration(milliseconds: 100)),
+      throwsA(isA<SlotMutationBusy>()),
+    );
+    expect(blockedOperationStarted, isFalse);
+    expect(fixture.communicator.slotMutationCalls, 0);
+
+    gate.complete();
+    expect(await reorder, SlotReorderOutcome.confirmed);
+
+    await fixture.status.mutateSlots<void>(
+      (mutation) => mutation.run(
+        (communicator) => communicator.setSlotTagName(
+          2,
+          'After reorder',
+          TagFrequency.hf,
+        ),
+      ),
+    );
+    expect(fixture.communicator.slotMutationCalls, 1);
+    expect(
+      fixture.status.snapshot.slots.slots[2].hf.name.value,
+      'After reorder',
+    );
+  });
+
   test('successful commit with incomplete read-back is reconciliationFailed',
       () async {
     final fixture = _fixture();
@@ -230,6 +340,33 @@ void main() {
     expect(fixture.communicator.swapCalls, 1);
     expect(fixture.status.snapshot.slots.staleSlotFacets.keys, {2, 5});
     expect(fixture.status.snapshot.slots.pendingReorder, isNull);
+  });
+
+  test('reorder preserves inherited global stale facets on read-back failure',
+      () async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    await fixture.status.refreshSlots();
+    fixture.communicator.failNames = true;
+    await fixture.status.refreshSlots();
+    expect(
+      fixture.status.snapshot.slots.staleFacets,
+      {SlotFacet.names},
+    );
+
+    expect(
+      await fixture.status.reorderSlots(2, 5),
+      SlotReorderOutcome.reconciliationFailed,
+    );
+
+    final slots = fixture.status.snapshot.slots;
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, {SlotFacet.names});
+    expect(slots.staleSlotFacets, isEmpty);
+    for (var index = 0; index < 8; index++) {
+      expect(slots.slots[index].hf.name.value, 'Slot ${index + 1} HF');
+      expect(slots.slots[index].lf.name.value, 'Slot ${index + 1} LF');
+    }
   });
 
   test('lost reply marks only unresolved source and target facts stale',
@@ -474,6 +611,7 @@ class _ReorderCommunicator extends ChameleonCommunicator {
   int enabledSlotReads = 0;
   int slotNameReads = 0;
   int activeSlotReads = 0;
+  int slotMutationCalls = 0;
   int activeSlot = 0;
   Completer<void>? swapGate;
   Completer<void> swapStarted = Completer<void>();
@@ -481,6 +619,21 @@ class _ReorderCommunicator extends ChameleonCommunicator {
   late List<SlotTypes> slotTypes;
   late List<EnabledSlotInfo> enabledSlots;
   late List<SlotNames> slotNames;
+
+  void makeSlotsVisiblyIdentical(int source, int target) {
+    slotTypes[target] = SlotTypes(
+      hf: slotTypes[source].hf,
+      lf: slotTypes[source].lf,
+    );
+    enabledSlots[target] = EnabledSlotInfo(
+      hf: enabledSlots[source].hf,
+      lf: enabledSlots[source].lf,
+    );
+    slotNames[target] = SlotNames(
+      hf: slotNames[source].hf,
+      lf: slotNames[source].lf,
+    );
+  }
 
   @override
   Future<List<int>> getDeviceCapabilities() async {
@@ -564,6 +717,20 @@ class _ReorderCommunicator extends ChameleonCommunicator {
     activeSlotReads++;
     events.add('active');
     return activeSlot;
+  }
+
+  @override
+  Future<void> setSlotTagName(
+    int index,
+    String name,
+    TagFrequency frequency,
+  ) async {
+    slotMutationCalls++;
+    final current = slotNames[index];
+    slotNames[index] = SlotNames(
+      hf: frequency == TagFrequency.hf ? name : current.hf,
+      lf: frequency == TagFrequency.lf ? name : current.lf,
+    );
   }
 }
 
