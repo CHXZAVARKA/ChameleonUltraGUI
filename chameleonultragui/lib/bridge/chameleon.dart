@@ -518,8 +518,19 @@ class ChameleonCommunicator {
 
   Future<void> activateSlot(int slot) async {
     // Slot 0-7
-    await sendCmd(ChameleonCommand.setActiveSlot,
-        data: Uint8List.fromList([slot]));
+    final response = await sendCmd(
+      ChameleonCommand.setActiveSlot,
+      data: Uint8List.fromList([slot]),
+    );
+    if (response?.status != 0x68) {
+      final status = response?.status;
+      throw StateError(
+        status == null
+            ? 'Slot activation returned no response'
+            : 'Slot activation failed with status '
+                '0x${status.toRadixString(16)}',
+      );
+    }
   }
 
   Future<void> setSlotType(int slot, TagType type) async {

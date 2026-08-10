@@ -1268,38 +1268,41 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_session.isCurrent) {
           return false;
         }
-        await _session.communicator.activateSlot(slot);
-        if (!_canPublish) {
-          return false;
-        }
         try {
-          final confirmedSlot = await _session.communicator.getActiveSlot();
+          await _session.communicator.activateSlot(slot);
           if (!_canPublish) {
             return false;
           }
-          if (confirmedSlot < 0 || confirmedSlot >= 8) {
-            throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
-          }
-          if (confirmedSlot == slot) {
-            _publishActiveSlot(confirmedSlot, stale: false);
-            return true;
-          }
-          _session.appState.log?.w(
-            'Connected-device slot confirmation is lagging the acknowledged activation',
-          );
-          _publishActiveSlot(slot, stale: true);
+          _publishActiveSlot(slot, stale: false);
           return true;
         } catch (error, stackTrace) {
           _session.appState.log?.w(
-            'Unable to confirm connected-device slot activation',
+            'Slot activation reply was unavailable; checking the active slot',
             error: error,
             stackTrace: stackTrace,
           );
           if (!_canPublish) {
             return false;
           }
-          _publishActiveSlot(slot, stale: true);
-          return true;
+          try {
+            final confirmedSlot = await _session.communicator.getActiveSlot();
+            if (!_canPublish) {
+              return false;
+            }
+            if (confirmedSlot < 0 || confirmedSlot >= 8) {
+              throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
+            }
+            _publishActiveSlot(confirmedSlot, stale: false);
+            return confirmedSlot == slot;
+          } catch (confirmationError, confirmationStackTrace) {
+            _session.appState.log?.w(
+              'Unable to resolve ambiguous connected-device slot activation',
+              error: confirmationError,
+              stackTrace: confirmationStackTrace,
+            );
+            _publishActivationFailure();
+            return false;
+          }
         }
       });
     } catch (error, stackTrace) {
@@ -1308,29 +1311,36 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         error: error,
         stackTrace: stackTrace,
       );
-      if (_canPublish && _snapshot.slots.activeSlot.isConfirmed) {
-        final currentSlots = _snapshot.slots;
-        _publish(
-          _snapshot.copyWith(
-            slots: currentSlots.copyWith(
-              availability: SlotsAvailability.stale,
-              staleFacets: {
-                ...currentSlots.staleFacets,
-                SlotFacet.activeSlot,
-              },
-              pendingActivation: null,
-            ),
-          ),
-        );
-      } else if (_canPublish) {
-        _publish(
-          _snapshot.copyWith(
-            slots: _snapshot.slots.copyWith(pendingActivation: null),
-          ),
-        );
-      }
+      _publishActivationFailure();
       return false;
     }
+  }
+
+  void _publishActivationFailure() {
+    if (!_canPublish) {
+      return;
+    }
+    if (_snapshot.slots.activeSlot.isConfirmed) {
+      final currentSlots = _snapshot.slots;
+      _publish(
+        _snapshot.copyWith(
+          slots: currentSlots.copyWith(
+            availability: SlotsAvailability.stale,
+            staleFacets: {
+              ...currentSlots.staleFacets,
+              SlotFacet.activeSlot,
+            },
+            pendingActivation: null,
+          ),
+        ),
+      );
+      return;
+    }
+    _publish(
+      _snapshot.copyWith(
+        slots: _snapshot.slots.copyWith(pendingActivation: null),
+      ),
+    );
   }
 
   void _publishActiveSlot(int activeSlot, {required bool stale}) {

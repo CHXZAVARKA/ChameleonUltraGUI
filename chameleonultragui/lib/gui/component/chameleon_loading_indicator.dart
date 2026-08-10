@@ -70,16 +70,20 @@ class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                Transform.rotate(
-                  key: const Key('chameleon-loader-c'),
-                  angle: progress * math.pi * 2,
-                  child: SvgPicture.asset(
-                    'assets/loading/chameleon-c.svg',
-                    width: widget.size * 0.62,
-                    height: widget.size * 0.72,
-                    colorFilter: ColorFilter.mode(
-                      outerColor,
-                      BlendMode.srcIn,
+                Transform.translate(
+                  key: const Key('chameleon-loader-c-alignment'),
+                  offset: Offset(0, -widget.size / 56),
+                  child: Transform.rotate(
+                    key: const Key('chameleon-loader-c'),
+                    angle: progress * math.pi * 2,
+                    child: SvgPicture.asset(
+                      'assets/loading/chameleon-c.svg',
+                      width: widget.size * 0.62,
+                      height: widget.size * 0.72,
+                      colorFilter: ColorFilter.mode(
+                        outerColor,
+                        BlendMode.srcIn,
+                      ),
                     ),
                   ),
                 ),

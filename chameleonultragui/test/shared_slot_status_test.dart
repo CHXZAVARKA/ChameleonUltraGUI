@@ -693,8 +693,8 @@ void main() {
     expect(lastSlotRect.left, greaterThanOrEqualTo(scrollRect.left));
     expect(lastSlotRect.right, lessThanOrEqualTo(scrollRect.right));
 
-    final confirmationGate = Completer<void>();
-    communicator.nextActiveGate = confirmationGate;
+    final activationGate = Completer<void>();
+    communicator.activationGate = activationGate;
     await tester.ensureVisible(slotFinders[1]);
     await tester.pumpAndSettle();
     await tester.tap(slotFinders[1]);
@@ -706,26 +706,26 @@ void main() {
       expect(data.flagsCollection.isEnabled, Tristate.isFalse);
     }
 
-    confirmationGate.complete();
+    activationGate.complete();
     await tester.pumpAndSettle();
     semantics.dispose();
   });
 
   testWidgets(
-      'Home blocks repeated activation and moves frame only after reread',
+      'Home blocks repeated activation and moves frame after command reply',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
     await tester.pumpAndSettle();
     communicator.commandEvents.clear();
-    final confirmationGate = Completer<void>();
-    communicator.nextActiveGate = confirmationGate;
+    final activationGate = Completer<void>();
+    communicator.activationGate = activationGate;
 
     await tester.tap(find.byKey(const Key('home-slot-2')));
     await tester.pump();
 
-    expect(communicator.commandEvents, ['activate:1', 'read-active']);
+    expect(communicator.commandEvents, ['activate:1']);
     expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
     expect(
       find.byKey(const Key('home-slot-2-hf-mark-empty')),
@@ -746,7 +746,7 @@ void main() {
     await tester.pump();
     expect(communicator.activations, [1]);
 
-    confirmationGate.complete();
+    activationGate.complete();
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
@@ -755,14 +755,15 @@ void main() {
   });
 
   testWidgets(
-      'successful slot command survives a lost confirmation without an error',
+      'successful slot reply does not wait for a redundant confirmation',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
     await tester.pumpAndSettle();
+    final initialActiveReads = communicator.activeSlotReads;
     communicator.scriptedActiveSlotReads.add(
-      StateError('confirmation unavailable'),
+      StateError('must not be consumed by activation'),
     );
 
     await tester.tap(find.byKey(const Key('home-slot-2')));
@@ -773,9 +774,56 @@ void main() {
     expect(communicator.activations, [1]);
     expect(slots.activeSlot.value, 1);
     expect(slots.pendingActivation, isNull);
-    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
+    expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
+    expect(communicator.activeSlotReads, initialActiveReads);
+    expect(communicator.scriptedActiveSlotReads, hasLength(1));
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
     expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+  });
+
+  testWidgets('slot frame moves on the command reply without a blocking reread',
+      (tester) async {
+    final activationGate = Completer<void>();
+    final communicator = _SlotCommunicator()..activationGate = activationGate;
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    communicator.commandEvents.clear();
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
+    expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
+
+    activationGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(communicator.commandEvents, ['activate:1']);
+    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+  });
+
+  testWidgets(
+      'lost activation reply confirms an applied slot without another tap',
+      (tester) async {
+    final communicator = _SlotCommunicator()
+      ..failActivation = true
+      ..applyActivationBeforeFailure = true;
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    communicator.commandEvents.clear();
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(communicator.activations, [1]);
+    expect(communicator.commandEvents, ['activate:1', 'read-active']);
+    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
     expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
   });
 
@@ -1492,10 +1540,7 @@ void main() {
     });
     await foregroundStarted.future;
 
-    communicator.scriptedActiveSlotReads.addAll([
-      1,
-      StateError('active slot unavailable after activation'),
-    ]);
+    communicator.scriptedActiveSlotReads.add(1);
     final observedActiveSlots = <int?>[];
     status.addListener(
       () => observedActiveSlots.add(status.snapshot.slots.activeSlot.value),
@@ -1515,8 +1560,8 @@ void main() {
     final slots = status.snapshot.slots;
     expect(slots.activeSlot.value, 1);
     expect(slots.activeSlot.isConfirmed, isTrue);
-    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
-    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
+    expect(slots.availability, SlotsAvailability.available);
     final activationPublication = observedActiveSlots.indexOf(1);
     expect(activationPublication, isNonNegative);
     expect(
@@ -1525,7 +1570,7 @@ void main() {
     );
   });
 
-  testWidgets('invalid activation reread keeps the acknowledged target stale',
+  testWidgets('invalid fallback read keeps the previous active slot stale',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -1535,18 +1580,20 @@ void main() {
     final status = appState.connectedDeviceStatus!;
     expect(status.snapshot.slots.activeSlot.value, 0);
 
-    communicator.scriptedActiveSlotReads.add(8);
-    expect(await status.activateSlot(1), isTrue);
+    communicator
+      ..failActivation = true
+      ..scriptedActiveSlotReads.add(8);
+    expect(await status.activateSlot(1), isFalse);
     await tester.pump();
 
     final slots = status.snapshot.slots;
     expect(communicator.activations, [1]);
-    expect(slots.activeSlot.value, 1);
+    expect(slots.activeSlot.value, 0);
     expect(slots.staleFacets, contains(SlotFacet.activeSlot));
     expect(slots.availability, SlotsAvailability.stale);
   });
 
-  testWidgets('lagging activation reread keeps the acknowledged target stale',
+  testWidgets('failed reply publishes a confirmed unchanged active slot',
       (tester) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -1556,15 +1603,17 @@ void main() {
     final status = appState.connectedDeviceStatus!;
     expect(status.snapshot.slots.activeSlot.value, 0);
 
-    communicator.scriptedActiveSlotReads.add(0);
-    expect(await status.activateSlot(1), isTrue);
+    communicator
+      ..failActivation = true
+      ..scriptedActiveSlotReads.add(0);
+    expect(await status.activateSlot(1), isFalse);
     await tester.pump();
 
     final slots = status.snapshot.slots;
     expect(communicator.activations, [1]);
-    expect(slots.activeSlot.value, 1);
-    expect(slots.staleFacets, contains(SlotFacet.activeSlot));
-    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.activeSlot.value, 0);
+    expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
+    expect(slots.availability, SlotsAvailability.available);
   });
 
   testWidgets(
@@ -1700,7 +1749,7 @@ void main() {
     expect(status.snapshot.slots.activeSlot.value, 1);
     expect(
       status.snapshot.slots.staleFacets,
-      contains(SlotFacet.activeSlot),
+      isNot(contains(SlotFacet.activeSlot)),
     );
     expect(status.snapshot.slots.pendingActivation, isNull);
   });
@@ -2827,6 +2876,7 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Completer<void>? nextActiveGate;
   Completer<void>? activationGate;
   bool failActivation = false;
+  bool applyActivationBeforeFailure = false;
   bool failModeRead = false;
   bool readerMode = false;
   Completer<void>? modeWriteGate;
@@ -2914,6 +2964,9 @@ class _SlotCommunicator extends ChameleonCommunicator {
     commandEvents.add('activate:$slot');
     activations.add(slot);
     await activationGate?.future;
+    if (applyActivationBeforeFailure) {
+      activeSlot = slot;
+    }
     if (failActivation) {
       throw StateError('slot activation unavailable');
     }

@@ -37,6 +37,20 @@ void main() {
     expect(after.transform, isNot(beforeTransform));
   });
 
+  testWidgets('optically aligns C above the geometric U center',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: ChameleonLoadingIndicator()),
+      ),
+    );
+
+    final alignment = tester.widget<Transform>(
+      find.byKey(const Key('chameleon-loader-c-alignment')),
+    );
+    expect(alignment.transform.storage[13], closeTo(-1, 0.01));
+  });
+
   testWidgets('stays still when reduced motion is enabled', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
