@@ -93,7 +93,7 @@ class EmulatorSerial extends AbstractSerial {
     } else if (emulatedCommands.containsKey(bytesToHex(command))) {
       await messageCallback(hexToBytes(emulatedCommands[bytesToHex(command)]!));
     } else {
-      log.e('Missing response for ${bytesToHex(command)}');
+      logMissingEmulatorResponse(command);
     }
 
     return true;
@@ -169,8 +169,7 @@ class EmulatorSerial extends AbstractSerial {
       case ChameleonCommand.getDeviceCapabilities:
         final existingResponse =
             hexToBytes(emulatedCommands[bytesToHex(frame)]!);
-        final existingLength =
-            (existingResponse[6] << 8) | existingResponse[7];
+        final existingLength = (existingResponse[6] << 8) | existingResponse[7];
         responseData = Uint8List.fromList([
           ...existingResponse.sublist(9, 9 + existingLength),
           ...u16ToBytes(ChameleonCommand.swapSlots.value),

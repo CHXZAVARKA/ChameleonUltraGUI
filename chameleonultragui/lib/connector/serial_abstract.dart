@@ -105,4 +105,23 @@ abstract class AbstractSerial {
   void notifyConnectionStateChanged() {
     connectionStateCallback?.call();
   }
+
+  @protected
+  void logUnexpectedSerialData(Uint8List data) {
+    log.w(
+      'Serial frame: direction = receive, status = unavailable, '
+      'length = ${data.length}, data = <redacted ${data.length} byte(s)>, '
+      'outcome = parser-error',
+    );
+  }
+
+  @protected
+  void logMissingEmulatorResponse(Uint8List command) {
+    log.e(
+      'Serial frame: direction = send, status = unavailable, '
+      'length = ${command.length}, '
+      'data = <redacted ${command.length} byte(s)>, '
+      'outcome = unsupported-emulator-command',
+    );
+  }
 }
