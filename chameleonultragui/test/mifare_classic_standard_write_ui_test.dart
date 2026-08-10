@@ -785,7 +785,6 @@ void main() {
       matchesSemantics(
         label: progressLabel,
         textDirection: TextDirection.ltr,
-        isLiveRegion: true,
       ),
     );
     expect(

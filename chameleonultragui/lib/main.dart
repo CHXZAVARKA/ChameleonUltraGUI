@@ -73,11 +73,12 @@ class ChameleonGUIState extends ChangeNotifier {
   ReadCardSession _readCardSession = ReadCardSession();
   final RfOperationCoordinator rfOperations = RfOperationCoordinator();
 
-  AbstractSerial? _readCardSessionConnector;
-  ChameleonCommunicator? _readCardSessionCommunicator;
-  bool _readCardSessionConnected = false;
-  bool _readCardSessionDfu = false;
-  bool _readCardSessionBindingInitialized = false;
+  AbstractSerial? _connectedDeviceSessionConnector;
+  ChameleonCommunicator? _connectedDeviceSessionCommunicator;
+  bool _connectedDeviceSessionConnected = false;
+  bool _connectedDeviceSessionDfu = false;
+  bool _connectedDeviceSessionBindingInitialized = false;
+  Object _connectedDeviceSessionToken = Object();
   StandardWriteActivity? _standardWriteActivity;
 
   final Map<Object, (AbstractSerial, ChameleonCommunicator)>
@@ -117,6 +118,11 @@ class ChameleonGUIState extends ChangeNotifier {
     return _readCardSession;
   }
 
+  Object get connectedDeviceSessionToken {
+    _synchronizeConnectedDeviceSession();
+    return _connectedDeviceSessionToken;
+  }
+
   StandardWriteActivity? get standardWriteActivity {
     _synchronizeConnectedDeviceSession();
     return _standardWriteActivity;
@@ -128,8 +134,8 @@ class ChameleonGUIState extends ChangeNotifier {
     required StandardWriteActivity activity,
   }) {
     _synchronizeConnectedDeviceSession();
-    if (!_readCardSessionConnected ||
-        _readCardSessionDfu ||
+    if (!_connectedDeviceSessionConnected ||
+        _connectedDeviceSessionDfu ||
         !identical(_connector, connector) ||
         !identical(_communicator, communicator)) {
       return;
@@ -167,26 +173,27 @@ class ChameleonGUIState extends ChangeNotifier {
     final communicator = _communicator;
     final connected = connector?.connected == true;
     final isDfu = connector?.isDFU == true;
-    final bindingChanged = !_readCardSessionBindingInitialized ||
-        !identical(_readCardSessionConnector, connector) ||
-        !identical(_readCardSessionCommunicator, communicator) ||
-        _readCardSessionConnected != connected ||
-        _readCardSessionDfu != isDfu;
+    final bindingChanged = !_connectedDeviceSessionBindingInitialized ||
+        !identical(_connectedDeviceSessionConnector, connector) ||
+        !identical(_connectedDeviceSessionCommunicator, communicator) ||
+        _connectedDeviceSessionConnected != connected ||
+        _connectedDeviceSessionDfu != isDfu;
     if (!bindingChanged) {
       return;
     }
 
-    if (_readCardSessionBindingInitialized) {
+    if (_connectedDeviceSessionBindingInitialized) {
       _readCardSession = ReadCardSession();
+      _connectedDeviceSessionToken = Object();
       _standardWriteActivity = null;
       _sessionWakelockOwners.clear();
       _updateWakelock();
     }
-    _readCardSessionConnector = connector;
-    _readCardSessionCommunicator = communicator;
-    _readCardSessionConnected = connected;
-    _readCardSessionDfu = isDfu;
-    _readCardSessionBindingInitialized = true;
+    _connectedDeviceSessionConnector = connector;
+    _connectedDeviceSessionCommunicator = communicator;
+    _connectedDeviceSessionConnected = connected;
+    _connectedDeviceSessionDfu = isDfu;
+    _connectedDeviceSessionBindingInitialized = true;
   }
 
   Object? acquireSessionWakelock({
@@ -194,8 +201,8 @@ class ChameleonGUIState extends ChangeNotifier {
     required ChameleonCommunicator communicator,
   }) {
     _synchronizeConnectedDeviceSession();
-    if (!_readCardSessionConnected ||
-        _readCardSessionDfu ||
+    if (!_connectedDeviceSessionConnected ||
+        _connectedDeviceSessionDfu ||
         !identical(_connector, connector) ||
         !identical(_communicator, communicator)) {
       return null;
@@ -310,7 +317,7 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   var selectedIndex = 0;
-  ReadCardSession? _writeCardPageSession;
+  Object? _writeCardPageSessionToken;
   GlobalKey<WriteCardPageState> _writeCardPageKey =
       GlobalKey<WriteCardPageState>();
 
@@ -387,9 +394,9 @@ class _MainPageState extends State<MainPage> {
     }
 
     appState.devMode = appState.sharedPreferencesProvider.isDebugMode();
-    final connectedDeviceSession = appState.readCardSession;
-    if (!identical(_writeCardPageSession, connectedDeviceSession)) {
-      _writeCardPageSession = connectedDeviceSession;
+    final connectedDeviceSessionToken = appState.connectedDeviceSessionToken;
+    if (!identical(_writeCardPageSessionToken, connectedDeviceSessionToken)) {
+      _writeCardPageSessionToken = connectedDeviceSessionToken;
       _writeCardPageKey = GlobalKey<WriteCardPageState>();
     }
     final writeCardPage = WriteCardPage(key: _writeCardPageKey);
@@ -580,7 +587,6 @@ class _MainPageState extends State<MainPage> {
                                         label:
                                             '${AppLocalizations.of(context)!.write_card}. '
                                             '${standardWriteProgress.label}',
-                                        liveRegion: true,
                                         child: ExcludeSemantics(
                                           child: Badge(
                                             smallSize: 8,
