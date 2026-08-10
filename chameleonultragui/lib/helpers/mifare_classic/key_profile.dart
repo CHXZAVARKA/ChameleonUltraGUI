@@ -172,12 +172,7 @@ class MifareClassicKeyProfile {
     );
   }
 
-  int get keyCount => assignments.fold(
-      0,
-      (count, assignment) =>
-          count +
-          (assignment.keyA == null ? 0 : 1) +
-          (assignment.keyB == null ? 0 : 1));
+  int get keyCount => keyUsages.length;
 
   List<MifareClassicKeyUsage> get keyUsages {
     final grouped = <String, MifareClassicKeyUsage>{};
