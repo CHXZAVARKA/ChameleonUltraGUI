@@ -3,6 +3,7 @@ import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
+import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
@@ -465,6 +466,56 @@ class _FirmwareDetailsDialog extends StatelessWidget {
                   label: localizations.last_check_result,
                   value: _firmwareCheckResultLabel(localizations, firmware),
                 ),
+                const SizedBox(height: 12),
+                Text(
+                  localizations.firmware_channel,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 6),
+                Semantics(
+                  container: true,
+                  label: localizations.firmware_channel,
+                  child: SegmentedButton<FirmwareChannel>(
+                    key: const Key('firmware-channel-control'),
+                    segments: [
+                      ButtonSegment<FirmwareChannel>(
+                        value: FirmwareChannel.official,
+                        label: Text(
+                          localizations.firmware_channel_official,
+                          key: const Key('firmware-channel-official'),
+                        ),
+                      ),
+                      ButtonSegment<FirmwareChannel>(
+                        value: FirmwareChannel.custom,
+                        label: Text(
+                          localizations.firmware_channel_custom,
+                          key: const Key('firmware-channel-custom'),
+                        ),
+                      ),
+                    ],
+                    selected: {status.firmwareChannel},
+                    onSelectionChanged: firmware.installing ||
+                            firmware.state == FirmwareState.demo
+                        ? null
+                        : (selection) {
+                            final channel = selection.single;
+                            context
+                                .read<ChameleonGUIState>()
+                                .sharedPreferencesProvider
+                                .setFirmwareChannel(channel);
+                            status.setFirmwareChannel(channel);
+                          },
+                  ),
+                ),
+                if (status.firmwareChannel == FirmwareChannel.custom)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      localizations.firmware_channel_custom_description,
+                      key: const Key('firmware-channel-custom-description'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 if (firmware.installationFailed)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),

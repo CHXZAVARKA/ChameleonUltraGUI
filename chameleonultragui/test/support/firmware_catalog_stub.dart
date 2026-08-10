@@ -8,6 +8,7 @@ class CurrentFirmwareCatalogStub implements FirmwareCatalog {
   Future<FirmwareCatalogRelease> latestFirmware({
     required ChameleonDevice device,
     required String? installedCommit,
+    FirmwareChannel channel = FirmwareChannel.official,
   }) async =>
       FirmwareCatalogRelease(
         latestCommit: installedCommit ?? 'current',

@@ -70,7 +70,7 @@ class ChameleonGUI extends StatelessWidget {
 class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   final FirmwareCatalog firmwareCatalog;
-  final Future<void> Function()? firmwareInstaller;
+  final FirmwareInstaller? firmwareInstaller;
 
   ChameleonGUIState(
     this.sharedPreferencesProvider, {
@@ -200,6 +200,7 @@ class ChameleonGUIState extends ChangeNotifier {
       rfOperations: rfOperations,
       firmwareCatalog: firmwareCatalog,
       firmwareInstaller: firmwareInstaller,
+      firmwareChannel: sharedPreferencesProvider.getFirmwareChannel(),
     );
   }
 

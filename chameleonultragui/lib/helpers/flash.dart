@@ -12,13 +12,26 @@ import 'package:chameleonultragui/bridge/dfu.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/protobuf/dfu-cc.pb.dart';
+import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'dart:math';
 
-Future<Uint8List> fetchFirmware(ChameleonDevice device) async {
-  var content = await fetchFirmwareFromActions(device);
+typedef FirmwareArchiveLoader = Future<Uint8List> Function(
+  ChameleonDevice device,
+  FirmwareChannel channel,
+);
+
+Future<Uint8List> fetchFirmware(
+  ChameleonDevice device, {
+  FirmwareChannel channel = FirmwareChannel.official,
+  FirmwareArchiveLoader actionsLoader = fetchFirmwareFromActions,
+  FirmwareArchiveLoader releasesLoader = fetchFirmwareFromReleases,
+}) async {
+  var content = channel.usesActionsArtifacts
+      ? await actionsLoader(device, channel)
+      : Uint8List(0);
 
   if (content.isEmpty) {
-    content = await fetchFirmwareFromReleases(device);
+    content = await releasesLoader(device, channel);
   }
 
   return content;
@@ -83,11 +96,14 @@ void validateFiles(Uint8List dat, Uint8List bin) {
 Future<void> flashFirmware(ChameleonGUIState appState,
     {ScaffoldMessengerState? scaffoldMessenger,
     ChameleonDevice? device,
+    FirmwareChannel channel = FirmwareChannel.official,
     bool enterDFU = true}) async {
   Uint8List applicationDat, applicationBin;
 
   Uint8List content = await fetchFirmware(
-      (device != null) ? device : appState.connector!.device);
+    (device != null) ? device : appState.connector!.device,
+    channel: channel,
+  );
 
   (applicationDat, applicationBin) = await unpackFirmware(content);
 
