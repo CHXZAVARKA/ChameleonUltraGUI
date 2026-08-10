@@ -365,6 +365,31 @@ void main() {
     expect(communicator.activeSlotReads, 3);
   });
 
+  testWidgets(
+      'returning to Home uses confirmed cache without a full status reload',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final initialTypeReads = communicator.slotTypeReads;
+    final initialEnabledReads = communicator.enabledSlotReads;
+    final initialNameReads = communicator.slotNameReads;
+    final initialModeReads = communicator.modeReads;
+
+    await _pumpPage(tester, appState, const SizedBox.shrink());
+    await tester.pump();
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    expect(communicator.slotTypeReads, initialTypeReads);
+    expect(communicator.enabledSlotReads, initialEnabledReads);
+    expect(communicator.slotNameReads, initialNameReads);
+    expect(communicator.modeReads, initialModeReads);
+    expect(find.byKey(const Key('home-slot-grid')), findsOneWidget);
+  });
+
   testWidgets('physical slot change leaves no old pointer selection highlight',
       (tester) async {
     final communicator = _SlotCommunicator();

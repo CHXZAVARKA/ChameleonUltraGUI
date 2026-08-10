@@ -110,7 +110,7 @@ void main() {
   });
 
   testWidgets(
-      'late Home entry refresh cannot clear pending mode or queue a duplicate command',
+      'racing background refresh cannot clear pending mode or queue a duplicate command',
       (tester) async {
     final entryRefreshGate = Completer<void>();
     final switchGate = Completer<void>();
@@ -127,14 +127,12 @@ void main() {
 
     await _pumpHome(tester, appState);
     await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
     communicator
       ..events.clear()
       ..nextModeReadGate = entryRefreshGate
       ..nextModeSetGate = switchGate;
 
-    await _pumpHome(tester, appState);
+    final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
     await tester.pump();
     expect(communicator.events, ['mode:read']);
 
@@ -159,13 +157,14 @@ void main() {
     expect(communicator.modeSets, [true]);
 
     switchGate.complete();
+    await backgroundRefresh;
     await tester.pumpAndSettle();
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
     expect(communicator.modeSets, [true]);
   });
 
   testWidgets(
-      'failed confirmation keeps the latest mode confirmed by a racing Home refresh',
+      'failed confirmation keeps the latest mode confirmed by a racing background refresh',
       (tester) async {
     final entryRefreshGate = Completer<void>();
     addTearDown(() {
@@ -178,8 +177,6 @@ void main() {
 
     await _pumpHome(tester, appState);
     await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
     communicator
       ..events.clear()
       ..nextModeReadGate = entryRefreshGate
@@ -188,7 +185,7 @@ void main() {
         StateError('confirmation unavailable'),
       ]);
 
-    await _pumpHome(tester, appState);
+    final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
     await tester.pump();
     await tester.tap(find.text('Reader'));
     await tester.pump();
@@ -198,6 +195,7 @@ void main() {
     expect(communicator.modeSets, isEmpty);
 
     entryRefreshGate.complete();
+    await backgroundRefresh;
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
@@ -239,7 +237,7 @@ void main() {
     expect(find.byKey(const Key('home-mode-retry')), findsNothing);
   });
 
-  testWidgets('later Home entry failure retains the confirmed mode',
+  testWidgets('returning to Home retains confirmed mode without rereading',
       (tester) async {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
@@ -250,14 +248,13 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
-    communicator.modeReadResults.add(StateError('later mode read failed'));
 
     await _pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
     expect(find.byKey(const Key('home-mode-retry')), findsNothing);
-    expect(communicator.modeReads, 2);
+    expect(communicator.modeReads, 1);
   });
 
   testWidgets('mode command failure preserves confirmation and reports once',
