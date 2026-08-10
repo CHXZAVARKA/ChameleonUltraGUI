@@ -17,6 +17,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await SharedPreferencesProvider().load();
+  });
+
   testWidgets('Home shows firmware Checking independently of other facets',
       (tester) async {
     final communicator = _FirmwareCommunicator.pendingFirmware();
@@ -206,6 +211,163 @@ void main() {
     expect(find.byKey(const Key('firmware-update')), findsOneWidget);
   });
 
+  testWidgets(
+      'firmware details persists the selected channel and rechecks that source',
+      (tester) async {
+    final catalog = _FakeFirmwareCatalog([
+      const FirmwareCatalogRelease(
+        latestCommit: 'abc1234',
+        updateAvailable: false,
+      ),
+      const FirmwareCatalogRelease(
+        latestCommit: 'custom5678',
+        updateAvailable: true,
+      ),
+      const FirmwareCatalogRelease(
+        latestCommit: 'custom5678',
+        updateAvailable: true,
+      ),
+    ]);
+    FirmwareChannel? installedChannel;
+    final appState = _connectedState(
+      _FirmwareCommunicator.current(),
+      catalog: catalog,
+      channelInstaller: (_, channel) async {
+        installedChannel = channel;
+      },
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+    expect(catalog.channels, [FirmwareChannel.official]);
+
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firmware-channel-control')), findsOneWidget);
+    expect(
+      tester
+          .widget<SegmentedButton<FirmwareChannel>>(
+            find.byKey(const Key('firmware-channel-control')),
+          )
+          .selected,
+      {FirmwareChannel.official},
+    );
+
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pumpAndSettle();
+
+    expect(
+      appState.sharedPreferencesProvider.getFirmwareChannel(),
+      FirmwareChannel.custom,
+    );
+    expect(
+        catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
+      'custom5678',
+    );
+
+    await tester.tap(find.byKey(const Key('firmware-update')));
+    await tester.pumpAndSettle();
+    expect(installedChannel, FirmwareChannel.custom);
+
+    _replaceConnection(appState, _FirmwareCommunicator.current());
+    appState.changesMade();
+    await tester.pumpAndSettle();
+    expect(appState.connectedDeviceStatus!.firmwareChannel,
+        FirmwareChannel.custom);
+    expect(catalog.channels, [
+      FirmwareChannel.official,
+      FirmwareChannel.custom,
+      FirmwareChannel.custom,
+    ]);
+  });
+
+  testWidgets('a late result from the previous channel cannot replace Custom',
+      (tester) async {
+    final officialLookup = Completer<FirmwareCatalogRelease>();
+    final catalog = _FakeFirmwareCatalog([
+      officialLookup.future,
+      const FirmwareCatalogRelease(
+        latestCommit: 'custom5678',
+        updateAvailable: true,
+      ),
+    ]);
+    final appState = _connectedState(
+      _FirmwareCommunicator.current(),
+      catalog: catalog,
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    await tester.pump();
+    expect(catalog.channels, [FirmwareChannel.official]);
+
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pump();
+    expect(appState.connectedDeviceStatus!.firmwareChannel,
+        FirmwareChannel.custom);
+
+    officialLookup.complete(
+      const FirmwareCatalogRelease(
+        latestCommit: 'official9999',
+        updateAvailable: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+        catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
+      'custom5678',
+    );
+  });
+
+  testWidgets('firmware channel remains reachable at 360px and 2.5x text',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final catalog = _FakeFirmwareCatalog([
+      const FirmwareCatalogRelease(
+        latestCommit: 'abc1234',
+        updateAvailable: false,
+      ),
+      const FirmwareCatalogRelease(
+        latestCommit: 'custom5678',
+        updateAvailable: true,
+      ),
+    ]);
+    final appState = _connectedState(
+      _FirmwareCommunicator.current(),
+      catalog: catalog,
+    );
+
+    await _pumpHome(
+      tester,
+      appState,
+      textScaler: const TextScaler.linear(2.5),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('firmware-channel-control')), findsOneWidget);
+    await tester
+        .ensureVisible(find.byKey(const Key('firmware-channel-custom')));
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('firmware-channel-custom-description')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('automatic firmware lookup runs once for a connected session',
       (tester) async {
     final catalog = _FakeFirmwareCatalog.current();
@@ -278,6 +440,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('firmware-update')), findsNothing);
     expect(find.byKey(const Key('firmware-check-retry')), findsNothing);
+    expect(
+      tester
+          .widget<SegmentedButton<FirmwareChannel>>(
+            find.byKey(const Key('firmware-channel-control')),
+          )
+          .onSelectionChanged,
+      isNull,
+    );
   });
 
   testWidgets('current and unavailable firmware do not expose Update',
@@ -619,7 +789,7 @@ void main() {
 }
 
 Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
-    {ThemeData? theme}) async {
+    {ThemeData? theme, TextScaler? textScaler}) async {
   SharedPreferences.setMockInitialValues({});
   await appState.sharedPreferencesProvider.load();
   await tester.pumpWidget(
@@ -627,6 +797,14 @@ Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
       value: appState,
       child: MaterialApp(
         theme: theme,
+        builder: textScaler == null
+            ? null
+            : (context, child) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: textScaler,
+                  ),
+                  child: child!,
+                ),
         locale: const Locale('en'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -641,6 +819,10 @@ ChameleonGUIState _connectedState(
   required FirmwareCatalog catalog,
   String portName = 'firmware-test-device',
   Future<void> Function(ChameleonGUIState appState)? installer,
+  Future<void> Function(
+    ChameleonGUIState appState,
+    FirmwareChannel channel,
+  )? channelInstaller,
 }) {
   final serial = _TestSerial(log: Logger())
     ..connected = true
@@ -652,7 +834,11 @@ ChameleonGUIState _connectedState(
   appState = ChameleonGUIState(
     SharedPreferencesProvider(),
     firmwareCatalog: catalog,
-    firmwareInstaller: installer == null ? null : () => installer(appState),
+    firmwareInstaller: channelInstaller != null
+        ? (channel) => channelInstaller(appState, channel)
+        : installer == null
+            ? null
+            : (_) => installer(appState),
   )
     ..connector = serial
     ..communicator = communicator
@@ -764,13 +950,16 @@ class _FakeFirmwareCatalog implements FirmwareCatalog {
 
   final List<Object> results;
   int lookups = 0;
+  final List<FirmwareChannel> channels = [];
 
   @override
   Future<FirmwareCatalogRelease> latestFirmware({
     required ChameleonDevice device,
     required String? installedCommit,
+    FirmwareChannel channel = FirmwareChannel.official,
   }) async {
     lookups++;
+    channels.add(channel);
     final result = results.removeAt(0);
     if (result is FirmwareCatalogRelease) return result;
     if (result is Future<FirmwareCatalogRelease>) return result;

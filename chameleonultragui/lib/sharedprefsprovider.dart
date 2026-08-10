@@ -6,6 +6,7 @@ import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'package:uuid/uuid.dart';
 
 // Localizations
@@ -348,6 +349,7 @@ class CardSaveExtra {
   Uint8List ultralightSignature;
   Uint8List ultralightVersion;
   List<int> ultralightCounters;
+
   /// `null` for legacy saves, `false` for a known partial dump and `true` for
   /// a complete dump.
   bool? mifareClassicDumpComplete;
@@ -420,9 +422,11 @@ class SharedPreferencesProvider extends ChangeNotifier {
   }
 
   late SharedPreferences _sharedPreferences;
+  bool _loaded = false;
 
   Future<void> load() async {
     _sharedPreferences = await SharedPreferences.getInstance();
+    _loaded = true;
   }
 
   SlotLayout getSlotLayout() {
@@ -439,6 +443,26 @@ class SharedPreferencesProvider extends ChangeNotifier {
       return;
     }
     _sharedPreferences.setString('slot_layout', layout.name);
+    notifyListeners();
+  }
+
+  FirmwareChannel getFirmwareChannel() {
+    if (!_loaded) {
+      return FirmwareChannel.official;
+    }
+    final stored = _sharedPreferences.get('firmware_channel');
+    final saved = stored is String ? stored : null;
+    return FirmwareChannel.values
+            .where((channel) => channel.name == saved)
+            .firstOrNull ??
+        FirmwareChannel.official;
+  }
+
+  void setFirmwareChannel(FirmwareChannel channel) {
+    if (getFirmwareChannel() == channel) {
+      return;
+    }
+    _sharedPreferences.setString('firmware_channel', channel.name);
     notifyListeners();
   }
 

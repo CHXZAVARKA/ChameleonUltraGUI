@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'package:http/http.dart' as http;
 
 List<Map<String, String>> developers = [
@@ -82,13 +83,16 @@ Future<List<Map<String, String>>> fetchGitHubContributors() async {
   }
 }
 
-Future<Uint8List> fetchFirmwareFromReleases(ChameleonDevice device) async {
+Future<Uint8List> fetchFirmwareFromReleases(
+  ChameleonDevice device, [
+  FirmwareChannel channel = FirmwareChannel.official,
+]) async {
   Uint8List content = Uint8List(0);
   String error = "";
 
   try {
     final releases = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/releases")))
+            "https://api.github.com/repos/${channel.repository}/releases")))
         .body
         .toString());
 
@@ -118,7 +122,13 @@ Future<Uint8List> fetchFirmwareFromReleases(ChameleonDevice device) async {
   return content;
 }
 
-Future<Uint8List> fetchFirmwareFromActions(ChameleonDevice device) async {
+Future<Uint8List> fetchFirmwareFromActions(
+  ChameleonDevice device, [
+  FirmwareChannel channel = FirmwareChannel.official,
+]) async {
+  if (!channel.usesActionsArtifacts) {
+    return Uint8List(0);
+  }
   Uint8List content = Uint8List(0);
   String error = "";
 
@@ -152,33 +162,38 @@ Future<Uint8List> fetchFirmwareFromActions(ChameleonDevice device) async {
   return content;
 }
 
-Future<String> latestAvailableCommit(ChameleonDevice device) async {
+Future<String> latestAvailableCommit(
+  ChameleonDevice device, [
+  FirmwareChannel channel = FirmwareChannel.official,
+]) async {
   String error = "";
 
-  try {
-    final artifacts = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100")))
-        .body
-        .toString());
+  if (channel.usesActionsArtifacts) {
+    try {
+      final artifacts = json.decode((await http.get(Uri.parse(
+              "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100")))
+          .body
+          .toString());
 
-    if (artifacts.containsKey("message")) {
-      error = artifacts["message"];
-      throw error;
-    }
-
-    for (var artifact in artifacts["artifacts"]) {
-      if (artifact["name"] ==
-              "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app" &&
-          artifact["workflow_run"]["head_branch"] == "main" &&
-          artifact["workflow_run"]["head_repository_id"] == 581338100) {
-        return artifact["workflow_run"]["head_sha"];
+      if (artifacts.containsKey("message")) {
+        error = artifacts["message"];
+        throw error;
       }
-    }
-  } catch (_) {}
+
+      for (var artifact in artifacts["artifacts"]) {
+        if (artifact["name"] ==
+                "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app" &&
+            artifact["workflow_run"]["head_branch"] == "main" &&
+            artifact["workflow_run"]["head_repository_id"] == 581338100) {
+          return artifact["workflow_run"]["head_sha"];
+        }
+      }
+    } catch (_) {}
+  }
 
   try {
     final releases = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/releases")))
+            "https://api.github.com/repos/${channel.repository}/releases")))
         .body
         .toString());
 
@@ -202,14 +217,17 @@ Future<String> latestAvailableCommit(ChameleonDevice device) async {
   return "";
 }
 
-Future<String> resolveCommit(String commitHash) async {
+Future<String> resolveCommit(
+  String commitHash, [
+  FirmwareChannel channel = FirmwareChannel.official,
+]) async {
   if ('-'.allMatches(commitHash).length == 2) {
     return commitHash.split("-")[2].replaceAll('g', ''); // v2.0.0-1-gXXXXXX
   } else if (commitHash.startsWith('-dirty')) {
     return commitHash; // v2.0.0-1-gXXXXXX-dirty
   } else if ('-'.allMatches(commitHash).isEmpty) {
     final tags = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/tags")))
+            "https://api.github.com/repos/${channel.repository}/tags")))
         .body
         .toString());
     for (var tag in tags) {

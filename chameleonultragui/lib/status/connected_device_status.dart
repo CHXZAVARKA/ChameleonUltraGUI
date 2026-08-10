@@ -79,6 +79,8 @@ enum FirmwareInstallOutcome {
   connectionChanged,
 }
 
+typedef FirmwareInstaller = Future<void> Function(FirmwareChannel channel);
+
 @immutable
 class FirmwareStatus {
   const FirmwareStatus({
@@ -654,13 +656,18 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     required ConnectedDeviceSession session,
     required RfOperationCoordinator rfOperations,
     FirmwareCatalog firmwareCatalog = const GitHubFirmwareCatalog(),
-    Future<void> Function()? firmwareInstaller,
+    FirmwareInstaller? firmwareInstaller,
+    FirmwareChannel firmwareChannel = FirmwareChannel.official,
     this.batteryPollInterval = const Duration(seconds: 15),
   })  : _session = session,
         _rfOperations = rfOperations,
         _firmwareCatalog = firmwareCatalog,
-        _firmwareInstaller =
-            firmwareInstaller ?? (() => flashFirmware(session.appState)),
+        _firmwareInstaller = firmwareInstaller ??
+            ((channel) => flashFirmware(
+                  session.appState,
+                  channel: channel,
+                )),
+        _firmwareChannel = firmwareChannel,
         _snapshot = DeviceStatusSnapshot(
           identity: DeviceIdentityStatus(
             device: session.connector.device,
@@ -686,8 +693,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final ConnectedDeviceSession _session;
   final RfOperationCoordinator _rfOperations;
   final FirmwareCatalog _firmwareCatalog;
-  final Future<void> Function() _firmwareInstaller;
+  final FirmwareInstaller _firmwareInstaller;
   final Duration batteryPollInterval;
+
+  FirmwareChannel _firmwareChannel;
+  FirmwareChannel get firmwareChannel => _firmwareChannel;
+  int _firmwareChannelRevision = 0;
 
   DeviceStatusSnapshot _snapshot;
   DeviceStatusSnapshot get snapshot => _snapshot;
@@ -831,13 +842,55 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     return _startFirmwareRefresh(readFacts: _firmwareFacts == null);
   }
 
+  Future<void> setFirmwareChannel(FirmwareChannel channel) async {
+    if (!_canPublish ||
+        _snapshot.firmware.state == FirmwareState.demo ||
+        channel == _firmwareChannel ||
+        _snapshot.firmware.installing) {
+      return;
+    }
+
+    _firmwareChannel = channel;
+    _firmwareChannelRevision++;
+    _firmwareLookupAttempted = true;
+    final revision = _firmwareChannelRevision;
+    final current = _snapshot.firmware;
+    _publish(
+      _snapshot.copyWith(
+        firmware: FirmwareStatus(
+          state: current.compatibility == FirmwareCompatibility.incompatible
+              ? FirmwareState.updateRequired
+              : FirmwareState.checking,
+          installedVersion: current.installedVersion,
+          installedCommit: current.installedCommit,
+          protocol: current.protocol,
+          compatibility: current.compatibility,
+          checkResult: FirmwareCheckResult.checking,
+        ),
+      ),
+    );
+
+    final inFlight = _firmwareRefresh;
+    if (inFlight != null) {
+      await inFlight;
+    }
+    if (!_canPublish || revision != _firmwareChannelRevision) {
+      return;
+    }
+    await _startFirmwareRefresh(readFacts: _firmwareFacts == null);
+  }
+
   Future<void> _startFirmwareRefresh({required bool readFacts}) {
     final currentRefresh = _firmwareRefresh;
     if (currentRefresh != null) {
       return currentRefresh;
     }
 
-    final refresh = _refreshFirmware(readFacts: readFacts);
+    final refresh = _refreshFirmware(
+      readFacts: readFacts,
+      channel: _firmwareChannel,
+      channelRevision: _firmwareChannelRevision,
+    );
     _firmwareRefresh = refresh;
     return refresh.whenComplete(() {
       if (identical(_firmwareRefresh, refresh)) {
@@ -846,8 +899,18 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _refreshFirmware({required bool readFacts}) async {
-    if (!_canPublish || _snapshot.firmware.state == FirmwareState.demo) {
+  Future<void> _refreshFirmware({
+    required bool readFacts,
+    required FirmwareChannel channel,
+    required int channelRevision,
+  }) async {
+    bool canPublishChannel() =>
+        _canPublish &&
+        channelRevision == _firmwareChannelRevision &&
+        channel == _firmwareChannel;
+
+    if (!canPublishChannel() ||
+        _snapshot.firmware.state == FirmwareState.demo) {
       return;
     }
 
@@ -866,7 +929,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
     if (readFacts || _firmwareFacts == null) {
       final facts = await _readFirmwareFacts();
-      if (!_canPublish || facts == null) {
+      if (!canPublishChannel() || facts == null) {
         return;
       }
       _firmwareFacts = facts;
@@ -891,8 +954,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       final latest = await _firmwareCatalog.latestFirmware(
         device: _session.connector.device,
         installedCommit: facts.installedCommit,
+        channel: channel,
       );
-      if (!_canPublish) {
+      if (!canPublishChannel()) {
         return;
       }
       final comparisonAvailable = latest.updateAvailable != null;
@@ -925,7 +989,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         error: error,
         stackTrace: stackTrace,
       );
-      if (!_canPublish) {
+      if (!canPublishChannel()) {
         return;
       }
       _publish(
@@ -1054,6 +1118,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return FirmwareInstallOutcome.connectionChanged;
     }
     final firmware = _snapshot.firmware;
+    final channel = _firmwareChannel;
     if (!firmware.canInstall) {
       return FirmwareInstallOutcome.notAvailable;
     }
@@ -1071,11 +1136,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
     try {
       final installationStarted = await _rfOperations.runForeground(() async {
-        if (!_canPublish) {
+        if (!_canPublish || channel != _firmwareChannel) {
           return false;
         }
-        await _firmwareInstaller();
-        return true;
+        await _firmwareInstaller(channel);
+        return _canPublish && channel == _firmwareChannel;
       });
       if (!installationStarted || !_canPublish) {
         return FirmwareInstallOutcome.connectionChanged;

@@ -909,6 +909,22 @@
   "legacy_protocol": "Legacy",
   "latest_version_or_commit": "Latest version or commit",
   "last_check_result": "Last check result",
+  "firmware_channel": "Firmware channel",
+  "@firmware_channel": {
+    "description": "Label for choosing which GitHub firmware distribution the connected device checks and installs"
+  },
+  "firmware_channel_official": "Official",
+  "@firmware_channel_official": {
+    "description": "Firmware channel backed by RfidResearchGroup/ChameleonUltra"
+  },
+  "firmware_channel_custom": "Custom",
+  "@firmware_channel_custom": {
+    "description": "Firmware channel backed by the user's CHXZAVARKA/ChameleonUltra fork"
+  },
+  "firmware_channel_custom_description": "Built from CHXZAVARKA/ChameleonUltra and may include features not available in the official firmware.",
+  "@firmware_channel_custom_description": {
+    "description": "Explanation shown when the custom firmware fork is selected"
+  },
   "retry": "Retry",
   "emulator": "Emulator",
   "reader": "Reader",
