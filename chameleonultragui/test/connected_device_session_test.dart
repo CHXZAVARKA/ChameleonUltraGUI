@@ -4,13 +4,107 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
+import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+// ignore: depend_on_referenced_packages
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('Read Card model remains stable for the current device session', () {
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+
+    final model = fixture.appState.readCardSession;
+    model.hfInfo.uid = 'persisted';
+
+    fixture.appState
+      ..changesMade()
+      ..connector = fixture.connector
+      ..communicator = fixture.communicator;
+
+    expect(fixture.appState.readCardSession, same(model));
+    expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
+  });
+
+  for (final invalidation in <String, void Function(_Fixture)>{
+    'disconnect': (fixture) {
+      fixture.connector.connected = false;
+      fixture.appState.onConnectorStateChanged();
+    },
+    'reconnect': (fixture) {
+      fixture.connector.connected = false;
+      fixture.appState.onConnectorStateChanged();
+      fixture.connector.connected = true;
+      fixture.appState.communicator = ChameleonCommunicator(
+        fixture.logger,
+        port: fixture.connector,
+      );
+      fixture.appState.changesMade();
+    },
+    'connector replacement': (fixture) {
+      fixture.appState.connector = _TestSerial(log: fixture.logger)
+        ..connected = true;
+    },
+    'communicator replacement': (fixture) {
+      fixture.appState.communicator = ChameleonCommunicator(
+        fixture.logger,
+        port: fixture.connector,
+      );
+    },
+    'DFU transition': (fixture) {
+      fixture.connector.isDFU = true;
+      fixture.appState.changesMade();
+    },
+  }.entries) {
+    test('Read Card model rotates on ${invalidation.key}', () {
+      final fixture = _connectedAppState();
+      addTearDown(fixture.logger.close);
+      final original = fixture.appState.readCardSession;
+      original
+        ..dumpName = 'old dump'
+        ..hfInfo.uid = 'old uid'
+        ..mfcInfo.state = MifareClassicState.save;
+
+      invalidation.value(fixture);
+
+      final replacement = fixture.appState.readCardSession;
+      expect(replacement, isNot(same(original)));
+      expect(replacement.dumpName, isEmpty);
+      expect(replacement.hfInfo.uid, isEmpty);
+      expect(replacement.mfcInfo.state, MifareClassicState.none);
+    });
+  }
+
+  test('device-session replacement releases its wakelock lease', () async {
+    final previousWakelock = wakelockPlusPlatformInstance;
+    final wakelock = _RecordingWakelock();
+    wakelockPlusPlatformInstance = wakelock;
+    addTearDown(() => wakelockPlusPlatformInstance = previousWakelock);
+    final fixture = _connectedAppState();
+    addTearDown(fixture.logger.close);
+
+    final owner = fixture.appState.acquireSessionWakelock(
+      connector: fixture.connector,
+      communicator: fixture.communicator,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(owner, isNotNull);
+    expect(wakelock.states.last, isTrue);
+
+    fixture.appState.communicator = ChameleonCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(wakelock.states.last, isFalse);
+  });
 
   test('session-bound foreground exposes its captured session and value',
       () async {
@@ -211,12 +305,14 @@ void main() {
   });
 }
 
-({
+typedef _Fixture = ({
   ChameleonGUIState appState,
   _TestSerial connector,
   ChameleonCommunicator communicator,
   Logger logger,
-}) _connectedAppState() {
+});
+
+_Fixture _connectedAppState() {
   final logger = Logger(output: MemoryOutput());
   final connector = _TestSerial(log: logger)..connected = true;
   final communicator = ChameleonCommunicator(logger, port: connector);
@@ -230,6 +326,18 @@ void main() {
     communicator: communicator,
     logger: logger,
   );
+}
+
+class _RecordingWakelock extends WakelockPlusPlatformInterface {
+  final List<bool> states = [];
+
+  @override
+  Future<bool> get enabled async => states.isNotEmpty && states.last;
+
+  @override
+  Future<void> toggle({required bool enable}) async {
+    states.add(enable);
+  }
 }
 
 Future<({SessionBoundRfResult<int> result, bool callbackRan})>

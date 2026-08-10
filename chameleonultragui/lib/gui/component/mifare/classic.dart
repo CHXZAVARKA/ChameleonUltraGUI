@@ -20,7 +20,6 @@ import 'package:flutter/material.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 class MifareClassicHelper extends StatefulWidget {
   final HFCardInfo hfInfo;
@@ -93,12 +92,18 @@ class CardReaderState extends State<MifareClassicHelper> {
           return const _RecoveryAttempt.canceled();
         }
 
+        final wakelockOwner = appState.acquireSessionWakelock(
+          connector: session.connector,
+          communicator: session.communicator,
+        );
         try {
           return await operation()
               ? const _RecoveryAttempt.completed()
               : const _RecoveryAttempt.canceled();
         } catch (error, stackTrace) {
           return _RecoveryAttempt.failed(error, stackTrace);
+        } finally {
+          appState.releaseSessionWakelock(wakelockOwner);
         }
       },
     );
@@ -387,13 +392,6 @@ class CardReaderState extends State<MifareClassicHelper> {
       }
       _profileSelectionInitialized = true;
     }
-
-    WakelockPlus.toggle(
-        enable: [
-      MifareClassicState.checkKeysOngoing,
-      MifareClassicState.recoveryOngoing,
-      MifareClassicState.dumpOngoing
-    ].contains(widget.mfcInfo.state));
 
     return Column(children: [
       const SizedBox(height: 16),

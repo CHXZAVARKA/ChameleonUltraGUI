@@ -41,6 +41,38 @@ class CardReaderState extends State<MifareUltralightHelper> {
   String error = "";
   double progress = -1;
   Object? _readOperation;
+  ChameleonGUIState? _appState;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final appState = context.read<ChameleonGUIState>();
+    if (_appState != null && !identical(_appState, appState)) {
+      _cancelReadForLifecycleChange();
+    }
+    _appState = appState;
+  }
+
+  @override
+  void didUpdateWidget(covariant MifareUltralightHelper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.hfInfo, widget.hfInfo)) {
+      _cancelReadForLifecycleChange();
+    }
+  }
+
+  void _cancelReadForLifecycleChange() {
+    _readOperation = null;
+    state = MifareUltralightState.none;
+    cardData = [];
+    version = '';
+    signature = '';
+    counters = [];
+    dumpName = '';
+    progress = -1;
+    error = '';
+    keyController.clear();
+  }
 
   void _restoreCanceledRead(Object operation) {
     if (!identical(_readOperation, operation) ||
@@ -66,7 +98,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
   }
 
   Future<void> readCard({bool withPassword = false}) async {
-    final appState = context.read<ChameleonGUIState>();
+    final appState = _appState ?? context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
     final hfInfo = widget.hfInfo;
     final type = hfInfo.type;
@@ -81,9 +113,11 @@ class CardReaderState extends State<MifareUltralightHelper> {
       state = MifareUltralightState.read;
     });
 
-    final result = await appState.runSessionBoundForeground((session) async {
+    final result =
+        await appState.runSessionBoundForegroundCatching((session) async {
       bool canContinue() =>
           mounted &&
+          identical(_appState, appState) &&
           identical(widget.hfInfo, hfInfo) &&
           identical(_readOperation, operation) &&
           session.isCurrent;
@@ -188,6 +222,29 @@ class CardReaderState extends State<MifareUltralightHelper> {
     });
     if (!result.executed) {
       _restoreCanceledRead(operation);
+      return;
+    }
+    if (result.error != null) {
+      final session = result.session;
+      final isCurrentFailure = session != null &&
+          mounted &&
+          identical(_appState, appState) &&
+          identical(widget.hfInfo, hfInfo) &&
+          identical(_readOperation, operation) &&
+          session.isCurrent;
+      if (!isCurrentFailure) {
+        _restoreCanceledRead(operation);
+        return;
+      }
+
+      (appState.log ?? session.communicator.log)
+          .e('MIFARE Ultralight read failed');
+      setState(() {
+        _readOperation = null;
+        state = MifareUltralightState.none;
+        progress = -1;
+        error = localizations.error;
+      });
     }
   }
 

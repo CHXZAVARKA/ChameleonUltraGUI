@@ -406,6 +406,8 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.hfInfo;
+      expect(replacementInfo, isNot(same(originalInfo)));
       communicator.completeScan(
         CardData(
           uid: Uint8List.fromList([1, 2, 3, 4]),
@@ -418,8 +420,8 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(communicator.detectCalls, 0);
-      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
-      expect(fixture.appState.readCardSession.hfInfo.uid, 'persisted');
+      expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
+      expect(replacementInfo.uid, isEmpty);
     },
   );
 
@@ -441,13 +443,15 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.lfInfo;
+      expect(replacementInfo, isNot(same(pendingInfo)));
       communicator.completeRead(null);
       await tester.idle();
 
       expect(tester.takeException(), isNull);
       expect(communicator.followUpCalls, 0);
-      expect(fixture.appState.readCardSession.lfInfo, same(pendingInfo));
-      expect(pendingInfo.card, isNull);
+      expect(fixture.appState.readCardSession.lfInfo, same(replacementInfo));
+      expect(replacementInfo.card, isNull);
     },
   );
 
@@ -471,13 +475,15 @@ void main() {
 
       await fixture.connector.performDisconnect();
       expect(readCardState.mounted, isTrue);
+      final replacementInfo = fixture.appState.readCardSession.hfInfo;
+      expect(replacementInfo, isNot(same(originalInfo)));
       communicator.completeInnerCommand();
       await tester.idle();
 
       expect(tester.takeException(), isNull);
       expect(communicator.innerCommandCalls, 1);
       expect(communicator.followUpCalls, 0);
-      expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+      expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
     },
   );
 
@@ -502,12 +508,14 @@ void main() {
     fixture.connector.isDFU = true;
     fixture.appState.changesMade();
     expect(readCardState.mounted, isTrue);
+    final replacementInfo = fixture.appState.readCardSession.hfInfo;
+    expect(replacementInfo, isNot(same(originalInfo)));
     communicator.completeInnerCommand();
     await tester.idle();
 
     expect(tester.takeException(), isNull);
     expect(communicator.innerCommandCalls, 1);
-    expect(fixture.appState.readCardSession.hfInfo, same(originalInfo));
+    expect(fixture.appState.readCardSession.hfInfo, same(replacementInfo));
   });
 
   testWidgets('foreground page State survives connection changes', (
