@@ -560,6 +560,11 @@ class MifareClassicMaintenance {
         : () => (shouldCancel?.call() ?? false) || !isSessionCurrent.call();
 
     _throwIfCancelled(shouldStop);
+    onProgress?.call(MifareClassicMaintenanceProgress(
+      phase: MifareClassicMaintenancePhase.revalidating,
+      completed: 0,
+      total: plan._preconditions.length,
+    ));
     await _communicate(
       () => port.ensureReaderMode(shouldCancel: shouldStop),
       'Communication with Chameleon was lost while enabling reader mode',
