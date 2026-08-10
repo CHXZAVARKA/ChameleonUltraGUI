@@ -395,7 +395,9 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       return;
     }
     final position = _eightAcrossController.position;
-    final target = (_eightAcrossController.offset + delta).clamp(
+    final directedDelta =
+        position.axisDirection == AxisDirection.left ? -delta : delta;
+    final target = (_eightAcrossController.offset + directedDelta).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );

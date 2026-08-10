@@ -941,32 +941,32 @@
   "slot_reorder_source_with_destination": "Reorder source, destination slot {slot}",
   "@slot_reorder_source_with_destination": {
     "description": "Screen-reader state for a dragged source with a current destination",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_destination": "Reorder destination, source slot {slot}",
   "@slot_reorder_destination": {
     "description": "Screen-reader state for a drag destination",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_pending_source": "Reorder pending: source, destination slot {slot}",
   "@slot_reorder_pending_source": {
     "description": "Screen-reader state for the source of a pending whole-slot swap",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_pending_destination": "Reorder pending: destination, source slot {slot}",
   "@slot_reorder_pending_destination": {
     "description": "Screen-reader state for the destination of a pending whole-slot swap",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_move_before": "Move before slot {slot}",
   "@slot_reorder_move_before": {
     "description": "Screen-reader action that swaps a slot bundle with its preceding visual neighbor",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_move_after": "Move after slot {slot}",
   "@slot_reorder_move_after": {
     "description": "Screen-reader action that swaps a slot bundle with its following visual neighbor",
-    "placeholders": {"slot": {"type": "int"}}
+    "placeholders": {"slot": {"type": "int", "example": "2"}}
   },
   "slot_reorder_ambiguous": "The slot swap could not be confirmed. Check the slot contents before retrying.",
   "@slot_reorder_ambiguous": {

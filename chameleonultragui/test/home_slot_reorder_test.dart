@@ -546,6 +546,47 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(fixture.communicator.swaps, [(0, 7)]);
+    expect(fixture.communicator.activations, isEmpty);
+    expect(fixture.status.snapshot.slots.slots[0].hf.name.value, 'Slot 8 HF');
+    expect(fixture.status.snapshot.slots.slots[7].lf.name.value, 'Slot 1 LF');
+  });
+
+  testWidgets(
+      'RTL narrow auto-scroll reveals a destination and drops exact swap',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    await _prepareGrid(
+      tester,
+      fixture,
+      textDirection: TextDirection.rtl,
+    );
+
+    final scroll = find.byKey(const Key('home-slot-grid-scroll'));
+    final gesture = await _startSlotDrag(tester, 0);
+    final rect = tester.getRect(scroll);
+    await gesture.moveTo(Offset(rect.left + 2, rect.center.dy));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(of: scroll, matching: find.byType(Scrollable)),
+    );
+    expect(scrollable.position.axisDirection, AxisDirection.left);
+    expect(scrollable.position.pixels, greaterThan(0));
+
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('home-slot-8'))),
+    );
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.swaps, [(0, 7)]);
+    expect(fixture.communicator.activations, isEmpty);
     expect(fixture.status.snapshot.slots.slots[0].hf.name.value, 'Slot 8 HF');
     expect(fixture.status.snapshot.slots.slots[7].lf.name.value, 'Slot 1 LF');
   });
