@@ -14,6 +14,95 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+const _sourceSeparatorPadding = EdgeInsets.all(8);
+
+double _singleLineTextWidth(
+  BuildContext context,
+  String text,
+  TextStyle? style,
+) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    locale: Localizations.maybeLocaleOf(context),
+    maxLines: 1,
+  )..layout();
+  return painter.width;
+}
+
+double _outlinedIconButtonWidth(
+  BuildContext context,
+  OutlinedButton button,
+  String label,
+) {
+  final states = button.enabled
+      ? const <WidgetState>{}
+      : const <WidgetState>{WidgetState.disabled};
+  final styles = <ButtonStyle?>[
+    button.style,
+    button.themeStyleOf(context),
+    button.defaultStyleOf(context),
+  ];
+
+  T? resolve<T>(
+    WidgetStateProperty<T?>? Function(ButtonStyle style) property,
+  ) {
+    for (final style in styles) {
+      if (style == null) {
+        continue;
+      }
+      final value = property(style)?.resolve(states);
+      if (value != null) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  T? effectiveValue<T>(T? Function(ButtonStyle style) property) {
+    for (final style in styles) {
+      if (style == null) {
+        continue;
+      }
+      final value = property(style);
+      if (value != null) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  final textStyle = resolve<TextStyle>((style) => style.textStyle);
+  final padding = resolve<EdgeInsetsGeometry>((style) => style.padding)!
+      .resolve(Directionality.of(context));
+  final iconSize = resolve<double>((style) => style.iconSize)!;
+  final minimumSize = resolve<Size>((style) => style.minimumSize)!;
+  final visualDensity =
+      effectiveValue<VisualDensity>((style) => style.visualDensity)!;
+  final densityAdjustment = visualDensity.baseSizeAdjustment;
+  final densityPadding = densityAdjustment.dx > 0 ? densityAdjustment.dx : 0;
+  final effectiveMinimumWidth = visualDensity
+      .effectiveConstraints(BoxConstraints(minWidth: minimumSize.width))
+      .minWidth;
+
+  // OutlinedButton.icon scales its 8 px icon gap down to 4 px at 2x text.
+  final buttonFontSize =
+      button.style?.textStyle?.resolve(states)?.fontSize ?? 14;
+  final effectiveTextScale =
+      (MediaQuery.textScalerOf(context).scale(buttonFontSize) / 14)
+          .clamp(1.0, 2.0);
+  final iconGap = 8 - (effectiveTextScale - 1) * 4;
+  final contentWidth = _singleLineTextWidth(context, label, textStyle) +
+      iconSize +
+      iconGap +
+      padding.horizontal +
+      densityPadding * 2;
+  return contentWidth > effectiveMinimumWidth
+      ? contentWidth
+      : effectiveMinimumWidth;
+}
+
 class StandardMifareClassicWritePanel extends StatefulWidget {
   const StandardMifareClassicWritePanel({super.key});
 
@@ -501,14 +590,34 @@ class _StandardMifareClassicWritePanelState
                     label: Text(localizations.select_saved_card),
                   );
                   final separator = Padding(
-                    padding: const EdgeInsets.all(8),
+                    padding: _sourceSeparatorPadding,
                     child: Text(
                       localizations.mifare_classic_standard_or,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
                   );
-                  if (constraints.maxWidth < 520) {
+                  final loadFileWidth = _outlinedIconButtonWidth(
+                    context,
+                    loadFile,
+                    localizations.mifare_classic_standard_load_file,
+                  );
+                  final selectSavedCardWidth = _outlinedIconButtonWidth(
+                    context,
+                    selectSavedCard,
+                    localizations.select_saved_card,
+                  );
+                  final widestButton = loadFileWidth > selectSavedCardWidth
+                      ? loadFileWidth
+                      : selectSavedCardWidth;
+                  final separatorWidth = _singleLineTextWidth(
+                        context,
+                        localizations.mifare_classic_standard_or,
+                        Theme.of(context).textTheme.labelMedium,
+                      ) +
+                      _sourceSeparatorPadding.horizontal;
+                  final sourceRowWidth = widestButton * 2 + separatorWidth;
+                  if (sourceRowWidth > constraints.maxWidth) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [loadFile, separator, selectSavedCard],
