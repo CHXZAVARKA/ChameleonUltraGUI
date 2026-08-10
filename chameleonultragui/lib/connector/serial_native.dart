@@ -1,7 +1,11 @@
+import 'dart:isolate';
+
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'serial_abstract.dart';
+
+typedef NativeDiscoveryCallback = List<Chameleon> Function(bool onlyDFU);
 
 class NativeSerial extends AbstractSerial {
   // Class for PC Serial Communication
@@ -10,7 +14,12 @@ class NativeSerial extends AbstractSerial {
   bool checkDFU = true;
   SerialPortReader? reader;
 
-  NativeSerial({required super.log});
+  NativeSerial({
+    required super.log,
+    @visibleForTesting NativeDiscoveryCallback? discoveryCallback,
+  }) : _discoveryCallback = discoveryCallback ?? _discoverNativeChameleons;
+
+  final NativeDiscoveryCallback _discoveryCallback;
 
   @override
   bool isManualConnectionSupported() {
@@ -55,24 +64,87 @@ class NativeSerial extends AbstractSerial {
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async {
-    List<Chameleon> output = [];
-    for (final port in await availableDevices()) {
-      if (await connectDevice(port, false)) {
-        if (onlyDFU) {
-          if (checkDFU) {
-            output.add(Chameleon(
-                port: port,
-                device: device,
-                type: connectionType,
-                dfu: checkDFU));
-          }
-        } else {
-          output.add(Chameleon(
-              port: port, device: device, type: connectionType, dfu: checkDFU));
-        }
-      }
+    final discoveryCallback = _discoveryCallback;
+    final output = await Isolate.run(
+      () => discoveryCallback(onlyDFU),
+    );
+    for (final chameleon in output) {
+      log.d("Found Chameleon ${chameleonDeviceName(chameleon.device)}!");
+    }
+    return output;
+  }
+
+  static ChameleonDevice? _detectedDevice({
+    required String? manufacturer,
+    required String? description,
+    required String? productName,
+  }) {
+    final normalizedDescription = description?.toLowerCase();
+    if (manufacturer != "Proxgrind" &&
+        !(normalizedDescription?.contains("chameleon") ?? false)) {
+      return null;
     }
 
+    if ((productName?.contains('ChameleonUltra') ?? false) ||
+        (normalizedDescription?.contains('ultra') ?? false)) {
+      return ChameleonDevice.ultra;
+    }
+    return ChameleonDevice.lite;
+  }
+
+  static SerialPortConfig _serialConfig() {
+    return SerialPortConfig()
+      ..baudRate = 115200
+      ..bits = 8
+      ..stopBits = 1
+      ..parity = SerialPortParity.none
+      ..rts = SerialPortRts.flowControl
+      ..cts = SerialPortCts.flowControl
+      ..dsr = SerialPortDsr.flowControl
+      ..dtr = SerialPortDtr.flowControl
+      ..setFlowControl(SerialPortFlowControl.rtsCts);
+  }
+
+  static List<Chameleon> _discoverNativeChameleons(bool onlyDFU) {
+    final output = <Chameleon>[];
+    for (final address in SerialPort.availablePorts) {
+      final candidate = SerialPort(address);
+      var opened = false;
+      try {
+        opened = candidate.openReadWrite();
+        if (!opened) {
+          continue;
+        }
+        candidate.config = _serialConfig();
+        final detectedDevice = _detectedDevice(
+          manufacturer: candidate.manufacturer,
+          description: candidate.description,
+          productName: candidate.productName,
+        );
+        if (detectedDevice == null) {
+          continue;
+        }
+
+        final dfu = candidate.vendorId == 0x1915;
+        if (!onlyDFU || dfu) {
+          output.add(
+            Chameleon(
+              port: address,
+              device: detectedDevice,
+              type: ConnectionType.usb,
+              dfu: dfu,
+            ),
+          );
+        }
+      } on SerialPortError {
+        // Ports can disappear or become busy between enumeration and probing.
+      } finally {
+        if (opened) {
+          candidate.close();
+        }
+        candidate.dispose();
+      }
+    }
     return output;
   }
 
@@ -96,38 +168,18 @@ class NativeSerial extends AbstractSerial {
     try {
       checkPort = SerialPort(address);
       checkPort!.openReadWrite();
-      checkPort!.config = SerialPortConfig()
-        ..baudRate = 115200
-        ..bits = 8
-        ..stopBits = 1
-        ..parity = SerialPortParity.none
-        ..rts = SerialPortRts.flowControl
-        ..cts = SerialPortCts.flowControl
-        ..dsr = SerialPortDsr.flowControl
-        ..dtr = SerialPortDtr.flowControl
-        ..setFlowControl(SerialPortFlowControl.rtsCts);
+      checkPort!.config = _serialConfig();
       log.d("Connected to $address");
       log.d("Manufacturer: ${checkPort!.manufacturer}");
       log.d("Product: ${checkPort!.productName}");
-      
-      bool isChameleon = false;
-      if (checkPort!.manufacturer == "Proxgrind" ||
-          (checkPort!.description != null &&
-              checkPort!.description!.toLowerCase().contains("chameleon"))) {
-        isChameleon = true;
-        if (checkPort!.productName != null &&
-            checkPort!.productName!.contains('ChameleonUltra')) {
-          device = ChameleonDevice.ultra;
-        } else if (checkPort!.description != null &&
-            checkPort!.description!.toLowerCase().contains('ultra')) {
-          device = ChameleonDevice.ultra;
-        } else {
-          device = ChameleonDevice.lite;
-        }
-      } else if (setPort) {
-        isChameleon = true;
-        device = ChameleonDevice.ultra;
-      }
+
+      final detectedDevice = _detectedDevice(
+        manufacturer: checkPort!.manufacturer,
+        description: checkPort!.description,
+        productName: checkPort!.productName,
+      );
+      final isChameleon = detectedDevice != null || setPort;
+      device = detectedDevice ?? ChameleonDevice.ultra;
 
       if (isChameleon) {
         log.d("Found Chameleon ${chameleonDeviceName(device)}!");

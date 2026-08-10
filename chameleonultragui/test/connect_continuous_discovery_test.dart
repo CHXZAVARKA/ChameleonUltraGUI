@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
+import 'package:chameleonultragui/connector/serial_native.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/page/connect.dart';
@@ -146,6 +148,23 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  test('native discovery does not block loader frames', () async {
+    final serial = NativeSerial(
+      log: Logger(output: MemoryOutput()),
+      discoveryCallback: _blockingNativeDiscovery,
+    );
+    final elapsed = Stopwatch()..start();
+    final frame = Future<void>.delayed(const Duration(milliseconds: 20)).then(
+      (_) => elapsed.elapsed,
+    );
+
+    final discovery = serial.availableChameleons(false);
+    final frameTime = await frame;
+
+    expect(frameTime, lessThan(const Duration(milliseconds: 100)));
+    expect(await discovery, isEmpty);
+  });
 }
 
 class _DelayedConnectSerial extends EmulatorSerial {
@@ -199,4 +218,9 @@ class _DiscoverySerial extends AbstractSerial {
 
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async => false;
+}
+
+List<Chameleon> _blockingNativeDiscovery(bool onlyDFU) {
+  sleep(const Duration(milliseconds: 150));
+  return const [];
 }
