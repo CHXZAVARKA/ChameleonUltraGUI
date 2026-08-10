@@ -1003,11 +1003,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Select key profile'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Mini keys (5 keys)').last);
+      await tester.tap(find.text('Mini keys (1 key)').last);
       await tester.pumpAndSettle();
 
       communicator.gatePreflight = true;
-      await tester.tap(find.text('Run preflight'));
+      communicator.gateExecute = true;
+      await tester.tap(find.text('Start'));
       await tester.pump(const Duration(seconds: 4));
       expect(communicator.readerModeCalls, readerModeBaseline + 1);
       expect(communicator.scanCalls, 1);
@@ -1025,14 +1026,6 @@ void main() {
       expect(communicator.readerModeCalls, readerModeBaseline + 2);
       expect(readCardState.isContinuousHFScan, isTrue);
       communicator.allowPreflight.complete();
-      await tester.pumpAndSettle();
-      communicator.gatePreflight = false;
-      expect(find.textContaining('Preflight passed'), findsOneWidget);
-
-      await tester.tap(find.byType(CheckboxListTile));
-      await tester.pump();
-      communicator.gateExecute = true;
-      await tester.tap(find.text('Write and verify'));
       await tester.pump();
       await communicator.executeStarted.future.timeout(
         const Duration(seconds: 2),
