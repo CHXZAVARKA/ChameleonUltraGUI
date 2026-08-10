@@ -23,7 +23,6 @@ void main() {
     'tapping a BLE device shows progress immediately and opens Home after connect',
     (tester) async {
       SharedPreferences.setMockInitialValues({
-        'auto_scan_enabled': false,
         'auto_connect_first_found': false,
       });
       final connectGate = Completer<void>();
@@ -70,15 +69,16 @@ void main() {
   );
 
   testWidgets(
-    'discovery keeps scanning after a result and accumulates multiple devices',
+    'loader replaces refresh until discovery finds a device',
     (tester) async {
       SharedPreferences.setMockInitialValues({
-        'auto_scan_enabled': true,
         'auto_connect_first_found': false,
       });
       final serial = _DiscoverySerial(
         log: Logger(output: MemoryOutput()),
         scans: const [
+          [],
+          [],
           [
             Chameleon(
               port: 'device-a',
@@ -119,23 +119,29 @@ void main() {
       await tester.pump();
 
       expect(serial.scanCalls, 1);
-      expect(find.text('device-a'), findsOneWidget);
+      expect(find.byIcon(Icons.refresh), findsNothing);
+      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 2);
-      expect(find.text('device-a'), findsOneWidget);
-      expect(find.text('device-b'), findsOneWidget);
+      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
+
+      expect(serial.scanCalls, 3);
+      expect(find.text('device-a'), findsOneWidget);
+      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 4);
-      expect(find.text('device-a'), findsNothing);
+      expect(find.text('device-a'), findsOneWidget);
       expect(find.text('device-b'), findsOneWidget);
+      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
     },

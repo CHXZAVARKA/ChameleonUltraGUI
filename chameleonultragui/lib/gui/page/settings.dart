@@ -212,26 +212,6 @@ class SettingsMainPageState extends State<SettingsMainPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    localizations.auto_scan_devices,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 5),
-                  Switch(
-                    value:
-                        appState.sharedPreferencesProvider.getAutoScanEnabled(),
-                    onChanged: (value) async {
-                      appState.sharedPreferencesProvider
-                          .setAutoScanEnabled(value);
-                      appState.changesMade();
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
                     localizations.auto_connect_first_device,
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),

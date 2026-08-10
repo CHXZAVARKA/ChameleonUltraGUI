@@ -739,14 +739,6 @@ class SharedPreferencesProvider extends ChangeNotifier {
     _sharedPreferences.setBool('confirm_delete', value);
   }
 
-  bool getAutoScanEnabled() {
-    return _sharedPreferences.getBool('auto_scan_enabled') ?? true;
-  }
-
-  void setAutoScanEnabled(bool value) {
-    _sharedPreferences.setBool('auto_scan_enabled', value);
-  }
-
   bool getAutoConnectFirstFoundDevice() {
     return _sharedPreferences.getBool('auto_connect_first_found') ?? false;
   }

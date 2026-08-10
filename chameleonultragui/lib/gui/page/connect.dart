@@ -33,8 +33,6 @@ class _ConnectPageState extends State<ConnectPage> {
   Timer? _scanTimer;
   int _scanGeneration = 0;
   Object? _error;
-  bool _isLoading = true;
-  bool _initialScanCompleted = false;
   bool _scanInProgress = false;
   bool _connectionInProgress = false;
   bool _showedPermissionsSnackbar = false;
@@ -92,8 +90,7 @@ class _ConnectPageState extends State<ConnectPage> {
   void _scheduleNextScan() {
     _scanTimer?.cancel();
 
-    if (!_shouldScan(_appState) ||
-        !_appState.sharedPreferencesProvider.getAutoScanEnabled()) {
+    if (!_shouldScan(_appState)) {
       return;
     }
 
@@ -139,7 +136,7 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  Future<void> _scanNow({bool manual = false}) async {
+  Future<void> _scanNow() async {
     final appState = _appState;
     if (_scanInProgress || !_shouldScan(appState)) {
       return;
@@ -150,9 +147,6 @@ class _ConnectPageState extends State<ConnectPage> {
     setState(() {
       _scanInProgress = true;
       _error = null;
-      if (!_initialScanCompleted || manual) {
-        _isLoading = true;
-      }
     });
 
     try {
@@ -173,8 +167,6 @@ class _ConnectPageState extends State<ConnectPage> {
 
       setState(() {
         _devices = devices;
-        _isLoading = false;
-        _initialScanCompleted = true;
       });
 
       _showPermissionsWarningIfNeeded(devices);
@@ -187,8 +179,6 @@ class _ConnectPageState extends State<ConnectPage> {
 
       setState(() {
         _error = error;
-        _isLoading = false;
-        _initialScanCompleted = true;
       });
     } finally {
       if (mounted) {
@@ -447,15 +437,8 @@ class _ConnectPageState extends State<ConnectPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: IconButton(
-                onPressed: () => _scanNow(manual: true),
-                icon: const Icon(Icons.refresh),
-              ),
-            ),
             Expanded(
-              child: (_isLoading && !_initialScanCompleted)
+              child: _devices.isEmpty
                   ? Center(
                       child: ChameleonLoadingIndicator(
                         semanticLabel: localizations.loading,
