@@ -117,6 +117,42 @@ void main() {
     }
   });
 
+  testWidgets('firmware pill content has optically even padding',
+      (tester) async {
+    final appState = _connectedState(
+      _FirmwareCommunicator.current(),
+      catalog: _FakeFirmwareCatalog.current(),
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+
+    final pillRect = tester.getRect(
+      find.byKey(const Key('firmware-visual-pill')),
+    );
+    final labelRect = tester.getRect(find.text('Firmware'));
+    final statusRect = tester.getRect(
+      find.byKey(const Key('firmware-status-text')),
+    );
+    final contentRect = Rect.fromLTRB(
+      labelRect.left,
+      labelRect.top < statusRect.top ? labelRect.top : statusRect.top,
+      statusRect.right,
+      labelRect.bottom > statusRect.bottom
+          ? labelRect.bottom
+          : statusRect.bottom,
+    );
+
+    expect(
+      (contentRect.center.dx - pillRect.center.dx).abs(),
+      lessThanOrEqualTo(0.5),
+    );
+    expect(
+      (contentRect.center.dy - pillRect.center.dy).abs(),
+      lessThanOrEqualTo(0.5),
+    );
+  });
+
   testWidgets('firmware details contain facts and exclude unsupported content',
       (tester) async {
     final communicator = _FirmwareCommunicator.current(

@@ -379,6 +379,7 @@ class _FirmwarePill extends StatelessWidget {
                       ),
                       child: Wrap(
                         alignment: WrapAlignment.center,
+                        runAlignment: WrapAlignment.center,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
