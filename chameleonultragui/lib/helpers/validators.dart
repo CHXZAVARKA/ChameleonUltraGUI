@@ -1,7 +1,7 @@
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/helpers/card_profile.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -22,35 +22,28 @@ String? validateName(String? value, AppLocalizations l) {
 String? validateUid(
   String? value,
   AppLocalizations l,
-  TagType tagType, {
-  bool isCreate = false,
-}) {
+  TagType tagType,
+) {
   if (value == null || value.isEmpty) {
     return l.please_enter_something(l.uid);
   }
 
   String cleanValue = value.replaceAll(" ", "");
 
-  if (chameleonTagToFrequency(tagType) == TagFrequency.hf) {
-    if (isCreate && isMifareUltralight(tagType)) {
-      if (cleanValue.length != 14) {
-        return l.must_be(7, l.uid);
-      }
-    } else if (isCreate) {
-      if (cleanValue.length != 8 && cleanValue.length != 14) {
-        return l.must_or("4", "7", l.uid);
-      }
-    } else {
-      if (!(cleanValue.length == 8 ||
-          cleanValue.length == 14 ||
-          cleanValue.length == 20)) {
-        return l.must_or("4, 7", "10", l.uid);
-      }
+  final validLengths = validUidLengthsForTagType(tagType);
+  final actualLength = cleanValue.length ~/ 2;
+  if (cleanValue.length.isOdd || !validLengths.contains(actualLength)) {
+    if (validLengths.length == 1) {
+      return l.must_be(validLengths.single, l.uid);
     }
-  } else if (chameleonTagToFrequency(tagType) == TagFrequency.lf) {
-    if (cleanValue.length != uidSizeForLfTag(tagType) * 2) {
-      return l.must_be(uidSizeForLfTag(tagType), l.uid);
+    if (validLengths.length == 2) {
+      return l.must_or(
+        validLengths[0].toString(),
+        validLengths[1].toString(),
+        l.uid,
+      );
     }
+    return l.must_or("4, 7", "10", l.uid);
   }
 
   return null;
