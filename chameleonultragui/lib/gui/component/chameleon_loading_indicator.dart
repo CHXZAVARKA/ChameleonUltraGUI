@@ -25,7 +25,7 @@ class ChameleonLoadingIndicator extends StatefulWidget {
 
 class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
     with SingleTickerProviderStateMixin {
-  static const _outerVerticalOffset = -0.04;
+  static const _cVerticalOffsetFactor = -0.04;
 
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -74,7 +74,7 @@ class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
               children: [
                 Transform.translate(
                   key: const Key('chameleon-loader-c-alignment'),
-                  offset: Offset(0, widget.size * _outerVerticalOffset),
+                  offset: Offset(0, widget.size * _cVerticalOffsetFactor),
                   child: Transform.rotate(
                     key: const Key('chameleon-loader-c'),
                     angle: progress * math.pi * 2,

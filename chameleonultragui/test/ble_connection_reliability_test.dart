@@ -12,8 +12,7 @@ void main() {
     final serial = BLESerial(
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
-    )
-      ..chameleonMap['device'] = const Chameleon(
+    )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
         type: ConnectionType.ble,
@@ -29,9 +28,32 @@ void main() {
     expect(reactiveBle.connectionAttempts, 2);
     expect(reactiveBle.connectionTimeouts, everyElement(isNotNull));
   });
+
+  test('one BLE connect retries after a stalled handshake', () async {
+    final reactiveBle = _StallHandshakeThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      handshakeTimeout: const Duration(milliseconds: 20),
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(serial.log.close);
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 250));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectionAttempts, 2);
+    expect(reactiveBle.handshakeAttempts, 2);
+  });
 }
 
-class _StallThenConnectBle implements FlutterReactiveBle {
+class _StallThenConnectBle implements ReactiveBleClient {
   final _stalledAttempt = StreamController<ConnectionStateUpdate>();
   var connectionAttempts = 0;
   final List<Duration?> connectionTimeouts = [];
@@ -66,7 +88,16 @@ class _StallThenConnectBle implements FlutterReactiveBle {
   @override
   Stream<List<int>> subscribeToCharacteristic(
     QualifiedCharacteristic characteristic,
-  ) => const Stream.empty();
+  ) =>
+      const Stream.empty();
+
+  @override
+  Stream<DiscoveredDevice> scanForDevices({
+    required List<Uuid> withServices,
+    ScanMode scanMode = ScanMode.balanced,
+    bool requireLocationServicesEnabled = true,
+  }) =>
+      const Stream.empty();
 
   @override
   Future<void> writeCharacteristicWithResponse(
@@ -75,5 +106,43 @@ class _StallThenConnectBle implements FlutterReactiveBle {
   }) async {}
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  Future<void> writeCharacteristicWithoutResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  }) async {}
+}
+
+class _StallHandshakeThenConnectBle extends _StallThenConnectBle {
+  var handshakeAttempts = 0;
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
+  }
+
+  @override
+  Future<void> writeCharacteristicWithResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  }) {
+    handshakeAttempts++;
+    if (handshakeAttempts == 1) {
+      return Completer<void>().future;
+    }
+    return Future.value();
+  }
 }

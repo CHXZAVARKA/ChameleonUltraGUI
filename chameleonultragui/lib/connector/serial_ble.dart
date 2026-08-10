@@ -16,15 +16,111 @@ Uuid dfuUUID = Uuid.parse("FE59");
 Uuid dfuControl = Uuid.parse("8EC90001-F315-4F60-9FB8-838830DAEA50");
 Uuid dfuFirmware = Uuid.parse("8EC90002-F315-4F60-9FB8-838830DAEA50");
 
+abstract interface class ReactiveBleClient {
+  Stream<DiscoveredDevice> scanForDevices({
+    required List<Uuid> withServices,
+    ScanMode scanMode = ScanMode.balanced,
+    bool requireLocationServicesEnabled = true,
+  });
+
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  });
+
+  Stream<List<int>> subscribeToCharacteristic(
+    QualifiedCharacteristic characteristic,
+  );
+
+  Future<void> writeCharacteristicWithResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  });
+
+  Future<void> writeCharacteristicWithoutResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  });
+}
+
+class FlutterReactiveBleClient implements ReactiveBleClient {
+  FlutterReactiveBleClient([FlutterReactiveBle? client])
+      : _client = client ?? FlutterReactiveBle();
+
+  final FlutterReactiveBle _client;
+
+  @override
+  Stream<DiscoveredDevice> scanForDevices({
+    required List<Uuid> withServices,
+    ScanMode scanMode = ScanMode.balanced,
+    bool requireLocationServicesEnabled = true,
+  }) =>
+      _client.scanForDevices(
+        withServices: withServices,
+        scanMode: scanMode,
+        requireLocationServicesEnabled: requireLocationServicesEnabled,
+      );
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) =>
+      _client.connectToAdvertisingDevice(
+        id: id,
+        withServices: withServices,
+        prescanDuration: prescanDuration,
+        servicesWithCharacteristicsToDiscover:
+            servicesWithCharacteristicsToDiscover,
+        connectionTimeout: connectionTimeout,
+      );
+
+  @override
+  Stream<List<int>> subscribeToCharacteristic(
+    QualifiedCharacteristic characteristic,
+  ) =>
+      _client.subscribeToCharacteristic(characteristic);
+
+  @override
+  Future<void> writeCharacteristicWithResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  }) =>
+      _client.writeCharacteristicWithResponse(
+        characteristic,
+        value: value,
+      );
+
+  @override
+  Future<void> writeCharacteristicWithoutResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  }) =>
+      _client.writeCharacteristicWithoutResponse(
+        characteristic,
+        value: value,
+      );
+}
+
 class BLESerial extends AbstractSerial {
   BLESerial({
     required super.log,
-    FlutterReactiveBle? reactiveBle,
-  }) : flutterReactiveBle = reactiveBle ?? FlutterReactiveBle();
+    ReactiveBleClient? reactiveBle,
+    Duration handshakeTimeout = defaultHandshakeTimeout,
+  })  : _reactiveBle = reactiveBle ?? FlutterReactiveBleClient(),
+        _handshakeTimeout = handshakeTimeout;
 
   static const connectionAttemptTimeout = Duration(seconds: 7);
+  static const defaultHandshakeTimeout = Duration(seconds: 3);
 
-  FlutterReactiveBle flutterReactiveBle;
+  final ReactiveBleClient _reactiveBle;
+  final Duration _handshakeTimeout;
   QualifiedCharacteristic? txCharacteristic;
   QualifiedCharacteristic? rxCharacteristic;
   QualifiedCharacteristic? firmwareCharacteristic;
@@ -47,7 +143,7 @@ class BLESerial extends AbstractSerial {
     StreamSubscription<DiscoveredDevice> subscription;
 
     inSearch = true;
-    subscription = flutterReactiveBle.scanForDevices(
+    subscription = _reactiveBle.scanForDevices(
       withServices: [nrfUUID, dfuUUID],
       scanMode: ScanMode.lowLatency,
     ).listen((device) {
@@ -151,7 +247,7 @@ class BLESerial extends AbstractSerial {
 
     await performDisconnect();
     pendingConnection = true;
-    connection = flutterReactiveBle
+    connection = _reactiveBle
         .connectToAdvertisingDevice(
       id: devicePort,
       withServices: services,
@@ -169,7 +265,7 @@ class BLESerial extends AbstractSerial {
               characteristicId: dfuControl,
               deviceId: connectionState.deviceId);
           receivedDataStream =
-              flutterReactiveBle.subscribeToCharacteristic(txCharacteristic!);
+              _reactiveBle.subscribeToCharacteristic(txCharacteristic!);
           receivedDataStream!.listen((data) async {
             if (messageCallback != null) {
               try {
@@ -206,7 +302,7 @@ class BLESerial extends AbstractSerial {
               characteristicId: uartTX,
               deviceId: connectionState.deviceId);
           receivedDataStream =
-              flutterReactiveBle.subscribeToCharacteristic(txCharacteristic!);
+              _reactiveBle.subscribeToCharacteristic(txCharacteristic!);
           receivedDataStream!.listen((data) async {
             if (messageCallback != null) {
               try {
@@ -227,20 +323,23 @@ class BLESerial extends AbstractSerial {
               deviceId: connectionState.deviceId);
 
           try {
-            await flutterReactiveBle.writeCharacteristicWithResponse(
-                rxCharacteristic!,
-                value: Uint8List.fromList([
-                  0x11,
-                  0xef,
-                  0x03,
-                  0xfb,
-                  0x00,
-                  0x00,
-                  0x00,
-                  0x00,
-                  0x02,
-                  0x00
-                ]));
+            await _reactiveBle
+                .writeCharacteristicWithResponse(
+                  rxCharacteristic!,
+                  value: Uint8List.fromList([
+                    0x11,
+                    0xef,
+                    0x03,
+                    0xfb,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x02,
+                    0x00
+                  ]),
+                )
+                .timeout(_handshakeTimeout);
 
             connected = true;
             portName = devicePort;
@@ -299,12 +398,12 @@ class BLESerial extends AbstractSerial {
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async {
     if (firmware) {
-      await flutterReactiveBle.writeCharacteristicWithoutResponse(
+      await _reactiveBle.writeCharacteristicWithoutResponse(
           firmwareCharacteristic!,
           value: command);
     } else {
-      await flutterReactiveBle
-          .writeCharacteristicWithResponse(rxCharacteristic!, value: command);
+      await _reactiveBle.writeCharacteristicWithResponse(rxCharacteristic!,
+          value: command);
     }
 
     return true;
