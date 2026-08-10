@@ -1,4 +1,5 @@
 import 'package:chameleonultragui/gui/component/error_page.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -21,26 +22,39 @@ class SlotChangerState extends State<SlotChanger> {
 
   Future<List<Icon>> getFutureData() async {
     var appState = context.read<ChameleonGUIState>();
-    List<SlotTypes> usedSlots;
+    final result = await appState.runSessionBoundForeground((session) async {
+      List<SlotTypes> usedSlots;
+      try {
+        usedSlots = await session.communicator.getSlotTagTypes();
+      } catch (_) {
+        usedSlots = [];
+      }
+      if (!mounted || !session.isCurrent) return null;
 
-    try {
-      usedSlots = await appState.communicator!.getSlotTagTypes();
-    } catch (_) {
-      usedSlots = [];
+      var activeSlot = 1;
+      try {
+        activeSlot = await session.communicator.getActiveSlot() + 1;
+      } catch (_) {}
+      if (!mounted || !session.isCurrent) return null;
+
+      return (usedSlots: usedSlots, activeSlot: activeSlot);
+    });
+    final session = result.session;
+    final data = result.value;
+    if (!result.executed ||
+        session == null ||
+        data == null ||
+        !mounted ||
+        !session.isCurrent) {
+      return [const Icon(Icons.warning)];
     }
 
-    return await getSlotIcons(usedSlots);
+    selectedSlot = data.activeSlot;
+    return getSlotIcons(data.usedSlots);
   }
 
-  Future<List<Icon>> getSlotIcons(List<SlotTypes> usedSlots) async {
-    var appState = context.read<ChameleonGUIState>();
+  List<Icon> getSlotIcons(List<SlotTypes> usedSlots) {
     List<Icon> icons = [];
-
-    try {
-      selectedSlot = await appState.communicator!.getActiveSlot() + 1;
-    } catch (_) {
-      selectedSlot = 1;
-    }
 
     if (usedSlots.isEmpty) {
       return [const Icon(Icons.warning)];
@@ -59,6 +73,21 @@ class SlotChangerState extends State<SlotChanger> {
       }
     }
     return icons;
+  }
+
+  Future<void> _activateSlot(int slot) async {
+    final appState = context.read<ChameleonGUIState>();
+    await appState.runSessionBoundForeground((session) async {
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      await session.communicator.activateSlot(slot);
+      if (!mounted || !session.isCurrent) {
+        return;
+      }
+      setState(() {});
+      appState.changesMade();
+    });
   }
 
   List<Icon> presold = [
@@ -107,10 +136,7 @@ class SlotChangerState extends State<SlotChanger> {
                 IconButton(
                   onPressed: () async {
                     if (selectedSlot > 1) {
-                      await appState.communicator!
-                          .activateSlot(selectedSlot - 2);
-                      setState(() {});
-                      appState.changesMade();
+                      await _activateSlot(selectedSlot - 2);
                     }
                   },
                   icon: const Icon(Icons.arrow_back),
@@ -119,9 +145,7 @@ class SlotChangerState extends State<SlotChanger> {
                 IconButton(
                   onPressed: () async {
                     if (selectedSlot < 8) {
-                      await appState.communicator!.activateSlot(selectedSlot);
-                      setState(() {});
-                      appState.changesMade();
+                      await _activateSlot(selectedSlot);
                     }
                   },
                   icon: const Icon(Icons.arrow_forward),

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/hex_viewer.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/hf_sniff.dart';
@@ -67,26 +68,19 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
 
   Future<void> _loadCapabilities() async {
     final appState = context.read<ChameleonGUIState>();
-    if (appState.communicator == null) {
+    final result = await appState.runSessionBoundForegroundCatching(
+      (session) async {
+        final capabilities = await session.communicator.getDeviceCapabilities();
+        return capabilities.contains(ChameleonCommand.hf14aSniff.value);
+      },
+    );
+    final session = result.session;
+    if (!result.executed || session == null || !mounted || !session.isCurrent) {
       return;
     }
-    try {
-      final capabilities = await appState.communicator!.getDeviceCapabilities();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported =
-            capabilities.contains(ChameleonCommand.hf14aSniff.value);
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _capabilitySupported = null;
-      });
-    }
+    setState(() {
+      _capabilitySupported = result.error == null ? result.value : null;
+    });
   }
 
   Future<void> _captureFrames() async {
@@ -107,15 +101,51 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
     });
 
     try {
-      if (await appState.communicator!.isReaderDeviceMode()) {
-        await appState.communicator!.setReaderDeviceMode(false);
-      }
+      final result =
+          await appState.runSessionBoundForegroundCatching((session) async {
+        if (!mounted || !session.isCurrent) {
+          return null;
+        }
 
-      final rawBytes =
-          await appState.communicator!.hf14aSniff(timeoutMs: timeoutMs);
-      if (!mounted) {
+        if (await session.communicator.isReaderDeviceMode()) {
+          if (!mounted || !session.isCurrent) {
+            return null;
+          }
+          await session.communicator.setReaderDeviceMode(false);
+        }
+        if (!mounted || !session.isCurrent) {
+          return null;
+        }
+
+        final rawBytes =
+            await session.communicator.hf14aSniff(timeoutMs: timeoutMs);
+        return mounted && session.isCurrent ? rawBytes : null;
+      });
+      final session = result.session;
+      final rawBytes = result.value;
+      if (!result.executed ||
+          session == null ||
+          !mounted ||
+          !session.isCurrent) {
         return;
       }
+
+      final error = result.error;
+      if (error != null) {
+        final errorText = error.toString();
+        final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
+        setState(() {
+          if (firmwareUnsupported) {
+            _capabilitySupported = false;
+            _statusMessage = null;
+            _errorMessage = null;
+          } else {
+            _errorMessage = errorText;
+          }
+        });
+        return;
+      }
+      if (rawBytes == null) return;
 
       if (rawBytes.isEmpty) {
         setState(() {
@@ -130,22 +160,6 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
         _statusMessage = capture.frames.isEmpty
             ? localizations.hf_sniff_no_decoded_frames
             : localizations.hf_sniff_capture_done(capture.frames.length);
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      final errorText = error.toString();
-      final firmwareUnsupported = _isFirmwareUnsupportedError(errorText);
-      setState(() {
-        if (firmwareUnsupported) {
-          _capabilitySupported = false;
-          _statusMessage = null;
-          _errorMessage = null;
-        } else {
-          _errorMessage = errorText;
-        }
       });
     } finally {
       if (mounted) {
@@ -209,8 +223,8 @@ class _HfSniffingMenuState extends State<HfSniffingMenu> {
         return;
       }
       setState(() {
-        _errorMessage =
-            localizations.hf_sniff_load_failed(localizations.hf_sniff_no_frames);
+        _errorMessage = localizations
+            .hf_sniff_load_failed(localizations.hf_sniff_no_frames);
       });
       return;
     }

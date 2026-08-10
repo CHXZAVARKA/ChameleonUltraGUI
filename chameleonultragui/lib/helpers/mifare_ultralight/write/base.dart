@@ -23,18 +23,27 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
   TextEditingController keyController = TextEditingController();
   String? key;
 
-  BaseMifareUltralightWriteHelper(super.communicator);
+  BaseMifareUltralightWriteHelper(super.communicator,
+      {required super.operationCanContinue});
 
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
     return [
-      BaseMifareUltralightWriteHelper(communicator),
+      BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      ),
     ];
   }
 
   @override
   List<AbstractWriteHelper> getAvailableMethodsByPriority() {
-    return [BaseMifareUltralightWriteHelper(communicator)];
+    return [
+      BaseMifareUltralightWriteHelper(
+        communicator,
+        operationCanContinue: () => operationCanContinue,
+      )
+    ];
   }
 
   @override
@@ -110,27 +119,33 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
   @override
   Future<bool> writeData(
       CardSave card, Function(int writeProgress) update) async {
+    if (!operationCanContinue) return false;
     int totalBlocks = card.data.length;
 
     if (!await communicator.isReaderDeviceMode()) {
+      if (!operationCanContinue) return false;
       await communicator.setReaderDeviceMode(true);
     }
+    if (!operationCanContinue) return false;
 
     if (await communicator.scan14443aTag() == null) {
       return false;
     }
+    if (!operationCanContinue) return false;
 
     if (key!.isNotEmpty) {
+      if (!operationCanContinue) return false;
       Uint8List pack = await communicator.send14ARaw(
           Uint8List.fromList([0x1B, ...hexToBytes(key!)]),
           keepRfField: true);
-      if (pack.length < 2) {
+      if (!operationCanContinue || pack.length < 2) {
         return false;
       }
     }
 
     for (var pass = 0; pass < 2; pass++) {
       for (var block = 0; block < totalBlocks; block++) {
+        if (!operationCanContinue) return false;
         if (card.data[block].isNotEmpty) {
           List<int> blockData = List.from(card.data[block]);
 
@@ -152,27 +167,30 @@ class BaseMifareUltralightWriteHelper extends AbstractWriteHelper {
               keepRfField: true,
               checkResponseCrc: false,
               autoSelect: block == 0 || block == 3);
-          if (write.isEmpty || write[0] != 0x0A || block == 2) {
+          if (!operationCanContinue) return false;
+          if (write.length != 1 || write.single != 0x0A) {
+            return false;
+          }
+
+          if (block == 2) {
             await communicator.send14ARaw(Uint8List(1)); // reset
+            if (!operationCanContinue) return false;
 
             if (key!.isNotEmpty) {
               await communicator.send14ARaw(
                   Uint8List.fromList([0x1B, ...hexToBytes(key!)]),
                   keepRfField: true);
-            }
-
-            if (block > 2) {
-              // block is not UID
-              failedBlocks.add(block);
+              if (!operationCanContinue) return false;
             }
           }
 
+          if (!operationCanContinue) return false;
           update((block / (totalBlocks + 2) * 100).round());
         }
       }
     }
 
-    return failedBlocks.isEmpty;
+    return operationCanContinue && failedBlocks.isEmpty;
   }
 
   @override

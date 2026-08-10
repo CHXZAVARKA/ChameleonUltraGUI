@@ -8,6 +8,7 @@ import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -65,6 +66,8 @@ class ChameleonGUI extends StatelessWidget {
 class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   ChameleonGUIState(this.sharedPreferencesProvider);
+
+  final RfOperationCoordinator rfOperations = RfOperationCoordinator();
 
   SharedPreferencesProvider? _sharedPreferencesProvider;
   Logger? log; // Logger
@@ -134,6 +137,12 @@ class ChameleonGUIState extends ChangeNotifier {
   void setProgressBar(dynamic value) {
     progress = value;
     notifyListeners();
+  }
+
+  bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
+    return connector?.connected == true &&
+        connector?.isDFU != true &&
+        identical(communicator, candidate);
   }
 }
 

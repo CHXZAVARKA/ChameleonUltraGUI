@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -16,6 +17,10 @@ import 'package:provider/provider.dart';
 
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+
+class _SlotUploadCanceled implements Exception {
+  const _SlotUploadCanceled();
+}
 
 class SlotManagerPage extends StatefulWidget {
   const SlotManagerPage({super.key});
@@ -52,9 +57,32 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     var appState = context.read<ChameleonGUIState>();
     var localizations = AppLocalizations.of(context)!;
 
-    usedSlots = await appState.communicator!.getSlotTagTypes();
-    enabledSlots = await appState.communicator!.getEnabledSlots();
-    slotData = await appState.communicator!.getSlotTagNames();
+    final result = await appState.runSessionBoundForeground((session) async {
+      final nextUsedSlots = await session.communicator.getSlotTagTypes();
+      if (!mounted || !session.isCurrent) return null;
+      final nextEnabledSlots = await session.communicator.getEnabledSlots();
+      if (!mounted || !session.isCurrent) return null;
+      final nextSlotData = await session.communicator.getSlotTagNames();
+      if (!mounted || !session.isCurrent) return null;
+      return (
+        usedSlots: nextUsedSlots,
+        enabledSlots: nextEnabledSlots,
+        slotData: nextSlotData,
+      );
+    });
+    final session = result.session;
+    final data = result.value;
+    if (!result.executed ||
+        session == null ||
+        data == null ||
+        !mounted ||
+        !session.isCurrent) {
+      return;
+    }
+
+    usedSlots = data.usedSlots;
+    enabledSlots = data.enabledSlots;
+    slotData = data.slotData;
 
     for (SlotNames slot in slotData) {
       slot.hf = slot.hf.isEmpty ? localizations.no_name : slot.hf;
@@ -81,6 +109,44 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   Future<void> onTap(
       CardSave card, dynamic close, AppLocalizations localizations) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
+    final targetSlot = gridPosition;
+    await appState.runSessionBoundForeground((session) async {
+      try {
+        await _uploadCard(
+          card,
+          close,
+          localizations,
+          session,
+          targetSlot,
+        );
+      } on _SlotUploadCanceled {
+        // A reconnect invalidates the in-flight workflow.
+      } finally {
+        if (mounted && progress != -1) {
+          setUploadState(-1);
+        }
+      }
+    });
+  }
+
+  Future<void> _uploadCard(
+    CardSave card,
+    dynamic close,
+    AppLocalizations localizations,
+    ConnectedDeviceSession session,
+    int gridPosition,
+  ) async {
+    final appState = session.appState;
+    Future<T> command<T>(Future<T> Function() operation) async {
+      if (!mounted || !session.isCurrent) {
+        throw const _SlotUploadCanceled();
+      }
+      final value = await operation();
+      if (!mounted || !session.isCurrent) {
+        throw const _SlotUploadCanceled();
+      }
+      return value;
+    }
 
     if (isMifareClassic(card.tag)) {
       close(context, card.name);
@@ -90,18 +156,20 @@ class SlotManagerPageState extends State<SlotManagerPage> {
         card.tag = TagType.mifare2K;
       }
 
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.hf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.hf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
       var cardData = CardData(
           uid: hexToBytes(card.uid),
           atqa: card.atqa,
           sak: card.sak,
           ats: card.ats);
-      await appState.communicator!.setMf1AntiCollision(cardData);
+      await command(() => session.communicator.setMf1AntiCollision(cardData));
 
       List<int> blockChunk = [];
       int lastSend = 0;
@@ -115,8 +183,8 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                 card.data[blockOffset].isEmpty) ||
             blockChunk.length >= 128) {
           if (blockChunk.isNotEmpty) {
-            await appState.communicator!
-                .setMf1BlockData(lastSend, Uint8List.fromList(blockChunk));
+            await command(() => session.communicator
+                .setMf1BlockData(lastSend, Uint8List.fromList(blockChunk)));
             blockChunk = [];
             lastSend = blockOffset;
           }
@@ -132,181 +200,199 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                     chameleonTagTypeGetMfClassicType(card.tag)) *
                 100)
             .round());
-        await asyncSleep(1);
+        await command(() => asyncSleep(1));
       }
 
       if (blockChunk.isNotEmpty) {
-        await appState.communicator!
-            .setMf1BlockData(lastSend, Uint8List.fromList(blockChunk));
+        await command(() => session.communicator
+            .setMf1BlockData(lastSend, Uint8List.fromList(blockChunk)));
       }
 
       setUploadState(100);
 
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.hf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.hf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (isEM410X(card.tag)) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
       TagType slotTagType = card.tag == TagType.em410XElectra
           ? TagType.em410XElectra
           : TagType.em410X;
-      await appState.communicator!.setSlotType(gridPosition, slotTagType);
-      await appState.communicator!
-          .setDefaultDataToSlot(gridPosition, slotTagType);
-      await appState.communicator!.setEM410XEmulatorID(hexToBytes(card.uid));
-      await appState.communicator!.setSlotTagName(
+      await command(
+          () => session.communicator.setSlotType(gridPosition, slotTagType));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, slotTagType));
+      await command(
+          () => session.communicator.setEM410XEmulatorID(hexToBytes(card.uid)));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (card.tag == TagType.hidProx) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
-      await appState.communicator!.setHIDProxEmulatorID(
-          hexToBytes(HIDCard.fromUID(card.uid).toString()));
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
+      await command(() => session.communicator.setHIDProxEmulatorID(
+          hexToBytes(HIDCard.fromUID(card.uid).toString())));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (card.tag == TagType.viking) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
-      await appState.communicator!.setVikingEmulatorID(hexToBytes(card.uid));
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
+      await command(
+          () => session.communicator.setVikingEmulatorID(hexToBytes(card.uid)));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (card.tag == TagType.pac) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
-      await appState.communicator!.setPacEmulatorID(hexToBytes(card.uid));
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
+      await command(
+          () => session.communicator.setPacEmulatorID(hexToBytes(card.uid)));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (card.tag == TagType.ioProx) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
-      await appState.communicator!.setIoProxEmulatorID(hexToBytes(card.uid));
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
+      await command(
+          () => session.communicator.setIoProxEmulatorID(hexToBytes(card.uid)));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (card.tag == TagType.idteck) {
       close(context, card.name);
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.lf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
-      await appState.communicator!.setIdteckEmulatorID(hexToBytes(card.uid));
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.lf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
+      await command(
+          () => session.communicator.setIdteckEmulatorID(hexToBytes(card.uid)));
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.lf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.lf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else if (isMifareUltralight(card.tag)) {
       close(context, card.name);
       setUploadState(0);
 
-      await appState.communicator!.setReaderDeviceMode(false);
-      await appState.communicator!
-          .enableSlot(gridPosition, TagFrequency.hf, true);
-      await appState.communicator!.activateSlot(gridPosition);
-      await appState.communicator!.setSlotType(gridPosition, card.tag);
-      await appState.communicator!.setDefaultDataToSlot(gridPosition, card.tag);
+      await command(() => session.communicator.setReaderDeviceMode(false));
+      await command(() =>
+          session.communicator.enableSlot(gridPosition, TagFrequency.hf, true));
+      await command(() => session.communicator.activateSlot(gridPosition));
+      await command(
+          () => session.communicator.setSlotType(gridPosition, card.tag));
+      await command(() =>
+          session.communicator.setDefaultDataToSlot(gridPosition, card.tag));
       var cardData = CardData(
           uid: hexToBytes(card.uid),
           atqa: card.atqa,
           sak: card.sak,
           ats: card.ats);
-      await appState.communicator!.setMf1AntiCollision(cardData);
+      await command(() => session.communicator.setMf1AntiCollision(cardData));
 
       for (var page = 0;
           page < mfUltralightGetPagesCount(card.tag) && card.data.length > page;
           page++) {
-        await appState.communicator!
-            .mf0EmulatorWritePages(page, card.data[page]);
+        await command(() =>
+            session.communicator.mf0EmulatorWritePages(page, card.data[page]));
 
         setUploadState(
             (page / mfUltralightGetPagesCount(card.tag) * 100).round());
 
-        await asyncSleep(1);
+        await command(() => asyncSleep(1));
       }
 
       if (card.extraData.ultralightVersion.isNotEmpty) {
-        await appState.communicator!
-            .mf0EmulatorSetVersionData(card.extraData.ultralightVersion);
+        await command(() => session.communicator
+            .mf0EmulatorSetVersionData(card.extraData.ultralightVersion));
       }
 
       if (card.extraData.ultralightSignature.isNotEmpty) {
-        await appState.communicator!
-            .mf0EmulatorSetSignatureData(card.extraData.ultralightSignature);
+        await command(() => session.communicator
+            .mf0EmulatorSetSignatureData(card.extraData.ultralightSignature));
       }
 
       if (card.extraData.ultralightCounters.isNotEmpty) {
         for (int i = 0; i < card.extraData.ultralightCounters.length; i++) {
-          await appState.communicator!.mf0EmulatorSetCounterData(
-              i, card.extraData.ultralightCounters[i], true);
+          await command(() => session.communicator.mf0EmulatorSetCounterData(
+              i, card.extraData.ultralightCounters[i], true));
         }
       }
 
       if (mfUltralightHasCounters(card.tag)) {
-        await appState.communicator!.mf0ResetAuthCount();
+        await command(session.communicator.mf0ResetAuthCount);
       }
 
       setUploadState(100);
 
-      await appState.communicator!.setSlotTagName(
+      await command(() => session.communicator.setSlotTagName(
           gridPosition,
           (card.name.isEmpty) ? localizations.no_name : card.name,
-          TagFrequency.hf);
-      await appState.communicator!.saveSlotData();
+          TagFrequency.hf));
+      await command(session.communicator.saveSlotData);
       appState.changesMade();
       refreshSlot();
     } else {
