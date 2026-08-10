@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show SemanticsAction, Tristate;
+import 'dart:ui' show PointerDeviceKind, SemanticsAction, Tristate;
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
@@ -363,6 +363,43 @@ void main() {
     await _pumpPage(tester, appState, const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 2));
     expect(communicator.activeSlotReads, 3);
+  });
+
+  testWidgets('physical slot change leaves no old pointer selection highlight',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final oldSlot = find.byKey(const Key('home-slot-5'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(oldSlot));
+    addTearDown(mouse.removePointer);
+    await tester.pump();
+    await mouse.down(tester.getCenter(oldSlot));
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('home-active-slot-5')), findsOneWidget);
+
+    communicator.activeSlot = 5;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('home-active-slot-5')), findsNothing);
+    expect(find.byKey(const Key('home-active-slot-6')), findsOneWidget);
+    final oldSlotSurface = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: oldSlot,
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect((oldSlotSurface.decoration! as BoxDecoration).color, isNull);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(communicator.activations.last, 6);
+    expect(find.byKey(const Key('home-active-slot-7')), findsOneWidget);
   });
 
   testWidgets('Home describes and draws enabled, disabled, and empty marks',

@@ -33,6 +33,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     (index) => GlobalKey(debugLabel: 'Home slot ${index + 1}'),
   );
   var _focusedSlot = 0;
+  int? _lastConfirmedActiveSlot;
   var _hasFocus = false;
   var _eightAcrossOffset = 0.0;
   var _restoringEightAcrossOffset = false;
@@ -52,6 +53,9 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   @override
   void didUpdateWidget(HomeSlotGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.status, widget.status)) {
+      _lastConfirmedActiveSlot = null;
+    }
     if (oldWidget.layout == SlotLayout.eightAcross &&
         widget.layout != SlotLayout.eightAcross &&
         _eightAcrossController.hasClients) {
@@ -188,6 +192,13 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       builder: (context, _) {
         final slots = widget.status.snapshot.slots;
         final activeSlot = slots.activeSlot.value;
+        if (slots.activeSlot.isConfirmed &&
+            slots.pendingActivation == null &&
+            activeSlot != null &&
+            activeSlot != _lastConfirmedActiveSlot) {
+          _lastConfirmedActiveSlot = activeSlot;
+          _focusedSlot = activeSlot;
+        }
         return ConstrainedBox(
           key: const Key('home-slot-grid'),
           constraints: const BoxConstraints(maxWidth: 680),
