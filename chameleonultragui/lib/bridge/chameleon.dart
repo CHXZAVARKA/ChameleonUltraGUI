@@ -530,6 +530,26 @@ class ChameleonCommunicator {
     }
   }
 
+  Future<void> swapSlots(int source, int target) async {
+    if (source < 0 || source >= 8) {
+      throw RangeError.range(source, 0, 7, 'source');
+    }
+    if (target < 0 || target >= 8) {
+      throw RangeError.range(target, 0, 7, 'target');
+    }
+
+    final response = await sendCmd(
+      ChameleonCommand.swapSlots,
+      data: Uint8List.fromList([source, target]),
+    );
+    if (response == null) {
+      throw StateError('Slot reorder returned no response');
+    }
+    if (response.status != ChameleonStatus.success) {
+      throw SlotReorderRejected(response.status);
+    }
+  }
+
   Future<void> setSlotType(int slot, TagType type) async {
     await sendCmd(ChameleonCommand.setSlotTagType,
         data: Uint8List.fromList([slot, ...u16ToBytes(type.value)]));

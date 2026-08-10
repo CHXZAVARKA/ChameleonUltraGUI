@@ -26,6 +26,36 @@ enum ModeActionOutcome {
   connectionChanged,
 }
 
+enum SlotReorderCapability { unknown, supported, unsupported, unavailable }
+
+enum SlotReorderOutcome {
+  confirmed,
+  failed,
+  unsupported,
+  busy,
+  invalid,
+  ambiguous,
+  reconciliationFailed,
+  connectionChanged,
+}
+
+@immutable
+class PendingSlotReorder {
+  const PendingSlotReorder({required this.source, required this.target});
+
+  final int source;
+  final int target;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PendingSlotReorder &&
+      other.source == source &&
+      other.target == target;
+
+  @override
+  int get hashCode => Object.hash(source, target);
+}
+
 enum FirmwareState {
   checking,
   upToDate,
@@ -156,6 +186,7 @@ enum SlotsAvailability { loading, available, partial, stale, unavailable }
 enum SlotFacet { types, enabledStates, names, activeSlot }
 
 const Object _keepPendingActivation = Object();
+const Object _keepPendingReorder = Object();
 
 @immutable
 class SlotField<T> {
@@ -246,6 +277,9 @@ class SlotsStatus {
     required List<DeviceSlotStatus> slots,
     required this.activeSlot,
     this.pendingActivation,
+    this.pendingReorder,
+    this.reorderCapability = SlotReorderCapability.unknown,
+    Map<int, Set<SlotFacet>> staleSlotFacets = const {},
     Set<SlotFacet> unavailableFacets = const {},
     Set<SlotFacet> staleFacets = const {},
   })  : assert(slots.length == 8),
@@ -253,7 +287,19 @@ class SlotsStatus {
           pendingActivation == null ||
               (pendingActivation >= 0 && pendingActivation < 8),
         ),
+        assert(
+          pendingReorder == null ||
+              (pendingReorder.source >= 0 &&
+                  pendingReorder.source < 8 &&
+                  pendingReorder.target >= 0 &&
+                  pendingReorder.target < 8),
+        ),
         slots = List.unmodifiable(slots),
+        staleSlotFacets = Map.unmodifiable(
+          staleSlotFacets.map(
+            (slot, facets) => MapEntry(slot, Set.unmodifiable(facets)),
+          ),
+        ),
         unavailableFacets = Set.unmodifiable(unavailableFacets),
         staleFacets = Set.unmodifiable(staleFacets);
 
@@ -268,6 +314,9 @@ class SlotsStatus {
   final List<DeviceSlotStatus> slots;
   final SlotField<int> activeSlot;
   final int? pendingActivation;
+  final PendingSlotReorder? pendingReorder;
+  final SlotReorderCapability reorderCapability;
+  final Map<int, Set<SlotFacet>> staleSlotFacets;
   final Set<SlotFacet> unavailableFacets;
   final Set<SlotFacet> staleFacets;
 
@@ -295,6 +344,9 @@ class SlotsStatus {
     List<DeviceSlotStatus>? slots,
     SlotField<int>? activeSlot,
     Object? pendingActivation = _keepPendingActivation,
+    Object? pendingReorder = _keepPendingReorder,
+    SlotReorderCapability? reorderCapability,
+    Map<int, Set<SlotFacet>>? staleSlotFacets,
     Set<SlotFacet>? unavailableFacets,
     Set<SlotFacet>? staleFacets,
   }) =>
@@ -308,6 +360,11 @@ class SlotsStatus {
         )
             ? this.pendingActivation
             : pendingActivation as int?,
+        pendingReorder: identical(pendingReorder, _keepPendingReorder)
+            ? this.pendingReorder
+            : pendingReorder as PendingSlotReorder?,
+        reorderCapability: reorderCapability ?? this.reorderCapability,
+        staleSlotFacets: staleSlotFacets ?? this.staleSlotFacets,
         unavailableFacets: unavailableFacets ?? this.unavailableFacets,
         staleFacets: staleFacets ?? this.staleFacets,
       );
@@ -318,6 +375,9 @@ class SlotsStatus {
         other.availability != availability ||
         other.activeSlot != activeSlot ||
         other.pendingActivation != pendingActivation ||
+        other.pendingReorder != pendingReorder ||
+        other.reorderCapability != reorderCapability ||
+        !_mapOfSetsEquals(other.staleSlotFacets, staleSlotFacets) ||
         !_setEquals(other.unavailableFacets, unavailableFacets) ||
         !_setEquals(other.staleFacets, staleFacets) ||
         other.slots.length != slots.length) {
@@ -336,6 +396,20 @@ class SlotsStatus {
         availability,
         activeSlot,
         pendingActivation,
+        pendingReorder,
+        reorderCapability,
+        staleSlotFacets.entries.fold<int>(
+          0,
+          (hash, entry) =>
+              hash ^
+              Object.hash(
+                entry.key,
+                entry.value.fold<int>(
+                  0,
+                  (facetHash, facet) => facetHash ^ facet.hashCode,
+                ),
+              ),
+        ),
         Object.hashAll(slots),
         unavailableFacets.fold<int>(
           0,
@@ -347,6 +421,19 @@ class SlotsStatus {
 
 bool _setEquals<T>(Set<T> left, Set<T> right) =>
     left.length == right.length && left.containsAll(right);
+
+bool _mapOfSetsEquals<K, V>(Map<K, Set<V>> left, Map<K, Set<V>> right) {
+  if (left.length != right.length) {
+    return false;
+  }
+  for (final entry in left.entries) {
+    final other = right[entry.key];
+    if (other == null || !_setEquals(entry.value, other)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 @immutable
 class DeviceIdentityStatus {
@@ -577,7 +664,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           mode: session.connector.device == ChameleonDevice.lite
               ? const ModeStatus.available(ConnectedDeviceMode.emulator)
               : const ModeStatus.loading(),
-          slots: SlotsStatus.loading(),
+          slots: SlotsStatus.loading().copyWith(
+            reorderCapability: session.connector.portName == 'Demo'
+                ? SlotReorderCapability.supported
+                : SlotReorderCapability.unknown,
+          ),
           firmware: session.connector.portName == 'Demo'
               ? const FirmwareStatus.demo()
               : const FirmwareStatus.checking(),
@@ -601,7 +692,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<void>? _modeRefresh;
   Future<void>? _slotsRefresh;
   Future<void>? _activeSlotRefresh;
+  Future<SlotReorderCapability>? _slotReorderCapabilityRefresh;
   Future<void>? _firmwareRefresh;
+  Future<List<int>>? _deviceCapabilitiesRead;
   _FirmwareFacts? _firmwareFacts;
   bool _firmwareLookupAttempted = false;
   bool _firmwareWarningClaimed = false;
@@ -609,6 +702,70 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
   bool _disposed = false;
+
+  Future<SlotReorderCapability> refreshSlotReorderCapability() {
+    final current = _snapshot.slots.reorderCapability;
+    if (current != SlotReorderCapability.unknown || !_canPublish) {
+      return Future.value(current);
+    }
+    final activeRefresh = _slotReorderCapabilityRefresh;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+
+    final refresh = _refreshSlotReorderCapability();
+    _slotReorderCapabilityRefresh = refresh;
+    return refresh.whenComplete(() {
+      if (identical(_slotReorderCapabilityRefresh, refresh)) {
+        _slotReorderCapabilityRefresh = null;
+      }
+    });
+  }
+
+  Future<SlotReorderCapability> _refreshSlotReorderCapability() async {
+    try {
+      while (_canPublish) {
+        final result = await _rfOperations.tryRunBackground<List<int>>(
+          _readDeviceCapabilitiesOnce,
+          group: _backgroundOperationGroup,
+        );
+        if (!result.acquired) {
+          await _rfOperations.waitUntilIdle();
+          continue;
+        }
+        if (!_canPublish) {
+          return SlotReorderCapability.unknown;
+        }
+        final capability =
+            result.value!.contains(ChameleonCommand.swapSlots.value)
+                ? SlotReorderCapability.supported
+                : SlotReorderCapability.unsupported;
+        _publish(
+          _snapshot.copyWith(
+            slots: _snapshot.slots.copyWith(reorderCapability: capability),
+          ),
+        );
+        return capability;
+      }
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to read whole-slot reorder capability',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish) {
+        _publish(
+          _snapshot.copyWith(
+            slots: _snapshot.slots.copyWith(
+              reorderCapability: SlotReorderCapability.unavailable,
+            ),
+          ),
+        );
+        return SlotReorderCapability.unavailable;
+      }
+    }
+    return SlotReorderCapability.unknown;
+  }
 
   StatusPresence present(StatusSurface surface) {
     switch (surface) {
@@ -826,7 +983,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           }
 
           try {
-            capabilities = await _session.communicator.getDeviceCapabilities();
+            capabilities = await _readDeviceCapabilitiesOnce();
           } catch (error, stackTrace) {
             if (!_canPublish) {
               return null;
@@ -1180,6 +1337,246 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
+  Future<SlotReorderOutcome> reorderSlots(int source, int target) async {
+    if (source < 0 || source >= 8 || target < 0 || target >= 8) {
+      return SlotReorderOutcome.invalid;
+    }
+    if (!_canPublish) {
+      return SlotReorderOutcome.connectionChanged;
+    }
+    if (source == target) {
+      return SlotReorderOutcome.confirmed;
+    }
+    if (_snapshot.slots.pendingReorder != null) {
+      return SlotReorderOutcome.busy;
+    }
+
+    _publish(
+      _snapshot.copyWith(
+        slots: _snapshot.slots.copyWith(
+          pendingReorder: PendingSlotReorder(source: source, target: target),
+        ),
+      ),
+    );
+
+    try {
+      return await _rfOperations.runForeground(() async {
+        if (!_canPublish) {
+          return SlotReorderOutcome.connectionChanged;
+        }
+
+        final capability = await _readSlotReorderCapabilityInsideLease();
+        if (!_canPublish) {
+          return SlotReorderOutcome.connectionChanged;
+        }
+        if (capability != SlotReorderCapability.supported) {
+          _clearPendingReorder();
+          return capability == SlotReorderCapability.unsupported
+              ? SlotReorderOutcome.unsupported
+              : SlotReorderOutcome.failed;
+        }
+
+        final previous = _snapshot.slots;
+        var replyWasAmbiguous = false;
+        try {
+          await _session.communicator.swapSlots(source, target);
+        } on SlotReorderRejected catch (error, stackTrace) {
+          _session.appState.log?.w(
+            'Connected device rejected whole-slot reorder',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (!_canPublish) {
+            return SlotReorderOutcome.connectionChanged;
+          }
+          _clearPendingReorder();
+          return SlotReorderOutcome.failed;
+        } catch (error, stackTrace) {
+          replyWasAmbiguous = true;
+          _session.appState.log?.w(
+            'Whole-slot reorder reply was unavailable; reconciling slots',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        if (!_canPublish) {
+          return SlotReorderOutcome.connectionChanged;
+        }
+
+        final readBack = await _readSlots(previous);
+        if (!_canPublish || readBack == null) {
+          return SlotReorderOutcome.connectionChanged;
+        }
+        final reconciled = _preciseReorderReconciliation(
+          readBack,
+          source,
+          target,
+        ).copyWith(pendingReorder: null);
+        _publish(_snapshot.copyWith(slots: reconciled));
+
+        if (_reorderReconciliationUnresolved(reconciled)) {
+          return replyWasAmbiguous
+              ? SlotReorderOutcome.ambiguous
+              : SlotReorderOutcome.reconciliationFailed;
+        }
+        if (!replyWasAmbiguous ||
+            _matchesExpectedSwap(previous, reconciled, source, target)) {
+          return SlotReorderOutcome.confirmed;
+        }
+        return _matchesConfirmedOrder(previous, reconciled)
+            ? SlotReorderOutcome.failed
+            : SlotReorderOutcome.ambiguous;
+      });
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to reorder connected-device slots',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return SlotReorderOutcome.connectionChanged;
+      }
+      _clearPendingReorder();
+      return SlotReorderOutcome.failed;
+    }
+  }
+
+  Future<SlotReorderCapability> _readSlotReorderCapabilityInsideLease() async {
+    final cached = _snapshot.slots.reorderCapability;
+    if (cached != SlotReorderCapability.unknown) {
+      return cached;
+    }
+    try {
+      final capabilities = await _readDeviceCapabilitiesOnce();
+      if (!_canPublish) {
+        return SlotReorderCapability.unknown;
+      }
+      final capability = capabilities.contains(ChameleonCommand.swapSlots.value)
+          ? SlotReorderCapability.supported
+          : SlotReorderCapability.unsupported;
+      _publish(
+        _snapshot.copyWith(
+          slots: _snapshot.slots.copyWith(reorderCapability: capability),
+        ),
+      );
+      return capability;
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Unable to verify whole-slot reorder capability',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish) {
+        _publish(
+          _snapshot.copyWith(
+            slots: _snapshot.slots.copyWith(
+              reorderCapability: SlotReorderCapability.unavailable,
+            ),
+          ),
+        );
+      }
+      return SlotReorderCapability.unavailable;
+    }
+  }
+
+  Future<List<int>> _readDeviceCapabilitiesOnce() =>
+      _deviceCapabilitiesRead ??=
+          _session.communicator.getDeviceCapabilities();
+
+  SlotsStatus _preciseReorderReconciliation(
+    SlotsStatus reconciled,
+    int source,
+    int target,
+  ) {
+    final globalStale = {...reconciled.staleFacets};
+    final staleBySlot = <int, Set<SlotFacet>>{
+      for (final entry in reconciled.staleSlotFacets.entries)
+        entry.key: {...entry.value},
+    };
+    for (final facet in const [
+      SlotFacet.types,
+      SlotFacet.enabledStates,
+      SlotFacet.names,
+    ]) {
+      if (globalStale.remove(facet)) {
+        staleBySlot.putIfAbsent(source, () => <SlotFacet>{}).add(facet);
+        staleBySlot.putIfAbsent(target, () => <SlotFacet>{}).add(facet);
+      }
+    }
+    return reconciled.copyWith(
+      availability: _slotsAvailability(
+        globalStale,
+        reconciled.unavailableFacets,
+        staleBySlot,
+      ),
+      staleFacets: globalStale,
+      staleSlotFacets: staleBySlot,
+    );
+  }
+
+  bool _reorderReconciliationUnresolved(SlotsStatus slots) =>
+      slots.staleFacets.isNotEmpty ||
+      slots.staleSlotFacets.isNotEmpty ||
+      slots.unavailableFacets.isNotEmpty;
+
+  bool _matchesExpectedSwap(
+    SlotsStatus before,
+    SlotsStatus after,
+    int source,
+    int target,
+  ) {
+    final expected = [...before.slots];
+    final sourceSlot = expected[source];
+    expected[source] = DeviceSlotStatus(
+      index: source,
+      hf: expected[target].hf,
+      lf: expected[target].lf,
+    );
+    expected[target] = DeviceSlotStatus(
+      index: target,
+      hf: sourceSlot.hf,
+      lf: sourceSlot.lf,
+    );
+    final active = before.activeSlot.value;
+    final expectedActive = active == source
+        ? target
+        : active == target
+            ? source
+            : active;
+    return _slotListsEqual(expected, after.slots) &&
+        after.activeSlot.value == expectedActive;
+  }
+
+  bool _matchesConfirmedOrder(SlotsStatus before, SlotsStatus after) =>
+      _slotListsEqual(before.slots, after.slots) &&
+      before.activeSlot.value == after.activeSlot.value;
+
+  bool _slotListsEqual(
+    List<DeviceSlotStatus> left,
+    List<DeviceSlotStatus> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _clearPendingReorder() {
+    if (!_canPublish || _snapshot.slots.pendingReorder == null) {
+      return;
+    }
+    _publish(
+      _snapshot.copyWith(
+        slots: _snapshot.slots.copyWith(pendingReorder: null),
+      ),
+    );
+  }
+
   SlotsStatus _mergePendingSlotActivation(SlotsStatus reconciled) {
     return reconciled.copyWith(
       pendingActivation: _snapshot.slots.pendingActivation,
@@ -1238,6 +1635,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
               _snapshot.copyWith(
                 slots: status.copyWith(
                   pendingActivation: _snapshot.slots.pendingActivation,
+                  pendingReorder: _snapshot.slots.pendingReorder,
+                  reorderCapability: _snapshot.slots.reorderCapability,
                 ),
               ),
             );
@@ -1262,6 +1661,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (slot < 0 ||
         slot >= 8 ||
         !_canPublish ||
+        _snapshot.slots.pendingReorder != null ||
         _snapshot.slots.pendingActivation != null) {
       return false;
     }
@@ -1377,7 +1777,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _publish(
       _snapshot.copyWith(
         slots: currentSlots.copyWith(
-          availability: _slotsAvailability(staleFacets, unavailableFacets),
+          availability: _slotsAvailability(
+            staleFacets,
+            unavailableFacets,
+            currentSlots.staleSlotFacets,
+          ),
           activeSlot: SlotField.confirmed(activeSlot),
           pendingActivation: null,
           staleFacets: staleFacets,
@@ -1388,7 +1792,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _scheduleActiveSlotRefresh() {
-    if (_slotsRefresh != null || _snapshot.slots.pendingActivation != null) {
+    if (_slotsRefresh != null ||
+        _snapshot.slots.pendingActivation != null ||
+        _snapshot.slots.pendingReorder != null) {
       return Future.value();
     }
     final currentRefresh = _activeSlotRefresh;
@@ -1425,7 +1831,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _publish(
         _snapshot.copyWith(
           slots: currentSlots.copyWith(
-            availability: _slotsAvailability(staleFacets, unavailableFacets),
+            availability: _slotsAvailability(
+              staleFacets,
+              unavailableFacets,
+              currentSlots.staleSlotFacets,
+            ),
             activeSlot: SlotField.confirmed(confirmedSlot),
             staleFacets: staleFacets,
             unavailableFacets: unavailableFacets,
@@ -1453,7 +1863,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _publish(
         _snapshot.copyWith(
           slots: currentSlots.copyWith(
-            availability: _slotsAvailability(staleFacets, unavailableFacets),
+            availability: _slotsAvailability(
+              staleFacets,
+              unavailableFacets,
+              currentSlots.staleSlotFacets,
+            ),
             staleFacets: staleFacets,
             unavailableFacets: unavailableFacets,
           ),
@@ -1590,13 +2004,25 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final staleFacets = failures.where(previous.isFacetConfirmed).toSet();
     final unavailableFacets =
         failures.where((facet) => !previous.isFacetConfirmed(facet)).toSet();
+    final staleSlotFacets = <int, Set<SlotFacet>>{
+      for (final entry in previous.staleSlotFacets.entries)
+        entry.key: {...entry.value}..retainAll(failures),
+    }..removeWhere((_, facets) => facets.isEmpty);
 
     return SlotsStatus(
-      availability: _slotsAvailability(staleFacets, unavailableFacets),
+      availability: _slotsAvailability(
+        staleFacets,
+        unavailableFacets,
+        staleSlotFacets,
+      ),
       slots: normalized,
       activeSlot: activeSlot == null
           ? _preservedOrUnavailable(previous.activeSlot)
           : SlotField.confirmed(activeSlot),
+      pendingActivation: previous.pendingActivation,
+      pendingReorder: previous.pendingReorder,
+      reorderCapability: previous.reorderCapability,
+      staleSlotFacets: staleSlotFacets,
       unavailableFacets: unavailableFacets,
       staleFacets: staleFacets,
     );
@@ -1630,7 +2056,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         .where((facet) => !previous.isFacetConfirmed(facet))
         .toSet();
     return previous.copyWith(
-      availability: _slotsAvailability(staleFacets, unavailableFacets),
+      availability: _slotsAvailability(
+        staleFacets,
+        unavailableFacets,
+        previous.staleSlotFacets,
+      ),
       staleFacets: staleFacets,
       unavailableFacets: unavailableFacets,
     );
@@ -1638,9 +2068,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   SlotsAvailability _slotsAvailability(
     Set<SlotFacet> staleFacets,
-    Set<SlotFacet> unavailableFacets,
-  ) {
-    if (staleFacets.isNotEmpty) {
+    Set<SlotFacet> unavailableFacets, [
+    Map<int, Set<SlotFacet>> staleSlotFacets = const {},
+  ]) {
+    if (staleFacets.isNotEmpty || staleSlotFacets.isNotEmpty) {
       return SlotsAvailability.stale;
     }
     if (unavailableFacets.isEmpty) {
@@ -1745,7 +2176,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(refreshMode());
     }
     if (_snapshot.slots.availability != SlotsAvailability.available &&
-        _snapshot.slots.pendingActivation == null) {
+        _snapshot.slots.pendingActivation == null &&
+        _snapshot.slots.pendingReorder == null) {
       unawaited(refreshSlots());
     }
   }
