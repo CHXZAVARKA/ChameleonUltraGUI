@@ -703,6 +703,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<void>? _firmwareRefresh;
   Future<List<int>>? _deviceCapabilitiesRead;
   _FirmwareFacts? _firmwareFacts;
+  final Map<int, Set<SlotFacet>> _semanticReorderAmbiguity = {};
   bool _firmwareLookupAttempted = false;
   bool _firmwareWarningClaimed = false;
   final Object _backgroundOperationGroup = Object();
@@ -1313,7 +1314,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           if (_canPublish && slots != null) {
             _publish(
               _snapshot.copyWith(
-                slots: _mergePendingSlotActivation(slots),
+                slots: _withSemanticReorderAmbiguity(
+                  _mergePendingSlotActivation(slots),
+                ),
                 mode: _mergePendingModeAction(mode),
               ),
             );
@@ -1406,45 +1409,59 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           return SlotReorderOutcome.connectionChanged;
         }
 
-        final readBack = await _readSlots(previous);
+        final readBack = await _readSlots(
+          _withoutSemanticReorderAmbiguity(previous),
+        );
         if (!_canPublish || readBack == null) {
           return SlotReorderOutcome.connectionChanged;
         }
         var reconciled = _preciseReorderReconciliation(
-          previous,
+          _withoutSemanticReorderAmbiguity(previous),
           readBack,
           source,
           target,
         ).copyWith(pendingReorder: null);
 
-        if (_reorderReconciliationUnresolved(reconciled)) {
-          _publish(_snapshot.copyWith(slots: reconciled));
-          return replyWasAmbiguous
-              ? SlotReorderOutcome.ambiguous
-              : SlotReorderOutcome.reconciliationFailed;
-        }
         if (!replyWasAmbiguous) {
+          _swapSemanticReorderAmbiguity(source, target);
+          final unresolved = _reorderReconciliationUnresolved(reconciled);
+          reconciled = _withSemanticReorderAmbiguity(reconciled);
           _publish(_snapshot.copyWith(slots: reconciled));
-          return SlotReorderOutcome.confirmed;
+          return unresolved
+              ? SlotReorderOutcome.reconciliationFailed
+              : SlotReorderOutcome.confirmed;
+        }
+        if (_reorderReconciliationUnresolved(reconciled)) {
+          _publish(
+            _snapshot.copyWith(
+              slots: _withSemanticReorderAmbiguity(reconciled),
+            ),
+          );
+          return SlotReorderOutcome.ambiguous;
         }
 
         final matchesExpected =
             _matchesExpectedSwap(previous, reconciled, source, target);
         final matchesPrevious = _matchesConfirmedOrder(previous, reconciled);
         if (matchesExpected && !matchesPrevious) {
+          _swapSemanticReorderAmbiguity(source, target);
+          reconciled = _withSemanticReorderAmbiguity(reconciled);
           _publish(_snapshot.copyWith(slots: reconciled));
           return SlotReorderOutcome.confirmed;
         }
         if (!matchesExpected && matchesPrevious) {
+          reconciled = _withSemanticReorderAmbiguity(reconciled);
           _publish(_snapshot.copyWith(slots: reconciled));
           return SlotReorderOutcome.failed;
         }
 
+        _rememberSemanticReorderAmbiguity(source, target);
         reconciled = _markReorderPositionsStale(
           reconciled,
           source,
           target,
         );
+        reconciled = _withSemanticReorderAmbiguity(reconciled);
         _publish(_snapshot.copyWith(slots: reconciled));
         return SlotReorderOutcome.ambiguous;
       });
@@ -1561,6 +1578,68 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         SlotFacet.enabledStates,
         SlotFacet.names,
       });
+    }
+    return slots.copyWith(
+      availability: _slotsAvailability(
+        slots.staleFacets,
+        slots.unavailableFacets,
+        staleBySlot,
+      ),
+      staleSlotFacets: staleBySlot,
+    );
+  }
+
+  void _rememberSemanticReorderAmbiguity(int source, int target) {
+    for (final position in [source, target]) {
+      _semanticReorderAmbiguity
+          .putIfAbsent(position, () => <SlotFacet>{})
+          .addAll(const {
+        SlotFacet.types,
+        SlotFacet.enabledStates,
+        SlotFacet.names,
+      });
+    }
+  }
+
+  void _swapSemanticReorderAmbiguity(int source, int target) {
+    final sourceFacets = _semanticReorderAmbiguity.remove(source);
+    final targetFacets = _semanticReorderAmbiguity.remove(target);
+    if (sourceFacets != null) {
+      _semanticReorderAmbiguity[target] = sourceFacets;
+    }
+    if (targetFacets != null) {
+      _semanticReorderAmbiguity[source] = targetFacets;
+    }
+  }
+
+  SlotsStatus _withoutSemanticReorderAmbiguity(SlotsStatus slots) {
+    final staleBySlot = <int, Set<SlotFacet>>{
+      for (final entry in slots.staleSlotFacets.entries)
+        entry.key: {...entry.value},
+    };
+    for (final entry in _semanticReorderAmbiguity.entries) {
+      staleBySlot[entry.key]?.removeAll(entry.value);
+    }
+    staleBySlot.removeWhere((_, facets) => facets.isEmpty);
+    return slots.copyWith(
+      availability: _slotsAvailability(
+        slots.staleFacets,
+        slots.unavailableFacets,
+        staleBySlot,
+      ),
+      staleSlotFacets: staleBySlot,
+    );
+  }
+
+  SlotsStatus _withSemanticReorderAmbiguity(SlotsStatus slots) {
+    final staleBySlot = <int, Set<SlotFacet>>{
+      for (final entry in slots.staleSlotFacets.entries)
+        entry.key: {...entry.value},
+    };
+    for (final entry in _semanticReorderAmbiguity.entries) {
+      staleBySlot
+          .putIfAbsent(entry.key, () => <SlotFacet>{})
+          .addAll(entry.value);
     }
     return slots.copyWith(
       availability: _slotsAvailability(
@@ -1691,10 +1770,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           if (_canPublish && status != null) {
             _publish(
               _snapshot.copyWith(
-                slots: status.copyWith(
-                  pendingActivation: _snapshot.slots.pendingActivation,
-                  pendingReorder: _snapshot.slots.pendingReorder,
-                  reorderCapability: _snapshot.slots.reorderCapability,
+                slots: _withSemanticReorderAmbiguity(
+                  status.copyWith(
+                    pendingActivation: _snapshot.slots.pendingActivation,
+                    pendingReorder: _snapshot.slots.pendingReorder,
+                    reorderCapability: _snapshot.slots.reorderCapability,
+                  ),
                 ),
               ),
             );
@@ -2288,6 +2369,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _batteryTimer = null;
     _activeSlotTimer?.cancel();
     _activeSlotTimer = null;
+    _semanticReorderAmbiguity.clear();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
