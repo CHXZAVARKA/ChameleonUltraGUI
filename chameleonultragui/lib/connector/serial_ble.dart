@@ -134,13 +134,15 @@ class BLESerial extends AbstractSerial {
   bool inSearch = false;
 
   Future<List> availableDevices() async {
+    if (connected || pendingConnection || connection != null) {
+      return [];
+    }
     if (inSearch) {
       log.w("Multiple searches in one time not allowed! FIXME");
       return [];
     }
 
     List<DiscoveredDevice> foundDevices = [];
-    await performDisconnect();
 
     Completer<List<DiscoveredDevice>> completer =
         Completer<List<DiscoveredDevice>>();
