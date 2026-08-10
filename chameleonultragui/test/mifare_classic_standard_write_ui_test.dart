@@ -19,7 +19,12 @@ import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show MethodChannel, PlatformException, StandardMethodCodec;
+    show
+        FontLoader,
+        MethodChannel,
+        PlatformException,
+        StandardMethodCodec,
+        rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
@@ -28,8 +33,54 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 // ignore: depend_on_referenced_packages
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
+bool _sourceControlTestFontLoaded = false;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+      'standard source controls stay in one row below 520 when they fit',
+      (tester) async {
+    await _pumpStandardSourceControls(tester, width: 500);
+
+    final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
+    final separator = find.text('OR');
+    final selectSavedCard =
+        find.widgetWithText(OutlinedButton, 'Select saved card');
+    final loadFileCenter = tester.getCenter(loadFile);
+    final separatorCenter = tester.getCenter(separator);
+    final selectSavedCardCenter = tester.getCenter(selectSavedCard);
+
+    expect(loadFileCenter.dy, selectSavedCardCenter.dy);
+    expect(separatorCenter.dx, greaterThan(loadFileCenter.dx));
+    expect(separatorCenter.dx, lessThan(selectSavedCardCenter.dx));
+    expect(
+      tester.getSize(loadFile).width,
+      tester.getSize(selectSavedCard).width,
+    );
+  });
+
+  testWidgets('standard source controls stack when their labels cannot fit',
+      (tester) async {
+    await _pumpStandardSourceControls(tester, width: 320);
+
+    final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
+    final separator = find.text('OR');
+    final selectSavedCard =
+        find.widgetWithText(OutlinedButton, 'Select saved card');
+    final loadFileCenter = tester.getCenter(loadFile);
+    final separatorCenter = tester.getCenter(separator);
+    final selectSavedCardCenter = tester.getCenter(selectSavedCard);
+
+    expect(loadFileCenter.dy, lessThan(separatorCenter.dy));
+    expect(separatorCenter.dy, lessThan(selectSavedCardCenter.dy));
+    expect(
+        tester.getTopLeft(loadFile).dx, tester.getTopLeft(selectSavedCard).dx);
+    expect(
+      tester.getSize(loadFile).width,
+      tester.getSize(selectSavedCard).width,
+    );
+  });
 
   testWidgets('standard write offers only proven complete saved dumps',
       (tester) async {
@@ -1187,6 +1238,41 @@ void main() {
     expect(replacement.readerModeCalls, 0);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _pumpStandardSourceControls(
+  WidgetTester tester, {
+  required double width,
+}) async {
+  if (!_sourceControlTestFontLoaded) {
+    final fontLoader = FontLoader('RobotoMono')
+      ..addFont(rootBundle.load('assets/fonts/RobotoMono-Regular.ttf'));
+    await fontLoader.load();
+    _sourceControlTestFontLoaded = true;
+  }
+  SharedPreferences.setMockInitialValues({});
+  final preferences = SharedPreferencesProvider();
+  await preferences.load();
+  final appState = ChameleonGUIState(preferences);
+
+  await tester.pumpWidget(
+    ChangeNotifierProvider<ChameleonGUIState>.value(
+      value: appState,
+      child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: ThemeData(fontFamily: 'RobotoMono'),
+        home: Center(
+          child: SizedBox(
+            width: width,
+            child: const Scaffold(body: StandardMifareClassicWritePanel()),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 List<Uint8List> _miniTargetBlocks() {
