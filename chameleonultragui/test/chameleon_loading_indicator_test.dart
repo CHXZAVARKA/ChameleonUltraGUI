@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -37,18 +38,69 @@ void main() {
     expect(after.transform, isNot(beforeTransform));
   });
 
-  testWidgets('optically aligns C above the geometric U center',
-      (tester) async {
+  testWidgets('overlays C and U on the same square canvas', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: ChameleonLoadingIndicator()),
       ),
     );
 
-    final alignment = tester.widget<Transform>(
-      find.byKey(const Key('chameleon-loader-c-alignment')),
+    final cMark = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-c-svg')),
     );
-    expect(alignment.transform.storage[13], closeTo(-2.24, 0.01));
+    final uMark = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-u-svg')),
+    );
+    expect(cMark.width, 40.32);
+    expect(cMark.height, 40.32);
+    expect(uMark.width, cMark.width);
+    expect(uMark.height, cMark.height);
+  });
+
+  testWidgets('cycles through colors from the active theme', (tester) async {
+    const primary = Color(0xFF1357A6);
+    const secondary = Color(0xFF27A36A);
+    const tertiary = Color(0xFFB83D8B);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: primary,
+          ).copyWith(
+            primary: primary,
+            secondary: secondary,
+            tertiary: tertiary,
+          ),
+        ),
+        home: const Scaffold(body: ChameleonLoadingIndicator()),
+      ),
+    );
+
+    final initialC = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-c-svg')),
+    );
+    final initialU = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-u-svg')),
+    );
+    expect(
+      initialC.colorFilter,
+      const ColorFilter.mode(primary, BlendMode.srcIn),
+    );
+    expect(
+      initialU.colorFilter,
+      const ColorFilter.mode(tertiary, BlendMode.srcIn),
+    );
+
+    await tester.pump(const Duration(milliseconds: 350));
+
+    final animatedC = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-c-svg')),
+    );
+    final animatedU = tester.widget<SvgPicture>(
+      find.byKey(const Key('chameleon-loader-u-svg')),
+    );
+    expect(animatedC.colorFilter, isNot(initialC.colorFilter));
+    expect(animatedU.colorFilter, isNot(initialU.colorFilter));
   });
 
   testWidgets('stays still when reduced motion is enabled', (tester) async {
@@ -65,6 +117,9 @@ void main() {
       find.byKey(const Key('chameleon-loader-c')),
     );
     final beforeTransform = before.transform.clone();
+    final beforeColor = tester
+        .widget<SvgPicture>(find.byKey(const Key('chameleon-loader-c-svg')))
+        .colorFilter;
 
     await tester.pump(const Duration(seconds: 2));
 
@@ -72,6 +127,12 @@ void main() {
       find.byKey(const Key('chameleon-loader-c')),
     );
     expect(after.transform, beforeTransform);
+    expect(
+      tester
+          .widget<SvgPicture>(find.byKey(const Key('chameleon-loader-c-svg')))
+          .colorFilter,
+      beforeColor,
+    );
     expect(tester.binding.hasScheduledFrame, isFalse);
   });
 }

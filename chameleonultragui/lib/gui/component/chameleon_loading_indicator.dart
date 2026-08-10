@@ -25,8 +25,6 @@ class ChameleonLoadingIndicator extends StatefulWidget {
 
 class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
     with SingleTickerProviderStateMixin {
-  static const _cVerticalOffsetFactor = -0.04;
-
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
@@ -50,11 +48,26 @@ class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
     super.dispose();
   }
 
+  Color _cycleColor(List<Color> colors, double progress) {
+    if (colors.length == 1) return colors.single;
+    final position = (progress % 1) * colors.length;
+    final index = position.floor();
+    return Color.lerp(
+      colors[index],
+      colors[(index + 1) % colors.length],
+      position - index,
+    )!;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final outerColor = widget.color ?? colorScheme.primary;
     final innerColor = widget.accentColor ?? colorScheme.tertiary;
+    final palette = widget.color == null && widget.accentColor == null
+        ? [colorScheme.primary, colorScheme.secondary, colorScheme.tertiary]
+        : [outerColor, innerColor];
+    final innerPhase = palette.length == 3 ? 2 / 3 : 0.5;
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
 
     return Semantics(
@@ -68,24 +81,27 @@ class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
             final innerScale = reducedMotion
                 ? 1.0
                 : 0.9 + 0.1 * ((1 - math.cos(progress * math.pi * 2)) / 2);
+            final animatedOuterColor = _cycleColor(palette, progress);
+            final animatedInnerColor = _cycleColor(
+              palette,
+              (progress + innerPhase) % 1,
+            );
+            final markSize = widget.size * 0.72;
             return Stack(
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                Transform.translate(
-                  key: const Key('chameleon-loader-c-alignment'),
-                  offset: Offset(0, widget.size * _cVerticalOffsetFactor),
-                  child: Transform.rotate(
-                    key: const Key('chameleon-loader-c'),
-                    angle: progress * math.pi * 2,
-                    child: SvgPicture.asset(
-                      'assets/loading/chameleon-c.svg',
-                      width: widget.size * 0.62,
-                      height: widget.size * 0.72,
-                      colorFilter: ColorFilter.mode(
-                        outerColor,
-                        BlendMode.srcIn,
-                      ),
+                Transform.rotate(
+                  key: const Key('chameleon-loader-c'),
+                  angle: progress * math.pi * 2,
+                  child: SvgPicture.asset(
+                    'assets/loading/chameleon-c.svg',
+                    key: const Key('chameleon-loader-c-svg'),
+                    width: markSize,
+                    height: markSize,
+                    colorFilter: ColorFilter.mode(
+                      animatedOuterColor,
+                      BlendMode.srcIn,
                     ),
                   ),
                 ),
@@ -94,10 +110,11 @@ class _ChameleonLoadingIndicatorState extends State<ChameleonLoadingIndicator>
                   scale: innerScale,
                   child: SvgPicture.asset(
                     'assets/loading/chameleon-u.svg',
-                    width: widget.size * 0.38,
-                    height: widget.size * 0.33,
+                    key: const Key('chameleon-loader-u-svg'),
+                    width: markSize,
+                    height: markSize,
                     colorFilter: ColorFilter.mode(
-                      innerColor,
+                      animatedInnerColor,
                       BlendMode.srcIn,
                     ),
                   ),
