@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
@@ -7,6 +8,7 @@ import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 class HomeSlotGrid extends StatefulWidget {
@@ -32,16 +34,24 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     8,
     (index) => GlobalKey(debugLabel: 'Home slot ${index + 1}'),
   );
+  final GlobalKey _eightAcrossViewportKey = GlobalKey(
+    debugLabel: 'Home slot grid scroll viewport',
+  );
   var _focusedSlot = 0;
   int? _lastConfirmedActiveSlot;
+  int? _dragSource;
+  int? _dragTarget;
   var _hasFocus = false;
   var _eightAcrossOffset = 0.0;
   var _restoringEightAcrossOffset = false;
+  Timer? _autoScrollTimer;
+  double _autoScrollDirection = 0;
 
   @override
   void initState() {
     super.initState();
     _eightAcrossController.addListener(_rememberEightAcrossOffset);
+    unawaited(widget.status.refreshSlotReorderCapability());
   }
 
   void _rememberEightAcrossOffset() {
@@ -55,6 +65,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.status, widget.status)) {
       _lastConfirmedActiveSlot = null;
+      _stopAutoScroll();
+      _dragSource = null;
+      _dragTarget = null;
+      unawaited(widget.status.refreshSlotReorderCapability());
     }
     if (oldWidget.layout == SlotLayout.eightAcross &&
         widget.layout != SlotLayout.eightAcross &&
@@ -84,6 +98,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
 
   @override
   void dispose() {
+    _stopAutoScroll();
     _eightAcrossController
       ..removeListener(_rememberEightAcrossOffset)
       ..dispose();
@@ -110,6 +125,16 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       _ => null,
     };
     if (direction != null) {
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        final target = _keyboardReorderTarget(
+          _focusedSlot,
+          event.logicalKey,
+        );
+        if (target != null && _canStartReorder) {
+          unawaited(_reorder(_focusedSlot, target));
+        }
+        return KeyEventResult.handled;
+      }
       _activateFromKeyboard((_focusedSlot + direction + 8) % 8);
       return KeyEventResult.handled;
     }
@@ -134,7 +159,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       };
 
   void _activateFromKeyboard(int slot) {
-    if (widget.status.snapshot.slots.pendingActivation != null) {
+    if (_activationBlocked) {
       return;
     }
     if (_focusedSlot != slot) {
@@ -158,7 +183,8 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
 
   Future<void> _activate(int index) async {
     final invokedStatus = widget.status;
-    if (invokedStatus.snapshot.slots.pendingActivation != null) {
+    final slots = invokedStatus.snapshot.slots;
+    if (slots.pendingActivation != null || slots.pendingReorder != null) {
       return;
     }
     _focusNode.requestFocus();
@@ -184,6 +210,196 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     }
   }
 
+  bool get _activationBlocked {
+    final slots = widget.status.snapshot.slots;
+    return slots.pendingActivation != null || slots.pendingReorder != null;
+  }
+
+  bool get _canStartReorder {
+    final slots = widget.status.snapshot.slots;
+    return slots.reorderCapability == SlotReorderCapability.supported &&
+        slots.pendingActivation == null &&
+        slots.pendingReorder == null;
+  }
+
+  int? _keyboardReorderTarget(int source, LogicalKeyboardKey key) {
+    if (widget.layout == SlotLayout.twoByFour) {
+      return switch (key) {
+        LogicalKeyboardKey.arrowLeft when source % 4 > 0 => source - 1,
+        LogicalKeyboardKey.arrowRight when source % 4 < 3 => source + 1,
+        LogicalKeyboardKey.arrowUp when source >= 4 => source - 4,
+        LogicalKeyboardKey.arrowDown when source < 4 => source + 4,
+        _ => null,
+      };
+    }
+    return switch (key) {
+      LogicalKeyboardKey.arrowLeft ||
+      LogicalKeyboardKey.arrowUp when source > 0 =>
+        source - 1,
+      LogicalKeyboardKey.arrowRight ||
+      LogicalKeyboardKey.arrowDown when source < 7 =>
+        source + 1,
+      _ => null,
+    };
+  }
+
+  Future<void> _reorder(int source, int target) async {
+    if (source == target || !_canStartReorder) {
+      return;
+    }
+    final invokedStatus = widget.status;
+    final outcome = await invokedStatus.reorderSlots(source, target);
+    if (!mounted ||
+        !invokedStatus.isCurrentSession ||
+        !identical(widget.status, invokedStatus)) {
+      return;
+    }
+    if (outcome == SlotReorderOutcome.confirmed) {
+      if (_focusedSlot == source) {
+        setState(() => _focusedSlot = target);
+        _revealFocusedSlot();
+      }
+      return;
+    }
+    if (outcome == SlotReorderOutcome.busy ||
+        outcome == SlotReorderOutcome.connectionChanged ||
+        outcome == SlotReorderOutcome.invalid) {
+      return;
+    }
+    final localizations = AppLocalizations.of(context)!;
+    final detail = switch (outcome) {
+      SlotReorderOutcome.unsupported =>
+        '${localizations.firmware}: ${localizations.unavailable}',
+      SlotReorderOutcome.ambiguous ||
+      SlotReorderOutcome.reconciliationFailed =>
+        '${localizations.slot} ${source + 1} · '
+            '${localizations.slot} ${target + 1}: '
+            '${localizations.unavailable}',
+      _ => localizations.unavailable,
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('home-slot-reorder-error'),
+          content: Text('${localizations.error}: $detail'),
+          action: SnackBarAction(
+            label: localizations.retry,
+            onPressed: () => unawaited(_reorder(source, target)),
+          ),
+        ),
+      );
+  }
+
+  void _startDrag(int source) {
+    if (!_canStartReorder) {
+      return;
+    }
+    _focusNode.requestFocus();
+    setState(() {
+      _focusedSlot = source;
+      _dragSource = source;
+      _dragTarget = null;
+    });
+  }
+
+  void _hoverDragTarget(int source, int target) {
+    if (_dragSource != source || source == target || !_canStartReorder) {
+      return;
+    }
+    if (_dragTarget != target) {
+      setState(() => _dragTarget = target);
+    }
+  }
+
+  void _leaveDragTarget(int target) {
+    if (_dragTarget == target && mounted) {
+      setState(() => _dragTarget = null);
+    }
+  }
+
+  void _acceptDrag(int source, int target) {
+    if (_dragSource != source || source == target || !_canStartReorder) {
+      _cancelDrag();
+      return;
+    }
+    _stopAutoScroll();
+    setState(() {
+      _dragSource = null;
+      _dragTarget = null;
+    });
+    unawaited(_reorder(source, target));
+  }
+
+  void _cancelDrag() {
+    _stopAutoScroll();
+    if (mounted && (_dragSource != null || _dragTarget != null)) {
+      setState(() {
+        _dragSource = null;
+        _dragTarget = null;
+      });
+    } else {
+      _dragSource = null;
+      _dragTarget = null;
+    }
+  }
+
+  void _updateAutoScroll(Offset globalPosition) {
+    if (widget.layout != SlotLayout.eightAcross ||
+        !_eightAcrossController.hasClients) {
+      _stopAutoScroll();
+      return;
+    }
+    final viewportContext = _eightAcrossViewportKey.currentContext;
+    final renderObject = viewportContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      _stopAutoScroll();
+      return;
+    }
+    final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
+    const edge = 52.0;
+    final direction = globalPosition.dx < rect.left + edge
+        ? -1.0
+        : globalPosition.dx > rect.right - edge
+            ? 1.0
+            : 0.0;
+    if (direction == _autoScrollDirection) {
+      return;
+    }
+    _autoScrollDirection = direction;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+    if (direction == 0) {
+      return;
+    }
+    _autoScrollTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _scrollEightAcross(direction * 5),
+    );
+  }
+
+  void _scrollEightAcross(double delta) {
+    if (!mounted || !_eightAcrossController.hasClients) {
+      _stopAutoScroll();
+      return;
+    }
+    final position = _eightAcrossController.position;
+    final target = (_eightAcrossController.offset + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == _eightAcrossController.offset) {
+      return;
+    }
+    _eightAcrossController.jumpTo(target);
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollDirection = 0;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
@@ -192,6 +408,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       builder: (context, _) {
         final slots = widget.status.snapshot.slots;
         final activeSlot = slots.activeSlot.value;
+        final pendingReorder = slots.pendingReorder;
         if (slots.activeSlot.isConfirmed &&
             slots.pendingActivation == null &&
             activeSlot != null &&
@@ -280,25 +497,109 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                         slotNumberPainter.dispose();
                         final gridHeight =
                             markRowHeight * 2 + 29 + slotNumberHeight;
-                        Widget buildSlot(int index) => SizedBox(
-                              key: _slotKeys[index],
-                              width: slotWidth,
-                              height: gridHeight,
-                              child: _SlotColumn(
-                                index: index,
-                                slot: slots.slots[index],
-                                markSize: markSize,
-                                markRowHeight: markRowHeight,
-                                loading: slots.availability ==
-                                    SlotsAvailability.loading,
-                                active: activeSlot == index &&
-                                    slots.activeSlot.isConfirmed,
-                                activating: slots.pendingActivation == index,
-                                focused: _hasFocus && _focusedSlot == index,
-                                blocked: slots.pendingActivation != null,
-                                onTap: () => _activate(index),
-                              ),
+                        final reducedMotion =
+                            MediaQuery.disableAnimationsOf(context);
+                        Widget slotColumn(
+                          int index, {
+                          bool preview = false,
+                        }) =>
+                            _SlotColumn(
+                              index: index,
+                              slot: slots.slots[index],
+                              markSize: markSize,
+                              markRowHeight: markRowHeight,
+                              loading: slots.availability ==
+                                  SlotsAvailability.loading,
+                              active: activeSlot == index &&
+                                  slots.activeSlot.isConfirmed,
+                              activating: slots.pendingActivation == index,
+                              focused: !preview &&
+                                  _hasFocus &&
+                                  _focusedSlot == index,
+                              blocked: _activationBlocked,
+                              reorderEnabled: _canStartReorder,
+                              reorderSource: pendingReorder?.source == index ||
+                                  _dragSource == index,
+                              reorderTarget: pendingReorder?.target == index ||
+                                  _dragTarget == index,
+                              reorderPending: pendingReorder != null &&
+                                  (pendingReorder.source == index ||
+                                      pendingReorder.target == index),
+                              reorderPartner: pendingReorder?.source == index
+                                  ? pendingReorder!.target
+                                  : pendingReorder?.target == index
+                                      ? pendingReorder!.source
+                                      : _dragSource == index
+                                          ? _dragTarget
+                                          : _dragTarget == index
+                                              ? _dragSource
+                                              : null,
+                              reorderCapability: slots.reorderCapability,
+                              preview: preview,
+                              onTap: () => _activate(index),
+                              onMoveBefore: index > 0 && _canStartReorder
+                                  ? () => unawaited(_reorder(index, index - 1))
+                                  : null,
+                              onMoveAfter: index < 7 && _canStartReorder
+                                  ? () => unawaited(_reorder(index, index + 1))
+                                  : null,
                             );
+                        Widget buildSlot(int index) {
+                          Widget child = slotColumn(index);
+                          if (_canStartReorder) {
+                            child = LongPressDraggable<int>(
+                              key: Key('home-slot-${index + 1}-draggable'),
+                              data: index,
+                              maxSimultaneousDrags: 1,
+                              hapticFeedbackOnStart: !reducedMotion,
+                              onDragStarted: () => _startDrag(index),
+                              onDragUpdate: (details) =>
+                                  _updateAutoScroll(details.globalPosition),
+                              onDragEnd: (_) => _cancelDrag(),
+                              onDraggableCanceled: (_, __) => _cancelDrag(),
+                              feedback: Material(
+                                color: Colors.transparent,
+                                child: Transform.scale(
+                                  scale: reducedMotion ? 1 : 1.04,
+                                  child: SizedBox(
+                                    key: Key(
+                                      'home-slot-${index + 1}-drag-preview',
+                                    ),
+                                    width: slotWidth,
+                                    height: gridHeight,
+                                    child: IgnorePointer(
+                                      child: slotColumn(index, preview: true),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              childWhenDragging: Opacity(
+                                opacity: reducedMotion ? 1 : 0.72,
+                                child: slotColumn(index),
+                              ),
+                              child: child,
+                            );
+                          }
+                          return SizedBox(
+                            key: _slotKeys[index],
+                            width: slotWidth,
+                            height: gridHeight,
+                            child: DragTarget<int>(
+                              key: Key(
+                                'home-slot-${index + 1}-reorder-target',
+                              ),
+                              onWillAcceptWithDetails: (details) =>
+                                  _canStartReorder && details.data != index,
+                              onMove: (details) =>
+                                  _hoverDragTarget(details.data, index),
+                              onLeave: (_) => _leaveDragTarget(index),
+                              onAcceptWithDetails: (details) =>
+                                  _acceptDrag(details.data, index),
+                              builder: (context, _, __) => child,
+                            ),
+                          );
+                        }
+
                         Widget buildRow(int firstSlot) => SizedBox(
                               width: labelWidth + slotWidth * columns,
                               height: gridHeight,
@@ -348,6 +649,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                               width: availableSlotsWidth,
                               height: gridHeight,
                               child: SingleChildScrollView(
+                                key: _eightAcrossViewportKey,
                                 controller: _eightAcrossController,
                                 scrollDirection: Axis.horizontal,
                                 child: SizedBox(
@@ -447,7 +749,16 @@ class _SlotColumn extends StatelessWidget {
     required this.activating,
     required this.focused,
     required this.blocked,
+    required this.reorderEnabled,
+    required this.reorderSource,
+    required this.reorderTarget,
+    required this.reorderPending,
+    required this.reorderPartner,
+    required this.reorderCapability,
+    required this.preview,
     required this.onTap,
+    required this.onMoveBefore,
+    required this.onMoveAfter,
   });
 
   final int index;
@@ -459,7 +770,16 @@ class _SlotColumn extends StatelessWidget {
   final bool activating;
   final bool focused;
   final bool blocked;
+  final bool reorderEnabled;
+  final bool reorderSource;
+  final bool reorderTarget;
+  final bool reorderPending;
+  final int? reorderPartner;
+  final SlotReorderCapability reorderCapability;
+  final bool preview;
   final VoidCallback onTap;
+  final VoidCallback? onMoveBefore;
+  final VoidCallback? onMoveAfter;
 
   String _frequencyDescription(
     AppLocalizations localizations,
@@ -511,106 +831,182 @@ class _SlotColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final widgetsLocalizations = WidgetsLocalizations.of(context);
     const activeFrameColor = Colors.white;
+    final reorderDescription = reorderPartner == null
+        ? ''
+        : '\n${reorderPending ? localizations.loading : localizations.slot} · '
+            '${localizations.slot} ${reorderPartner! + 1}';
+    final capabilityDescription = switch (reorderCapability) {
+      SlotReorderCapability.unsupported ||
+      SlotReorderCapability.unavailable =>
+        '\n${localizations.firmware}: ${localizations.unavailable}',
+      SlotReorderCapability.unknown =>
+        '\n${localizations.firmware}: ${localizations.loading}',
+      SlotReorderCapability.supported => '',
+    };
     final tooltip = '${localizations.slot} ${index + 1}\n'
         '${_frequencyDescription(localizations, localizations.hf, slot.hf)}\n'
         '${_frequencyDescription(localizations, localizations.lf, slot.lf)}'
         '${active ? '\n${localizations.active_slot}' : ''}'
-        '${activating ? '\n${localizations.activating}' : ''}';
+        '${activating ? '\n${localizations.activating}' : ''}'
+        '$reorderDescription$capabilityDescription';
+    final textDirection = Directionality.of(context);
+    final moveBeforeLabel = textDirection == TextDirection.ltr
+        ? widgetsLocalizations.reorderItemLeft
+        : widgetsLocalizations.reorderItemRight;
+    final moveAfterLabel = textDirection == TextDirection.ltr
+        ? widgetsLocalizations.reorderItemRight
+        : widgetsLocalizations.reorderItemLeft;
+    final customActions = <CustomSemanticsAction, VoidCallback>{
+      if (onMoveBefore != null)
+        CustomSemanticsAction(label: moveBeforeLabel): onMoveBefore!,
+      if (onMoveAfter != null)
+        CustomSemanticsAction(label: moveAfterLabel): onMoveAfter!,
+    };
     return Tooltip(
       message: tooltip,
+      triggerMode: reorderEnabled
+          ? TooltipTriggerMode.manual
+          : TooltipTriggerMode.longPress,
       child: Semantics(
         button: true,
         enabled: !blocked,
         selected: active,
         label: tooltip.replaceAll('\n', '. '),
+        hint: switch (reorderCapability) {
+          SlotReorderCapability.supported => null,
+          SlotReorderCapability.unknown =>
+            '${localizations.firmware}: ${localizations.loading}',
+          _ => '${localizations.firmware}: ${localizations.unavailable}',
+        },
         excludeSemantics: true,
         onTap: blocked ? null : onTap,
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            key: Key('home-slot-${index + 1}'),
-            excludeFromSemantics: true,
-            borderRadius: BorderRadius.circular(18),
-            onTap: blocked ? null : onTap,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AnimatedContainer(
-                  key: active ? Key('home-active-slot-${index + 1}') : null,
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  padding: const EdgeInsets.fromLTRB(3, 6, 3, 5),
-                  decoration: BoxDecoration(
-                    color: focused
-                        ? theme.colorScheme.primary.withValues(alpha: 0.08)
+        customSemanticsActions: customActions,
+        child: MouseRegion(
+          cursor: blocked
+              ? SystemMouseCursors.basic
+              : reorderEnabled
+                  ? SystemMouseCursors.grab
+                  : SystemMouseCursors.click,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              key: Key(
+                preview
+                    ? 'home-slot-${index + 1}-preview-content'
+                    : 'home-slot-${index + 1}',
+              ),
+              excludeFromSemantics: true,
+              borderRadius: BorderRadius.circular(18),
+              onTap: blocked || preview ? null : onTap,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedContainer(
+                    key: active && !preview
+                        ? Key('home-active-slot-${index + 1}')
                         : null,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: active
-                          ? activeFrameColor
-                          : focused
-                              ? theme.colorScheme.outline
-                              : Colors.transparent,
-                      width: active ? 2 : 1,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.fromLTRB(3, 6, 3, 5),
+                    decoration: BoxDecoration(
+                      color: reorderPending
+                          ? theme.colorScheme.primary.withValues(alpha: 0.14)
+                          : reorderTarget
+                              ? theme.colorScheme.primary
+                                  .withValues(alpha: 0.12)
+                              : reorderSource
+                                  ? theme.colorScheme.primary
+                                      .withValues(alpha: 0.07)
+                                  : focused
+                                      ? theme.colorScheme.primary
+                                          .withValues(alpha: 0.08)
+                                      : null,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: active
+                            ? activeFrameColor
+                            : reorderSource || reorderTarget
+                                ? theme.colorScheme.primary
+                                : focused
+                                    ? theme.colorScheme.outline
+                                    : Colors.transparent,
+                        width: active || reorderSource || reorderTarget ? 2 : 1,
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (activating)
-                        SizedBox(
-                          key: Key('home-slot-${index + 1}-progress'),
-                          height: markRowHeight * 2 + 8,
-                          child: Center(
-                            child: ChameleonLoadingIndicator(
-                              size: math.max(30, markSize),
-                              semanticLabel: localizations.activating,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (activating)
+                          SizedBox(
+                            key: Key('home-slot-${index + 1}-progress'),
+                            height: markRowHeight * 2 + 8,
+                            child: Center(
+                              child: ChameleonLoadingIndicator(
+                                size: math.max(30, markSize),
+                                semanticLabel: localizations.activating,
+                              ),
+                            ),
+                          )
+                        else ...[
+                          SizedBox(
+                            height: markRowHeight,
+                            child: Center(
+                              child: _SlotStatusMark(
+                                key: Key(
+                                  'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                                ),
+                                frequency: TagFrequency.hf,
+                                state: _markState(slot.hf),
+                                size: markSize,
+                              ),
                             ),
                           ),
-                        )
-                      else ...[
-                        SizedBox(
-                          height: markRowHeight,
-                          child: Center(
-                            child: _SlotStatusMark(
-                              key: Key(
-                                'home-slot-${index + 1}-hf-mark-${_markState(slot.hf).name}',
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: markRowHeight,
+                            child: Center(
+                              child: _SlotStatusMark(
+                                key: Key(
+                                  'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
+                                ),
+                                frequency: TagFrequency.lf,
+                                state: _markState(slot.lf),
+                                size: markSize,
                               ),
-                              frequency: TagFrequency.hf,
-                              state: _markState(slot.hf),
-                              size: markSize,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: markRowHeight,
-                          child: Center(
-                            child: _SlotStatusMark(
-                              key: Key(
-                                'home-slot-${index + 1}-lf-mark-${_markState(slot.lf).name}',
-                              ),
-                              frequency: TagFrequency.lf,
-                              state: _markState(slot.lf),
-                              size: markSize,
-                            ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          '${index + 1}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: active ? FontWeight.w700 : null,
                           ),
                         ),
                       ],
-                      const SizedBox(height: 4),
-                      Text(
-                        '${index + 1}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: active ? FontWeight.w700 : null,
+                    ),
+                  ),
+                  if (reorderPending)
+                    Positioned(
+                      top: 3,
+                      left: 12,
+                      right: 12,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          key: Key(
+                            'home-slot-${index + 1}-reorder-progress',
+                          ),
+                          minHeight: 2,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ],
+                    ),
+                ],
+              ),
             ),
           ),
         ),

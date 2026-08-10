@@ -506,7 +506,8 @@ void main() {
         'Slot 1\n'
         'HF: Lab pass · Mifare Classic 1K · Enabled\n'
         'LF: Garage fob · EM410X · Disabled\n'
-        'Active slot',
+        'Active slot\n'
+        'Firmware: Unavailable',
       ),
       findsOneWidget,
     );
