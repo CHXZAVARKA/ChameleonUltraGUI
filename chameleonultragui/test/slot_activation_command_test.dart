@@ -8,7 +8,7 @@ import 'package:logger/logger.dart';
 
 void main() {
   test('slot activation accepts the firmware success response', () async {
-    final fixture = _fixture(0x68);
+    final fixture = _fixture(ChameleonStatus.success);
     addTearDown(fixture.logger.close);
 
     await expectLater(fixture.communicator.activateSlot(1), completes);
@@ -21,11 +21,17 @@ void main() {
     await expectLater(
       fixture.communicator.activateSlot(1),
       throwsA(
-        isA<StateError>().having(
-          (error) => error.message,
-          'message',
-          contains('0x66'),
-        ),
+        isA<SlotActivationRejected>()
+            .having(
+              (error) => error.status,
+              'status',
+              0x66,
+            )
+            .having(
+              (error) => error.toString(),
+              'description',
+              contains('0x66'),
+            ),
       ),
     );
   });

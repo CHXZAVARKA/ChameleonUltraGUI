@@ -271,6 +271,20 @@ class ChameleonMessage {
       {required this.command, required this.status, required this.data});
 }
 
+abstract final class ChameleonStatus {
+  static const int success = 0x68;
+}
+
+class SlotActivationRejected implements Exception {
+  const SlotActivationRejected(this.status);
+
+  final int status;
+
+  @override
+  String toString() =>
+      'Slot activation failed with status 0x${status.toRadixString(16)}';
+}
+
 enum NTLevel { static, weak, hard, backdoor, unknown }
 
 typedef CardScanContinuation = bool Function();

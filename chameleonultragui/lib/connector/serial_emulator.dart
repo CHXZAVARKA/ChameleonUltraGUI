@@ -230,7 +230,7 @@ class EmulatorSerial extends AbstractSerial {
       0x11,
       0xef,
       ...u16ToBytes(command),
-      ...u16ToBytes(0x68),
+      ...u16ToBytes(ChameleonStatus.success),
       ...u16ToBytes(data.length),
     ];
     frame.add(_lrc(frame.sublist(2, 8)));

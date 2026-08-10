@@ -930,6 +930,26 @@ void main() {
     );
   });
 
+  testWidgets('firmware rejection does not use ambiguous-result recovery',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+    communicator
+      ..commandEvents.clear()
+      ..activeSlot = 1
+      ..activationRejectionStatus = 0x66;
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+
+    expect(communicator.commandEvents, ['activate:1']);
+    expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
+    expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
+    expect(find.byKey(const Key('home-slot-activation-error')), findsOneWidget);
+  });
+
   testWidgets('old Home activation cannot report into a replacement session',
       (tester) async {
     final oldGate = Completer<void>();
@@ -960,6 +980,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(newCommunicator.activations, [2]);
     expect(find.byKey(const Key('home-active-slot-3')), findsOneWidget);
+  });
+
+  testWidgets('unpumped replacement suppresses an old activation error',
+      (tester) async {
+    final oldGate = Completer<void>();
+    final oldCommunicator = _SlotCommunicator()
+      ..activationGate = oldGate
+      ..failActivation = true;
+    final appState = _connectedState(oldCommunicator);
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('home-slot-2')));
+    await tester.pump();
+    expect(oldCommunicator.activations, [1]);
+
+    _replaceConnection(appState, _SlotCommunicator());
+    oldGate.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('Home skips busy active polling without making slots stale',
@@ -2877,6 +2920,7 @@ class _SlotCommunicator extends ChameleonCommunicator {
   Completer<void>? activationGate;
   bool failActivation = false;
   bool applyActivationBeforeFailure = false;
+  int? activationRejectionStatus;
   bool failModeRead = false;
   bool readerMode = false;
   Completer<void>? modeWriteGate;
@@ -2966,6 +3010,10 @@ class _SlotCommunicator extends ChameleonCommunicator {
     await activationGate?.future;
     if (applyActivationBeforeFailure) {
       activeSlot = slot;
+    }
+    final rejectionStatus = activationRejectionStatus;
+    if (rejectionStatus != null) {
+      throw SlotActivationRejected(rejectionStatus);
     }
     if (failActivation) {
       throw StateError('slot activation unavailable');

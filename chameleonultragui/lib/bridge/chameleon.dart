@@ -522,14 +522,11 @@ class ChameleonCommunicator {
       ChameleonCommand.setActiveSlot,
       data: Uint8List.fromList([slot]),
     );
-    if (response?.status != 0x68) {
-      final status = response?.status;
-      throw StateError(
-        status == null
-            ? 'Slot activation returned no response'
-            : 'Slot activation failed with status '
-                '0x${status.toRadixString(16)}',
-      );
+    if (response == null) {
+      throw StateError('Slot activation returned no response');
+    }
+    if (response.status != ChameleonStatus.success) {
+      throw SlotActivationRejected(response.status);
     }
   }
 
@@ -812,7 +809,7 @@ class ChameleonCommunicator {
       throw ('No response from HF sniff command');
     }
 
-    if (resp.status == 0x68 || resp.status == 0x00) {
+    if (resp.status == ChameleonStatus.success || resp.status == 0x00) {
       return resp.data;
     }
 

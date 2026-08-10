@@ -593,6 +593,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   DeviceStatusSnapshot _snapshot;
   DeviceStatusSnapshot get snapshot => _snapshot;
+  bool get isCurrentSession => _canPublish;
 
   Timer? _batteryTimer;
   Timer? _activeSlotTimer;
@@ -1275,6 +1276,20 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           }
           _publishActiveSlot(slot, stale: false);
           return true;
+        } on SlotActivationRejected catch (error, stackTrace) {
+          _session.appState.log?.w(
+            'Connected device rejected slot activation',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (_canPublish) {
+            _publish(
+              _snapshot.copyWith(
+                slots: _snapshot.slots.copyWith(pendingActivation: null),
+              ),
+            );
+          }
+          return false;
         } catch (error, stackTrace) {
           _session.appState.log?.w(
             'Slot activation reply was unavailable; checking the active slot',

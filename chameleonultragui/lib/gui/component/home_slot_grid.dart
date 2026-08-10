@@ -162,7 +162,10 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       setState(() => _focusedSlot = index);
     }
     final confirmed = await invokedStatus.activateSlot(index);
-    if (!confirmed && mounted && identical(widget.status, invokedStatus)) {
+    if (!confirmed &&
+        mounted &&
+        invokedStatus.isCurrentSession &&
+        identical(widget.status, invokedStatus)) {
       final localizations = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
