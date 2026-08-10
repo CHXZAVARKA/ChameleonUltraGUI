@@ -48,7 +48,7 @@ void main() {
     final alignment = tester.widget<Transform>(
       find.byKey(const Key('chameleon-loader-c-alignment')),
     );
-    expect(alignment.transform.storage[13], closeTo(-1, 0.01));
+    expect(alignment.transform.storage[13], closeTo(-2.24, 0.01));
   });
 
   testWidgets('stays still when reduced motion is enabled', (tester) async {

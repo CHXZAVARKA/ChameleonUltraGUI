@@ -17,7 +17,14 @@ Uuid dfuControl = Uuid.parse("8EC90001-F315-4F60-9FB8-838830DAEA50");
 Uuid dfuFirmware = Uuid.parse("8EC90002-F315-4F60-9FB8-838830DAEA50");
 
 class BLESerial extends AbstractSerial {
-  FlutterReactiveBle flutterReactiveBle = FlutterReactiveBle();
+  BLESerial({
+    required super.log,
+    FlutterReactiveBle? reactiveBle,
+  }) : flutterReactiveBle = reactiveBle ?? FlutterReactiveBle();
+
+  static const connectionAttemptTimeout = Duration(seconds: 7);
+
+  FlutterReactiveBle flutterReactiveBle;
   QualifiedCharacteristic? txCharacteristic;
   QualifiedCharacteristic? rxCharacteristic;
   QualifiedCharacteristic? firmwareCharacteristic;
@@ -25,8 +32,6 @@ class BLESerial extends AbstractSerial {
   StreamSubscription<ConnectionStateUpdate>? connection;
   Map<String, Chameleon> chameleonMap = {};
   bool inSearch = false;
-
-  BLESerial({required super.log});
 
   Future<List> availableDevices() async {
     if (inSearch) {
@@ -151,6 +156,7 @@ class BLESerial extends AbstractSerial {
       id: devicePort,
       withServices: services,
       prescanDuration: const Duration(seconds: 5),
+      connectionTimeout: connectionAttemptTimeout,
     )
         .listen((connectionState) async {
       log.w(connectionState);
