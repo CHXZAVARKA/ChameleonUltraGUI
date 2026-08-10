@@ -9,7 +9,10 @@ on:
 
 jobs:
   check_changes:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    if: >-
+      github.repository == 'GameTec-live/ChameleonUltraGUI' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     env:
       CROWDIN_API: ${{ secrets.CROWDIN_API }}
