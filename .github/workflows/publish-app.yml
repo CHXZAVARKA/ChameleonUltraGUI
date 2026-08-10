@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   build-android:
+    if: github.repository == 'GameTec-live/ChameleonUltraGUI'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +68,7 @@ jobs:
         run: fastlane production
         working-directory: "./chameleonultragui/"
   build-macos:
+    if: github.repository == 'GameTec-live/ChameleonUltraGUI'
     runs-on: macos-latest
     env:
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -153,6 +155,7 @@ jobs:
           app-store-connect builds submit-to-testflight $BUILD_ID || true
           app-store-connect beta-groups add-build $BUILD_ID --beta-group="Open beta testing" || true
   build-ios:
+    if: github.repository == 'GameTec-live/ChameleonUltraGUI'
     runs-on: macos-latest
     env:
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
