@@ -350,7 +350,9 @@ class BLESerial extends AbstractSerial {
             isDFU = false;
 
             completer.complete(true);
-          } catch (_) {
+          } catch (error) {
+            log.w('BLE handshake failed', error: error);
+            await performDisconnect();
             try {
               completer.complete(false);
             } catch (_) {}
