@@ -21,5 +21,9 @@ reviewed and verified by the author.
 
 ## Localization
 
-- [ ] This pull request does not add or edit `app_*.arb` files.
-- [ ] New translations, if any, follow the Crowdin workflow.
+- [ ] No non-English `app_*.arb` files are added or edited.
+- [ ] No generated localization files are committed.
+- [ ] Any `app_en.arb` changes contain only source English strings required by
+      this feature.
+- [ ] If this change is intended for upstream, its localization path was agreed
+      with the upstream maintainers first.

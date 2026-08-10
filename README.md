@@ -6,11 +6,15 @@ A GUI for the Chameleon Ultra/Chameleon Lite written in Flutter for cross platfo
 > the maintainer with a Chameleon Ultra. New behavior is discussed in an issue
 > before implementation and submitted in focused pull requests.
 
-[![Auto build](https://github.com/GameTec-live/ChameleonUltraGUI/actions/workflows/build-app.yml/badge.svg)](https://github.com/GameTec-live/ChameleonUltraGUI/actions/workflows/build-app.yml) 
+[Community build releases](https://github.com/CHXZAVARKA/ChameleonUltraGUI/releases)
+contain the fork-only features. The store downloads and platform packages linked
+below are official upstream builds and may not contain those features.
+
+[![Upstream build](https://github.com/GameTec-live/ChameleonUltraGUI/actions/workflows/build-app.yml/badge.svg)](https://github.com/GameTec-live/ChameleonUltraGUI/actions/workflows/build-app.yml)
 [![Open collective](https://opencollective.com/chameleon-ultra-gui/tiers/badge.svg)](https://opencollective.com/chameleon-ultra-gui#support)
 [![Crowdin](https://badges.crowdin.net/chameleonultragui/localized.svg)](https://crowdin.com/project/chameleonultragui)
 
-### [Full documentation here](https://github.com/GameTec-live/ChameleonUltraGUI/tree/main/docs)
+### [Upstream documentation](https://github.com/GameTec-live/ChameleonUltraGUI/tree/main/docs)
 
 ## Installation
 
@@ -75,7 +79,11 @@ Contributions are welcome. For this community build, start with an
 
 ## Translations
 
-If you want to collaborate by adding your language to the application, you can do it through [our Crowdin project](https://crowdin.com/project/chameleonultragui). Do not contribute files into `chameleonultragui/lib/l10n/app_*.arb`. All translations should be added only to Crowdin. If your language is missing, you can create issue and ask to enable it. "Chameleon Ultra GUI", "Chameleon" and other trademarks should not be translated.
+The linked [Crowdin project](https://crowdin.com/project/chameleonultragui)
+belongs to upstream and must not be used for community-only strings. Community
+feature pull requests may add required English source strings to `app_en.arb`,
+but must not include ready-made translations or generated localization files.
+Changes intended for upstream must follow the upstream Crowdin policy instead.
 
 ## Screenshots
 ![Connect Page](/screenshots/1.png)
