@@ -326,6 +326,37 @@ void main() {
     );
   });
 
+  testWidgets(
+      'switching channel during the first fact read reuses those device facts',
+      (tester) async {
+    final communicator = _FirmwareCommunicator.pendingFirmware();
+    final catalog = _FakeFirmwareCatalog([
+      const FirmwareCatalogRelease(
+        latestCommit: 'custom5678',
+        updateAvailable: true,
+      ),
+    ]);
+    final appState = _connectedState(communicator, catalog: catalog);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    await tester.pump();
+    expect(communicator.firmwareReads, 1);
+
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pump();
+
+    communicator.completePendingFirmware();
+    await tester.pumpAndSettle();
+
+    expect(communicator.firmwareReads, 1);
+    expect(communicator.commitReads, 1);
+    expect(communicator.capabilityReads, 1);
+    expect(catalog.channels, [FirmwareChannel.custom]);
+  });
+
   testWidgets('firmware channel remains reachable at 360px and 2.5x text',
       (tester) async {
     tester.view.physicalSize = const Size(360, 800);

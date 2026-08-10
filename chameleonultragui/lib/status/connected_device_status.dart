@@ -929,10 +929,13 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
     if (readFacts || _firmwareFacts == null) {
       final facts = await _readFirmwareFacts();
-      if (!canPublishChannel() || facts == null) {
+      if (!_canPublish || facts == null) {
         return;
       }
       _firmwareFacts = facts;
+      if (!canPublishChannel()) {
+        return;
+      }
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
