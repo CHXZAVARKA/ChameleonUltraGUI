@@ -1,7 +1,13 @@
 # Translations
 
-If you want to collaborate by adding your language to the application, you can do it through [our Crowdin project](https://crowdin.com/project/chameleonultragui). 
+The [Chameleon Ultra GUI Crowdin project](https://crowdin.com/project/chameleonultragui)
+is managed by upstream. Do not upload community-only strings from this fork to
+that project.
 
-Do not contribute files into `chameleonultragui/lib/l10n/app_*.arb`. All translations should be added only to Crowdin. If your language is missing, you can create issue and ask to enable it. "Chameleon Ultra GUI", "Chameleon" and other trademarks should not be translated. 
+Community feature pull requests may add required English source strings to
+`app_en.arb`. Do not edit non-English `app_*.arb` files and do not commit
+generated localization output. Translation updates belong in a separate change.
 
-Languages that are **70%** or more translated will be automatically deployed in the application.
+For work intended for upstream, agree on the localization path with the upstream
+maintainers and follow their current Crowdin policy. "Chameleon Ultra GUI",
+"Chameleon" and other trademarks should not be translated.
