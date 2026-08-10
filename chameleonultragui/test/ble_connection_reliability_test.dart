@@ -76,6 +76,29 @@ void main() {
     expect(reactiveBle.handshakeAttempts, 5);
     expect(reactiveBle.cancelledConnections, 5);
   });
+
+  test('final connection error disconnects before returning failure', () async {
+    final reactiveBle = _AlwaysFailConnectionBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(serial.log.close);
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 500));
+
+    expect(connected, isFalse);
+    expect(reactiveBle.connectionAttempts, 5);
+    expect(reactiveBle.cancelledConnections, 5);
+    expect(serial.pendingConnection, isFalse);
+  });
 }
 
 class _StallThenConnectBle implements ReactiveBleClient {
@@ -210,5 +233,33 @@ class _AlwaysStallHandshakeBle extends _StallHandshakeThenConnectBle {
   }) {
     handshakeAttempts++;
     return Completer<void>().future;
+  }
+}
+
+class _AlwaysFailConnectionBle extends _StallThenConnectBle {
+  var cancelledConnections = 0;
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    late StreamController<ConnectionStateUpdate> controller;
+    controller = StreamController<ConnectionStateUpdate>(
+      onListen: () {
+        controller.addError(
+          TimeoutException('simulated BLE connection timeout'),
+        );
+      },
+      onCancel: () {
+        cancelledConnections++;
+      },
+    );
+    return controller.stream;
   }
 }

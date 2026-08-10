@@ -365,9 +365,12 @@ class BLESerial extends AbstractSerial {
           completer.complete(false);
         } catch (_) {}
       }
-    }, onError: (Object error) {
+    }, onError: (Object error) async {
       log.e(error);
-      completer.complete(false);
+      await performDisconnect();
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
     });
 
     return completer.future;
