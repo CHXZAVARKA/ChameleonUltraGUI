@@ -27,6 +27,7 @@ void main() {
     expect(connected, isTrue);
     expect(reactiveBle.connectionAttempts, 2);
     expect(reactiveBle.connectionTimeouts, everyElement(isNotNull));
+    expect(serial.pendingConnection, isFalse);
   });
 
   test('one BLE connect retries after a stalled handshake', () async {
@@ -98,6 +99,37 @@ void main() {
     expect(reactiveBle.connectionAttempts, 5);
     expect(reactiveBle.cancelledConnections, 5);
     expect(serial.pendingConnection, isFalse);
+  });
+
+  test('late handshake cannot overwrite a newer successful retry', () async {
+    final reactiveBle = _DisconnectThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      handshakeTimeout: const Duration(seconds: 1),
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(serial.log.close);
+
+    final connecting = serial.connectSpecificDevice('device');
+    await reactiveBle.firstHandshakeStarted.future;
+    reactiveBle.disconnectFirstAttempt();
+
+    expect(await connecting, isTrue);
+    expect(reactiveBle.connectionAttempts, 2);
+    expect(serial.connected, isTrue);
+    expect(serial.pendingConnection, isFalse);
+
+    reactiveBle.completeFirstHandshake();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(serial.connected, isTrue);
+    expect(serial.activeDevicePort, 'device');
+    expect(reactiveBle.cancelledConnections, 1);
   });
 }
 
@@ -261,5 +293,69 @@ class _AlwaysFailConnectionBle extends _StallThenConnectBle {
       },
     );
     return controller.stream;
+  }
+}
+
+class _DisconnectThenConnectBle extends _StallThenConnectBle {
+  final firstHandshakeStarted = Completer<void>();
+  final _firstHandshake = Completer<void>();
+  StreamController<ConnectionStateUpdate>? _firstConnection;
+  var handshakeAttempts = 0;
+  var cancelledConnections = 0;
+
+  void disconnectFirstAttempt() {
+    _firstConnection!.add(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.disconnected,
+        failure: null,
+      ),
+    );
+  }
+
+  void completeFirstHandshake() => _firstHandshake.complete();
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    late StreamController<ConnectionStateUpdate> controller;
+    controller = StreamController<ConnectionStateUpdate>(
+      onListen: () {
+        controller.add(
+          const ConnectionStateUpdate(
+            deviceId: 'device',
+            connectionState: DeviceConnectionState.connected,
+            failure: null,
+          ),
+        );
+      },
+      onCancel: () {
+        cancelledConnections++;
+      },
+    );
+    if (connectionAttempts == 1) {
+      _firstConnection = controller;
+    }
+    return controller.stream;
+  }
+
+  @override
+  Future<void> writeCharacteristicWithResponse(
+    QualifiedCharacteristic characteristic, {
+    required List<int> value,
+  }) {
+    handshakeAttempts++;
+    if (handshakeAttempts == 1) {
+      firstHandshakeStarted.complete();
+      return _firstHandshake.future;
+    }
+    return Future.value();
   }
 }

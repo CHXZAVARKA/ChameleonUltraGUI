@@ -126,6 +126,7 @@ class BLESerial extends AbstractSerial {
   QualifiedCharacteristic? firmwareCharacteristic;
   Stream<List<int>>? receivedDataStream;
   StreamSubscription<ConnectionStateUpdate>? connection;
+  _BleConnectionAttempt? _activeConnectionAttempt;
   Map<String, Chameleon> chameleonMap = {};
   bool inSearch = false;
 
@@ -239,23 +240,26 @@ class BLESerial extends AbstractSerial {
   }
 
   Future<bool> connectSpecificInternal(dynamic devicePort) async {
-    Completer<bool> completer = Completer<bool>();
     List<Uuid> services = [nrfUUID, uartRX, uartTX];
     if (chameleonMap[devicePort]!.dfu) {
       services = [dfuUUID, dfuControl, dfuFirmware];
     }
 
     await performDisconnect();
+    final attempt = _BleConnectionAttempt();
+    _activeConnectionAttempt = attempt;
     pendingConnection = true;
-    connection = _reactiveBle
-        .connectToAdvertisingDevice(
+    final connectionStream = _reactiveBle.connectToAdvertisingDevice(
       id: devicePort,
       withServices: services,
       prescanDuration: const Duration(seconds: 5),
       connectionTimeout: connectionAttemptTimeout,
-    )
-        .listen((connectionState) async {
+    );
+    final subscription = connectionStream.listen((connectionState) async {
       log.w(connectionState);
+      if (!_ownsConnectionAttempt(attempt)) {
+        return;
+      }
       if (connectionState.connectionState == DeviceConnectionState.connected) {
         if (chameleonMap[devicePort]!.dfu) {
           connected = true;
@@ -267,6 +271,9 @@ class BLESerial extends AbstractSerial {
           receivedDataStream =
               _reactiveBle.subscribeToCharacteristic(txCharacteristic!);
           receivedDataStream!.listen((data) async {
+            if (!_ownsConnectionAttempt(attempt)) {
+              return;
+            }
             if (messageCallback != null) {
               try {
                 await messageCallback(Uint8List.fromList(data));
@@ -276,7 +283,7 @@ class BLESerial extends AbstractSerial {
               }
             }
           }, onError: (dynamic error) async {
-            await performDisconnect();
+            await _disconnectConnectionAttempt(attempt);
             log.e(error);
           });
 
@@ -295,7 +302,7 @@ class BLESerial extends AbstractSerial {
           activeDevicePort = devicePort;
 
           isDFU = true;
-          completer.complete(true);
+          attempt.result.complete(true);
         } else {
           txCharacteristic = QualifiedCharacteristic(
               serviceId: nrfUUID,
@@ -304,6 +311,9 @@ class BLESerial extends AbstractSerial {
           receivedDataStream =
               _reactiveBle.subscribeToCharacteristic(txCharacteristic!);
           receivedDataStream!.listen((data) async {
+            if (!_ownsConnectionAttempt(attempt)) {
+              return;
+            }
             if (messageCallback != null) {
               try {
                 await messageCallback(Uint8List.fromList(data));
@@ -313,7 +323,7 @@ class BLESerial extends AbstractSerial {
               }
             }
           }, onError: (dynamic error) async {
-            await performDisconnect();
+            await _disconnectConnectionAttempt(attempt);
             log.e(error);
           });
 
@@ -341,7 +351,11 @@ class BLESerial extends AbstractSerial {
                 )
                 .timeout(_handshakeTimeout);
 
+            if (!_ownsConnectionAttempt(attempt)) {
+              return;
+            }
             connected = true;
+            pendingConnection = false;
             portName = devicePort;
             device = chameleonMap[devicePort]!.device;
             activeDevicePort = devicePort;
@@ -349,35 +363,37 @@ class BLESerial extends AbstractSerial {
             connectionType = ConnectionType.ble;
             isDFU = false;
 
-            completer.complete(true);
+            attempt.result.complete(true);
           } catch (error) {
             log.w('BLE handshake failed', error: error);
-            await performDisconnect();
-            try {
-              completer.complete(false);
-            } catch (_) {}
+            await _disconnectConnectionAttempt(attempt);
           }
         }
       } else if (connectionState.connectionState ==
           DeviceConnectionState.disconnected) {
-        await performDisconnect();
-        try {
-          completer.complete(false);
-        } catch (_) {}
+        await _disconnectConnectionAttempt(attempt);
       }
     }, onError: (Object error) async {
       log.e(error);
-      await performDisconnect();
-      if (!completer.isCompleted) {
-        completer.complete(false);
-      }
+      await _disconnectConnectionAttempt(attempt);
     });
+    attempt.subscription = subscription;
+    if (_ownsConnectionAttempt(attempt)) {
+      connection = subscription;
+    } else {
+      await subscription.cancel();
+    }
 
-    return completer.future;
+    return attempt.result.future;
   }
 
   @override
   Future<bool> performDisconnect() async {
+    final attempt = _activeConnectionAttempt;
+    if (attempt != null) {
+      return _disconnectConnectionAttempt(attempt);
+    }
+
     final hadState = hasConnectionState || connection != null;
     resetConnectionState();
     txCharacteristic = null;
@@ -400,6 +416,37 @@ class BLESerial extends AbstractSerial {
     return false;
   }
 
+  bool _ownsConnectionAttempt(_BleConnectionAttempt attempt) =>
+      identical(_activeConnectionAttempt, attempt);
+
+  Future<bool> _disconnectConnectionAttempt(
+    _BleConnectionAttempt attempt,
+  ) async {
+    if (!_ownsConnectionAttempt(attempt)) {
+      return false;
+    }
+
+    final subscription = attempt.subscription;
+    final hadState = hasConnectionState || subscription != null;
+    _activeConnectionAttempt = null;
+    if (identical(connection, subscription)) {
+      connection = null;
+    }
+    resetConnectionState();
+    txCharacteristic = null;
+    rxCharacteristic = null;
+    firmwareCharacteristic = null;
+    receivedDataStream = null;
+    await subscription?.cancel();
+    if (!attempt.result.isCompleted) {
+      attempt.result.complete(false);
+    }
+    if (hadState) {
+      notifyConnectionStateChanged();
+    }
+    return hadState;
+  }
+
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async {
     if (firmware) {
@@ -413,4 +460,9 @@ class BLESerial extends AbstractSerial {
 
     return true;
   }
+}
+
+class _BleConnectionAttempt {
+  final result = Completer<bool>();
+  StreamSubscription<ConnectionStateUpdate>? subscription;
 }
