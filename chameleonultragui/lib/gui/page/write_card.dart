@@ -29,6 +29,13 @@ class WriteCardPageState extends State<WriteCardPage> {
   AbstractWriteHelper? baseHelper;
   AbstractWriteHelper? helper;
 
+  void selectStandardMode() {
+    if (_mode == _WriteCardMode.standard) {
+      return;
+    }
+    setState(() => _mode = _WriteCardMode.standard);
+  }
+
   Future<SessionBoundRfResult<T?>> _runHelperPreflight<T>(
     ChameleonGUIState appState,
     AbstractWriteHelper selectedHelper,

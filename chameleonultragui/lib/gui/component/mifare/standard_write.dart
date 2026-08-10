@@ -7,6 +7,7 @@ import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/import_image.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance_progress.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -70,17 +71,13 @@ class _StandardMifareClassicWritePanelState
     ConnectedDeviceSession session,
     MifareClassicMaintenanceProgress progress, {
     StandardWriteActivityState state = StandardWriteActivityState.active,
-    String? outcome,
   }) {
     appState.publishStandardWriteActivity(
       connector: session.connector,
       communicator: session.communicator,
       activity: StandardWriteActivity(
         state: state,
-        phase: progress.phase,
-        completed: progress.completed,
-        total: progress.total,
-        outcome: outcome,
+        progress: progress,
       ),
     );
   }
@@ -339,8 +336,13 @@ class _StandardMifareClassicWritePanelState
     );
     try {
       final result = await appState.runSessionBoundForeground((session) async {
-        if (_stopRequested ||
-            !identical(session.connector, operationSession.connector) ||
+        if (_stopRequested) {
+          throw const MifareClassicMaintenanceException(
+            MifareClassicMaintenanceFailure.cancelled,
+            'Standard write was cancelled before execution',
+          );
+        }
+        if (!identical(session.connector, operationSession.connector) ||
             !identical(
               session.communicator,
               operationSession.communicator,
@@ -367,12 +369,16 @@ class _StandardMifareClassicWritePanelState
       final report = result.value;
       if (!result.executed || report == null) {
         if (mounted) {
-          final error = _safeMaintenanceError(
-            const MifareClassicMaintenanceException(
-              MifareClassicMaintenanceFailure.stalePlan,
-              'The connected device session changed before execution',
-            ),
+          final cancelled = _stopRequested;
+          final failure = MifareClassicMaintenanceException(
+            cancelled
+                ? MifareClassicMaintenanceFailure.cancelled
+                : MifareClassicMaintenanceFailure.stalePlan,
+            cancelled
+                ? 'Standard write was cancelled before execution'
+                : 'The connected device session changed before execution',
           );
+          final error = _safeMaintenanceError(failure);
           final progress = _progress ?? initialProgress;
           setState(() {
             _clearProgress();
@@ -382,18 +388,21 @@ class _StandardMifareClassicWritePanelState
             appState,
             operationSession,
             progress,
-            state: StandardWriteActivityState.failed,
-            outcome: error,
+            state: cancelled
+                ? StandardWriteActivityState.cancelled
+                : StandardWriteActivityState.failed,
           );
         }
         return;
       }
       if (mounted) {
         final progress = _progress ?? initialProgress;
-        final outcome = AppLocalizations.of(context)!
-            .mifare_classic_standard_write_complete_summary(
-          report.verifiedBlocks,
-          report.unchangedBlocks,
+        final terminalProgress = MifareClassicMaintenanceProgress(
+          phase: progress.phase,
+          completed: progress.total,
+          total: progress.total,
+          sector: progress.sector,
+          block: progress.block,
         );
         setState(() {
           _report = report;
@@ -402,9 +411,8 @@ class _StandardMifareClassicWritePanelState
         _publishActivity(
           appState,
           operationSession,
-          progress,
+          terminalProgress,
           state: StandardWriteActivityState.succeeded,
-          outcome: outcome,
         );
       }
     } catch (error, stackTrace) {
@@ -424,7 +432,6 @@ class _StandardMifareClassicWritePanelState
                   error.failure == MifareClassicMaintenanceFailure.cancelled
               ? StandardWriteActivityState.cancelled
               : StandardWriteActivityState.failed,
-          outcome: safeError,
         );
       }
     } finally {
@@ -441,17 +448,9 @@ class _StandardMifareClassicWritePanelState
     final selectedProfileExists =
         profiles.any((profile) => profile.id == _profileId);
     final progress = _progress;
-    final progressPhase = switch (progress?.phase) {
-      MifareClassicMaintenancePhase.preflight =>
-        localizations.mifare_classic_standard_phase_preflight,
-      MifareClassicMaintenancePhase.revalidating =>
-        localizations.mifare_classic_standard_phase_revalidating,
-      MifareClassicMaintenancePhase.writing =>
-        localizations.mifare_classic_standard_phase_writing,
-      MifareClassicMaintenancePhase.verifying =>
-        localizations.mifare_classic_standard_phase_verifying,
-      null => '',
-    };
+    final progressPresentation = progress == null
+        ? null
+        : MifareClassicMaintenanceProgressPresenter(progress, localizations);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -579,17 +578,11 @@ class _StandardMifareClassicWritePanelState
               if (_busy && progress != null) ...[
                 const SizedBox(height: 16),
                 LinearProgressIndicator(
-                  value: progress.total == 0
-                      ? null
-                      : progress.completed / progress.total,
+                  value: progressPresentation!.fraction,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  localizations.mifare_classic_standard_progress(
-                    progressPhase,
-                    progress.completed,
-                    progress.total,
-                  ),
+                  progressPresentation.label,
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(

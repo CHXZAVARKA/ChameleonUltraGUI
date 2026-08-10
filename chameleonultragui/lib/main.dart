@@ -9,6 +9,7 @@ import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/maintenance_progress.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:flutter/material.dart';
@@ -99,7 +100,7 @@ class ChameleonGUIState extends ChangeNotifier {
       return;
     }
     _connector = value;
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
   }
 
   ChameleonCommunicator? get communicator => _communicator;
@@ -108,16 +109,16 @@ class ChameleonGUIState extends ChangeNotifier {
       return;
     }
     _communicator = value;
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
   }
 
   ReadCardSession get readCardSession {
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     return _readCardSession;
   }
 
   StandardWriteActivity? get standardWriteActivity {
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     return _standardWriteActivity;
   }
 
@@ -126,7 +127,7 @@ class ChameleonGUIState extends ChangeNotifier {
     required ChameleonCommunicator communicator,
     required StandardWriteActivity activity,
   }) {
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     if (!_readCardSessionConnected ||
         _readCardSessionDfu ||
         !identical(_connector, connector) ||
@@ -148,7 +149,7 @@ class ChameleonGUIState extends ChangeNotifier {
   Size? navigationRailSize;
 
   void changesMade() {
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     notifyListeners();
   }
 
@@ -157,11 +158,11 @@ class ChameleonGUIState extends ChangeNotifier {
       communicator = null;
       progress = null;
     }
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     notifyListeners();
   }
 
-  void _synchronizeReadCardSession() {
+  void _synchronizeConnectedDeviceSession() {
     final connector = _connector;
     final communicator = _communicator;
     final connected = connector?.connected == true;
@@ -192,7 +193,7 @@ class ChameleonGUIState extends ChangeNotifier {
     required AbstractSerial connector,
     required ChameleonCommunicator communicator,
   }) {
-    _synchronizeReadCardSession();
+    _synchronizeConnectedDeviceSession();
     if (!_readCardSessionConnected ||
         _readCardSessionDfu ||
         !identical(_connector, connector) ||
@@ -286,17 +287,11 @@ enum StandardWriteActivityState { active, succeeded, failed, cancelled }
 class StandardWriteActivity {
   const StandardWriteActivity({
     required this.state,
-    required this.phase,
-    required this.completed,
-    required this.total,
-    this.outcome,
+    required this.progress,
   });
 
   final StandardWriteActivityState state;
-  final MifareClassicMaintenancePhase phase;
-  final int completed;
-  final int total;
-  final String? outcome;
+  final MifareClassicMaintenanceProgress progress;
 
   bool get isActive => state == StandardWriteActivityState.active;
 }
@@ -315,6 +310,9 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   var selectedIndex = 0;
+  ReadCardSession? _writeCardPageSession;
+  GlobalKey<WriteCardPageState> _writeCardPageKey =
+      GlobalKey<WriteCardPageState>();
 
   @override
   void initState() {
@@ -389,9 +387,13 @@ class _MainPageState extends State<MainPage> {
     }
 
     appState.devMode = appState.sharedPreferencesProvider.isDebugMode();
-    final writeCardPage = WriteCardPage(
-      key: ObjectKey(appState.readCardSession),
-    );
+    final connectedDeviceSession = appState.readCardSession;
+    if (!identical(_writeCardPageSession, connectedDeviceSession)) {
+      _writeCardPageSession = connectedDeviceSession;
+      _writeCardPageKey = GlobalKey<WriteCardPageState>();
+    }
+    final writeCardPage = WriteCardPage(key: _writeCardPageKey);
+    final standardWriteActivity = appState.standardWriteActivity;
 
     Widget page; // Set Page
     if (!appState.connector!.connected &&
@@ -521,6 +523,12 @@ class _MainPageState extends State<MainPage> {
       themeMode: widget.sharedPreferencesProvider.getTheme(), // Dark Theme
       home: LayoutBuilder(// Build Page
           builder: (context, constraints) {
+        final standardWriteProgress = standardWriteActivity?.isActive == true
+            ? MifareClassicMaintenanceProgressPresenter(
+                standardWriteActivity!.progress,
+                AppLocalizations.of(context)!,
+              )
+            : null;
         return SafeArea(
           left: false,
           right: false,
@@ -562,13 +570,26 @@ class _MainPageState extends State<MainPage> {
                               ),
                               NavigationRailDestination(
                                 disabled: !appState.connector!.connected,
-                                icon: Badge(
-                                  isLabelVisible: appState
-                                          .standardWriteActivity?.isActive ==
-                                      true,
-                                  smallSize: 8,
-                                  child: const Icon(Icons.system_update_alt),
-                                ),
+                                icon: standardWriteProgress == null
+                                    ? const Icon(Icons.system_update_alt)
+                                    : Semantics(
+                                        key: const ValueKey(
+                                          'standard-write-navigation-activity',
+                                        ),
+                                        container: true,
+                                        label:
+                                            '${AppLocalizations.of(context)!.write_card}. '
+                                            '${standardWriteProgress.label}',
+                                        liveRegion: true,
+                                        child: ExcludeSemantics(
+                                          child: Badge(
+                                            smallSize: 8,
+                                            child: const Icon(
+                                              Icons.system_update_alt,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                 label: Text(
                                     AppLocalizations.of(context)!.write_card),
                               ),
@@ -608,6 +629,7 @@ class _MainPageState extends State<MainPage> {
               ),
               bottomNavigationBar: BottomProgressBar(
                 onStandardWriteTap: () {
+                  _writeCardPageKey.currentState?.selectStandardMode();
                   setState(() {
                     selectedIndex = _writeCardNavigationIndex;
                   });
@@ -643,47 +665,42 @@ class BottomProgressBar extends StatelessWidget {
       return const SizedBox();
     }
     final localizations = AppLocalizations.of(context)!;
-    final phase = switch (activity.phase) {
-      MifareClassicMaintenancePhase.preflight =>
-        localizations.mifare_classic_standard_phase_preflight,
-      MifareClassicMaintenancePhase.revalidating =>
-        localizations.mifare_classic_standard_phase_revalidating,
-      MifareClassicMaintenancePhase.writing =>
-        localizations.mifare_classic_standard_phase_writing,
-      MifareClassicMaintenancePhase.verifying =>
-        localizations.mifare_classic_standard_phase_verifying,
-    };
-    final progress =
-        activity.total == 0 ? null : activity.completed / activity.total;
+    final progress = MifareClassicMaintenanceProgressPresenter(
+      activity.progress,
+      localizations,
+    );
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: InkWell(
+      child: Semantics(
         key: const ValueKey('standard-write-global-progress'),
+        container: true,
+        label: '${localizations.write_card}. ${progress.label}',
+        hint: localizations.write_card,
+        liveRegion: true,
+        button: true,
         onTap: onStandardWriteTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+        onTapHint: localizations.write_card,
+        child: ExcludeSemantics(
+          child: InkWell(
+            onTap: onStandardWriteTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.system_update_alt, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      localizations.mifare_classic_standard_progress(
-                        phase,
-                        activity.completed,
-                        activity.total,
-                      ),
-                    ),
+                  Row(
+                    children: [
+                      const Icon(Icons.system_update_alt, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(progress.label)),
+                      const Icon(Icons.chevron_right),
+                    ],
                   ),
-                  const Icon(Icons.chevron_right),
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(value: progress.fraction),
                 ],
               ),
-              const SizedBox(height: 6),
-              LinearProgressIndicator(value: progress),
-            ],
+            ),
           ),
         ),
       ),
