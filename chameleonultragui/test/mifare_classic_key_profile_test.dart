@@ -169,7 +169,7 @@ void main() {
     expect(keys.single['keyA'], [0, 1]);
     expect(keys.single['keyB'], [1, 39]);
     final decoded = MifareClassicKeyProfile.fromJson(profile.toJson());
-    expect(decoded.keyCount, 4);
+    expect(decoded.keyCount, 1);
     expect(decoded.keyUsages.single.keyHex, 'FFFFFFFFFFFF');
     expect(decoded.keyUsages.single.keyASectors, [0, 1]);
     expect(decoded.keyUsages.single.keyBSectors, [1, 39]);

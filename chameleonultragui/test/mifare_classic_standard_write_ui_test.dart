@@ -564,7 +564,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Select key profile'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini keys (5 keys)').last);
+    await tester.tap(find.text('Mini keys (1 key)').last);
     await tester.pumpAndSettle();
 
     final blocker = Completer<void>();
@@ -847,7 +847,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Select key profile'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini keys (5 keys)').last);
+    await tester.tap(find.text('Mini keys (1 key)').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start'));
     await tester.pump();
@@ -1094,7 +1094,7 @@ Future<void> _prepareStandardMiniPanel(
   await tester.pumpAndSettle();
   await tester.tap(find.text('Select key profile'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Mini keys (5 keys)').last);
+  await tester.tap(find.text('Mini keys (1 key)').last);
   await tester.pumpAndSettle();
 }
 

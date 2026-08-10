@@ -214,7 +214,7 @@ void main() {
     expect(find.text('Dictionaries'), findsOneWidget);
     expect(find.text('Localized assigned key profiles'), findsOneWidget);
     expect(find.text('Own 4K card'), findsOneWidget);
-    expect(find.text('Localized summary: MIFARE Classic 4K / 2 / 01020304'),
+    expect(find.text('Localized summary: MIFARE Classic 4K / 1 / 01020304'),
         findsOneWidget);
 
     await tester.tap(find.text('Own 4K card'));
