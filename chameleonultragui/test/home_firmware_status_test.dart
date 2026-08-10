@@ -593,6 +593,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(oldCommunicator.firmwareReads, 1);
+    final oldCapabilityReadsBeforeReplacement = oldCommunicator.capabilityReads;
+    expect(oldCapabilityReadsBeforeReplacement, 1);
 
     _replaceConnection(appState, newCommunicator);
     appState.changesMade();
@@ -605,7 +607,10 @@ void main() {
     await tester.pump();
 
     expect(oldCommunicator.commitReads, 0);
-    expect(oldCommunicator.capabilityReads, 0);
+    expect(
+      oldCommunicator.capabilityReads,
+      oldCapabilityReadsBeforeReplacement,
+    );
     expect(newCommunicator.firmwareReads, 1);
     expect(newCommunicator.commitReads, 1);
     expect(newCommunicator.capabilityReads, 1);
