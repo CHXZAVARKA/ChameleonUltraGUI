@@ -5,6 +5,7 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/recovery/recovery.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -32,8 +33,11 @@ class MifareClassicRecovery {
   String error;
   String state;
   bool allKeysExists;
+  bool dumpComplete;
   List<Dictionary> dictionaries;
   Dictionary? selectedDictionary;
+  List<MifareClassicKeyProfile> keyProfiles;
+  MifareClassicKeyProfile? selectedKeyProfile;
   List<ChameleonKeyCheckmark> checkMarks;
   List<Uint8List> validKeys;
   List<Uint8List> cardData;
@@ -51,9 +55,12 @@ class MifareClassicRecovery {
       this.error = '',
       this.state = '',
       this.allKeysExists = false,
+      this.dumpComplete = false,
       this.dictionaries = const [],
+      this.keyProfiles = const [],
       this.dumpProgress = 0,
       this.selectedDictionary,
+      this.selectedKeyProfile,
       this.mifareClassicType = MifareClassicType.none,
       this.isMifareClassicEV1 = false,
       List<ChameleonKeyCheckmark>? checkMarks,
@@ -62,9 +69,7 @@ class MifareClassicRecovery {
       : checkMarks =
             checkMarks ?? List.generate(80, (_) => ChameleonKeyCheckmark.none),
         validKeys = validKeys ?? List.generate(80, (_) => Uint8List(0)),
-        cardData = cardData ?? List.generate(256, (_) => Uint8List(0)) {
-    initializeEV1();
-  }
+        cardData = cardData ?? List.generate(256, (_) => Uint8List(0));
 
   Future<bool> checkKeysOnSector(
       List<Uint8List> keys, int keyType, int sector) async {
@@ -100,23 +105,6 @@ class MifareClassicRecovery {
       }
     }
 
-    if (keyType == 0 &&
-        getSectorState(sector, 0) == ChameleonKeyCheckmark.found &&
-        getSectorState(sector, 1) != ChameleonKeyCheckmark.found &&
-        getSectorState(sector, 1) != ChameleonKeyCheckmark.disabled &&
-        key != null) {
-      Uint8List block = await appState.communicator!.mf1ReadBlock(
-          mfClassicGetSectorTrailerBlockBySector(sector), 0x60 + keyType, key);
-      if (block.length == 16) {
-        Uint8List bKey = block.sublist(10);
-        if (bytesToHex(bKey) != bytesToHex(Uint8List(6))) {
-          keyCheckProgress = null;
-          await recheckKey(key, sector);
-          return true;
-        }
-      }
-    }
-
     setMissingSector(sector, keyType);
     keyCheckProgress = null;
     return false;
@@ -137,7 +125,9 @@ class MifareClassicRecovery {
 
     isMifareClassicEV1 =
         await appState.communicator!.mf1Auth(0x45, 0x61, gMifareClassicKeys[3]);
-    initializeEV1();
+    if (isMifareClassicEV1) {
+      setKeyAsFound(17, 1, gMifareClassicKeys[3]);
+    }
   }
 
   Future<void> recheckKey(Uint8List key, int startingSector) async {
@@ -149,8 +139,8 @@ class MifareClassicRecovery {
       for (var keyType = 0; keyType < 2; keyType++) {
         if (getSectorState(sector, keyType) == ChameleonKeyCheckmark.none) {
           state = localizations.checking_keys(1);
-          appState.log!.d(
-              "Checking found key ${bytesToHex(key)} on sector $sector, key type $keyType");
+          appState.log!
+              .d("Checking a found key on sector $sector, key type $keyType");
           setCheckingSector(sector, keyType);
 
           if (await appState.communicator!.mf1Auth(
@@ -169,30 +159,25 @@ class MifareClassicRecovery {
     }
   }
 
-  void initializeEV1() {
-    if (isMifareClassicEV1) {
-      setKeyAsFound(16, 0, gMifareClassicKeys[4]); // MFC EV1 SIGNATURE 16 A
-      setKeyAsFound(16, 1, gMifareClassicKeys[5]); // MFC EV1 SIGNATURE 16 B
-      setKeyAsFound(17, 0, gMifareClassicKeys[6]); // MFC EV1 SIGNATURE 17 A
-      setKeyAsFound(17, 1, gMifareClassicKeys[3]); // MFC EV1 SIGNATURE 17 B
-    }
-  }
-
   Future<void> checkKeys({bool skipDefaultDictionary = false}) async {
-    initializeEV1();
+    await _verifyKnownEV1Keys();
+
+    await checkAssignedProfileKeys();
+
+    final selectedKeys = selectedDictionary?.keys ?? <Uint8List>[];
+    final selectedKeyHex = selectedKeys.map(bytesToHex).toSet();
+    final keyList = [
+      ...selectedKeys,
+      if (!skipDefaultDictionary)
+        ...gMifareClassicKeys
+            .where((key) => !selectedKeyHex.contains(bytesToHex(key)))
+    ];
 
     for (var sector = 0;
         sector <
             mfClassicGetSectorCount(mifareClassicType,
                 isEV1: isMifareClassicEV1);
         sector++) {
-      List<Uint8List> keyList = [
-        ...selectedDictionary!.keys,
-        if (!skipDefaultDictionary)
-          ...gMifareClassicKeys
-              .where((key) => !selectedDictionary!.keys.contains(key))
-      ];
-
       for (var keyType = 0; keyType < 2; keyType++) {
         await checkKeysOnSector(keyList, keyType, sector);
       }
@@ -216,6 +201,130 @@ class MifareClassicRecovery {
     state = "";
     update();
   }
+
+  Future<void> _verifyKnownEV1Keys() async {
+    if (!isMifareClassicEV1) {
+      return;
+    }
+    final knownKeys = <(int, int, Uint8List)>[
+      (16, 0, gMifareClassicKeys[4]),
+      (16, 1, gMifareClassicKeys[5]),
+      (17, 0, gMifareClassicKeys[6]),
+      (17, 1, gMifareClassicKeys[3]),
+    ];
+    for (final (sector, keyType, key) in knownKeys) {
+      final index = sector + keyType * 40;
+      if (_hasConfirmedKeyAt(index)) {
+        continue;
+      }
+      final authResult = await appState.communicator!.mf1AuthResult(
+        mfClassicGetSectorTrailerBlockBySector(sector),
+        0x60 + keyType,
+        key,
+      );
+      if (authResult.status == 0) {
+        setKeyAsFound(sector, keyType, key);
+      } else if (authResult.status == 0x06) {
+        checkMarks[index] = ChameleonKeyCheckmark.none;
+        validKeys[index] = Uint8List(0);
+        update();
+      } else {
+        throw StateError(
+            'EV1 signature-key authentication failed with device status '
+            '0x${authResult.status.toRadixString(16).padLeft(2, '0')}');
+      }
+    }
+  }
+
+  Future<void> checkAssignedProfileKeys() async {
+    final profile = selectedKeyProfile;
+    if (profile == null) {
+      return;
+    }
+
+    final sectorCount =
+        mfClassicGetSectorCount(mifareClassicType, isEV1: isMifareClassicEV1);
+    if (!profile.isCompatible(
+        cardType: mifareClassicType.name, sectorCount: sectorCount)) {
+      throw const FormatException(
+          'The selected key profile is not compatible with this card');
+    }
+
+    for (final assignment in profile.assignments) {
+      for (var keyType = 0; keyType < 2; keyType++) {
+        final key = assignment.keyForType(keyType);
+        if (key == null ||
+            getSectorState(assignment.sector, keyType) ==
+                ChameleonKeyCheckmark.found ||
+            getSectorState(assignment.sector, keyType) ==
+                ChameleonKeyCheckmark.disabled) {
+          continue;
+        }
+
+        state = localizations.checking_keys(1);
+        setCheckingSector(assignment.sector, keyType);
+        final authResult = await appState.communicator!.mf1AuthResult(
+          mfClassicGetSectorTrailerBlockBySector(assignment.sector),
+          0x60 + keyType,
+          key,
+        );
+        if (authResult.status == 0) {
+          setKeyAsFound(assignment.sector, keyType, key);
+        } else if (authResult.status == 0x06) {
+          setMissingSector(assignment.sector, keyType);
+        } else {
+          throw StateError(
+              'Assigned-key authentication failed with device status '
+              '0x${authResult.status.toRadixString(16).padLeft(2, '0')}');
+        }
+      }
+    }
+  }
+
+  bool get hasVerifiedKeys {
+    for (var index = 0; index < checkMarks.length; index++) {
+      if (_hasConfirmedKeyAt(index)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  MifareClassicKeyProfile createKeyProfile({
+    required String name,
+    String? uid,
+  }) {
+    final sectorCount =
+        mfClassicGetSectorCount(mifareClassicType, isEV1: isMifareClassicEV1);
+    final assignments = <MifareClassicKeyAssignment>[];
+    for (var sector = 0; sector < sectorCount; sector++) {
+      final keyA = _hasConfirmedKeyAt(sector) ? validKeys[sector] : null;
+      final keyB =
+          _hasConfirmedKeyAt(sector + 40) ? validKeys[sector + 40] : null;
+      if (keyA != null || keyB != null) {
+        assignments.add(MifareClassicKeyAssignment(
+          sector: sector,
+          keyA: keyA,
+          keyB: keyB,
+        ));
+      }
+    }
+    if (assignments.isEmpty) {
+      throw const FormatException('No verified keys to save');
+    }
+
+    return MifareClassicKeyProfile(
+      name: name,
+      cardType: mifareClassicType.name,
+      sectorCount: sectorCount,
+      uid: uid,
+      assignments: assignments,
+    );
+  }
+
+  bool _hasConfirmedKeyAt(int index) =>
+      checkMarks[index] == ChameleonKeyCheckmark.found &&
+      validKeys[index].length == 6;
 
   Future<void> recoverKeys() async {
     state = localizations.checking_card_info;
@@ -288,7 +397,8 @@ class MifareClassicRecovery {
 
           var keys = await recovery.darkside(darkside);
           if (keys.isNotEmpty) {
-            appState.log!.d("Darkside: Found keys: $keys. Checking them...");
+            appState.log!
+                .d("Darkside recovered ${keys.length} candidate key(s)");
 
             if (await checkKeysOnSector(mfClassicConvertKeys(keys), 1, 0)) {
               found = true;
@@ -335,7 +445,7 @@ class MifareClassicRecovery {
         List<int> keys = await recovery.nested(nested);
 
         if (keys.isNotEmpty) {
-          appState.log!.d("Found keys: $keys. Checking them...");
+          appState.log!.d("Recovered ${keys.length} candidate key(s)");
           if (await checkKeysOnSector(mfClassicConvertKeys(keys), 0, 0)) {
             break;
           }
@@ -535,7 +645,7 @@ class MifareClassicRecovery {
             }
 
             if (keys.isNotEmpty) {
-              appState.log!.d("Found keys: $keys. Checking them...");
+              appState.log!.d("Recovered ${keys.length} candidate key(s)");
 
               if (await checkKeysOnSector(
                   mfClassicConvertKeys(keys), keyType, sector)) {
@@ -570,6 +680,7 @@ class MifareClassicRecovery {
 
   Future<void> dumpData() async {
     cardData = List.generate(256, (_) => Uint8List(0));
+    dumpComplete = true;
 
     for (var sector = 0;
         sector <
@@ -579,32 +690,33 @@ class MifareClassicRecovery {
       for (var block = 0;
           block < mfClassicGetBlockCountBySector(sector);
           block++) {
+        final absoluteBlock =
+            block + mfClassicGetFirstBlockCountBySector(sector);
+        Uint8List? blockData;
         for (var keyType = 0; keyType < 2; keyType++) {
           appState.log!
               .d("Dumping sector $sector, block $block with key $keyType");
 
           if (getSectorKey(sector, keyType).isEmpty) {
             appState.log!.w("Skipping missing key");
-            cardData[block + mfClassicGetFirstBlockCountBySector(sector)] =
-                Uint8List(16);
             continue;
           }
 
-          var blockData = await appState.communicator!.mf1ReadBlock(
-              block + mfClassicGetFirstBlockCountBySector(sector),
-              0x60 + keyType,
-              getSectorKey(sector, keyType));
+          final candidate = await appState.communicator!.mf1ReadBlock(
+              absoluteBlock, 0x60 + keyType, getSectorKey(sector, keyType));
 
-          if (blockData.isEmpty) {
-            if (keyType == 1) {
-              blockData = Uint8List(16);
-            } else {
-              continue;
-            }
+          if (candidate.length != 16) {
+            continue;
           }
+          blockData = candidate;
+          break;
+        }
 
-          if (mfClassicGetSectorTrailerBlockBySector(sector) ==
-              block + mfClassicGetFirstBlockCountBySector(sector)) {
+        if (blockData == null) {
+          dumpComplete = false;
+          cardData[absoluteBlock] = Uint8List(16);
+        } else {
+          if (mfClassicGetSectorTrailerBlockBySector(sector) == absoluteBlock) {
             // set keys in sector trailer
             if (getSectorKey(sector, 0).isNotEmpty) {
               blockData.setRange(0, 6, getSectorKey(sector, 0));
@@ -614,18 +726,13 @@ class MifareClassicRecovery {
               blockData.setRange(10, 16, getSectorKey(sector, 1));
             }
           }
-
-          cardData[block + mfClassicGetFirstBlockCountBySector(sector)] =
-              blockData;
-
-          dumpProgress = (block + mfClassicGetFirstBlockCountBySector(sector)) /
-              (mfClassicGetBlockCount(mifareClassicType,
-                  isEV1: isMifareClassicEV1));
-
-          update();
-
-          break;
+          cardData[absoluteBlock] = blockData;
         }
+
+        dumpProgress = absoluteBlock /
+            (mfClassicGetBlockCount(mifareClassicType,
+                isEV1: isMifareClassicEV1));
+        update();
       }
     }
   }
@@ -685,8 +792,9 @@ class MifareClassicRecovery {
   }
 
   void setKeyAsFound(int sector, int keyType, Uint8List key) {
-    checkMarks[sector + (keyType * 40)] = ChameleonKeyCheckmark.found;
-    validKeys[sector + (keyType * 40)] = key;
+    final index = sector + (keyType * 40);
+    checkMarks[index] = ChameleonKeyCheckmark.found;
+    validKeys[index] = key;
     update();
   }
 

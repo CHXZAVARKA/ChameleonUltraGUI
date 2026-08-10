@@ -65,7 +65,7 @@ class ChameleonCommunicator {
   }
 
   Future<void> onSerialMessage(List<int> message) async {
-    log.t("Received: ${bytesToHex(Uint8List.fromList(message))}");
+    log.t("Received ${message.length} raw byte(s)");
 
     for (var byte in message) {
       dataBuffer.add(byte);
@@ -101,8 +101,11 @@ class ChameleonCommunicator {
               command: dataCmd,
               status: dataStatus,
               data: Uint8List.fromList(dataResponse));
+          final responseData = message.data.isNotEmpty
+              ? "<redacted ${message.data.length} byte(s)>"
+              : "<empty>";
           log.d(
-              "Received message: command = ${message.command}, status = ${message.status}, data = ${bytesToHex(message.data)}");
+              "Received message: command = ${message.command}, status = ${message.status}, data = $responseData");
           dataPosition = 0;
           dataBuffer = [];
           messageQueue.add(message);
@@ -141,9 +144,12 @@ class ChameleonCommunicator {
 
     commandQueue.add(cmd.value);
 
-    log.t("Sending: ${bytesToHex(dataFrame)}");
-    log.d(
-        "Sending message: command = ${cmd.value}, data = ${bytesToHex(data ?? Uint8List(0))}");
+    final logData = data != null && data.isNotEmpty
+        ? "<redacted ${data.length} byte(s)>"
+        : "<empty>";
+    log.t(
+        "Sending command ${cmd.value} with ${data?.length ?? 0} payload byte(s)");
+    log.d("Sending message: command = ${cmd.value}, data = $logData");
 
     if (skipReceive) {
       try {
@@ -403,11 +409,13 @@ class ChameleonCommunicator {
   Future<bool> mf1Auth(int block, int keyType, Uint8List key) async {
     // Check if key is valid for block
     // keyType 0x60 if A key, 0x61 B key
-    int status = (await sendCmd(ChameleonCommand.mf1CheckKey,
-            data: Uint8List.fromList([keyType, block, ...key])))!
-        .status;
+    return (await mf1AuthResult(block, keyType, key)).status == 0;
+  }
 
-    return status == 0;
+  Future<ChameleonMessage> mf1AuthResult(
+      int block, int keyType, Uint8List key) async {
+    return (await sendCmd(ChameleonCommand.mf1CheckKey,
+        data: Uint8List.fromList([keyType, block, ...key])))!;
   }
 
   Future<Uint8List?> mf1AuthMultipleKeys(

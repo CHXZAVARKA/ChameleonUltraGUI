@@ -379,9 +379,21 @@ Future<void> saveTag(CardSave tag, BuildContext context, bool bin) async {
   if (bin) {
     Uint8List tagDump;
     if (isMifareClassic(tag.tag)) {
+      final geometry = MifareClassicGeometry.fromSavedCard(tag);
+      if (geometry == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(localizations.mifare_classic_partial_bin_export_blocked),
+          ));
+        }
+        return;
+      }
       tagDump = mfClassicGetExportBytes(
-          chameleonTagTypeGetMfClassicType(tag.tag), tag.data,
-          isEV1: chameleonTagSaveCheckForMifareClassicEV1(tag));
+        geometry.type,
+        tag.data,
+        isEV1: geometry.isEV1,
+      );
     } else {
       List<int> dump = [];
       for (var block in tag.data) {

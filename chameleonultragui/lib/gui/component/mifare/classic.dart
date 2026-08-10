@@ -3,12 +3,14 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/gui/component/key_check_marks.dart';
+import 'package:chameleonultragui/gui/component/mifare/key_profile_file.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/dictionary/export.dart';
 import 'package:chameleonultragui/gui/page/read_card.dart';
 import 'package:chameleonultragui/gui/menu/pages/dump_editor.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -38,6 +40,166 @@ class MifareClassicHelper extends StatefulWidget {
 class CardReaderState extends State<MifareClassicHelper> {
   String dumpName = "";
   bool skipDefaultDictionary = false;
+  bool _profileSelectionInitialized = false;
+  MifareClassicRecovery? _profileSelectionRecovery;
+
+  @override
+  void didUpdateWidget(covariant MifareClassicHelper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.mfcInfo.recovery, widget.mfcInfo.recovery) ||
+        oldWidget.hfInfo.uid != widget.hfInfo.uid ||
+        oldWidget.mfcInfo.type != widget.mfcInfo.type ||
+        oldWidget.mfcInfo.isEV1 != widget.mfcInfo.isEV1) {
+      if (oldWidget.hfInfo.uid != widget.hfInfo.uid ||
+          oldWidget.mfcInfo.type != widget.mfcInfo.type ||
+          oldWidget.mfcInfo.isEV1 != widget.mfcInfo.isEV1) {
+        widget.mfcInfo.recovery?.selectedKeyProfile = null;
+      }
+      _profileSelectionInitialized = false;
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<String?> _getKeyProfileName() async {
+    final localizations = AppLocalizations.of(context)!;
+    final controller = TextEditingController(
+        text: widget.hfInfo.uid.replaceAll(RegExp(r'[^0-9a-fA-F]'), ''));
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations.mifare_classic_enter_key_profile_name),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: controller, autofocus: true),
+            const SizedBox(height: 12),
+            Text(
+              localizations.mifare_classic_key_profile_plaintext_warning,
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.pop(dialogContext, name);
+              }
+            },
+            child: Text(localizations.ok),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  void _storeKeyProfile(MifareClassicKeyProfile profile) {
+    final appState = context.read<ChameleonGUIState>();
+    final profiles = appState.sharedPreferencesProvider
+        .upsertMifareClassicKeyProfile(profile);
+    widget.mfcInfo.recovery!
+      ..keyProfiles = profiles
+      ..selectedKeyProfile = profile;
+  }
+
+  Future<void> saveKeyProfile() async {
+    final localizations = AppLocalizations.of(context)!;
+    final name = await _getKeyProfileName();
+    if (name == null || !mounted) {
+      return;
+    }
+
+    final profile = widget.mfcInfo.recovery!.createKeyProfile(
+      name: name,
+      uid: widget.hfInfo.uid,
+    );
+
+    final exportToFile = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations.mifare_classic_save_key_profile),
+        content:
+            Text(localizations.mifare_classic_key_profile_plaintext_warning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizations.mifare_classic_save_key_profile_in_app),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child:
+                Text(localizations.mifare_classic_export_key_profile_to_file),
+          ),
+        ],
+      ),
+    );
+    if (exportToFile == null || !mounted) {
+      return;
+    }
+
+    if (exportToFile) {
+      final exported = await exportMifareClassicKeyProfileFile(
+        profile,
+        dialogTitle: '${localizations.output_file}:',
+      );
+      if (!exported) {
+        return;
+      }
+    } else {
+      _storeKeyProfile(profile);
+      setState(() {});
+    }
+    _showMessage(localizations.mifare_classic_key_profile_saved);
+  }
+
+  Future<bool> _confirmSelectedProfileUid() async {
+    final profile = widget.mfcInfo.recovery?.selectedKeyProfile;
+    if (profile == null ||
+        profile.uid == null ||
+        profile.matchesUid(widget.hfInfo.uid)) {
+      return true;
+    }
+
+    final localizations = AppLocalizations.of(context)!;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(localizations.mifare_classic_key_profile_uid_mismatch),
+            content: Text(localizations
+                .mifare_classic_key_profile_uid_mismatch_description),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(localizations.cancel),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(localizations.mifare_classic_use_key_profile),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
 
   Future<void> exportFoundKeys() async {
     await showDialog(
@@ -52,6 +214,21 @@ class CardReaderState extends State<MifareClassicHelper> {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
 
     var localizations = AppLocalizations.of(context)!;
+    if (bin) {
+      final recovery = widget.mfcInfo.recovery;
+      final geometry = MifareClassicGeometry.fromType(
+        widget.mfcInfo.type,
+        isEV1: widget.mfcInfo.isEV1,
+      );
+      if (recovery == null ||
+          !recovery.dumpComplete ||
+          geometry == null ||
+          !geometry.matchesBlockData(recovery.cardData)) {
+        _showMessage(localizations.mifare_classic_partial_bin_export_blocked);
+        return;
+      }
+    }
+
     Uint8List cardDump = Uint8List(0);
     if (!skipDump) {
       cardDump = mfClassicGetExportBytes(
@@ -76,6 +253,10 @@ class CardReaderState extends State<MifareClassicHelper> {
               ? TagType.mifare1K
               : mfClassicGetChameleonTagType(widget.mfcInfo.type),
           data: widget.mfcInfo.recovery!.cardData,
+          extraData: CardSaveExtra(
+            mifareClassicDumpComplete:
+                !skipDump && widget.mfcInfo.recovery!.dumpComplete,
+          ),
           ats: (widget.hfInfo.ats != localizations.no)
               ? hexToBytes(widget.hfInfo.ats)
               : Uint8List(0)));
@@ -94,12 +275,40 @@ class CardReaderState extends State<MifareClassicHelper> {
     int checkmarkPerRow = (screenSize.width < 600) ? 8 : 16;
 
     var appState = context.watch<ChameleonGUIState>();
+    if (!identical(_profileSelectionRecovery, widget.mfcInfo.recovery)) {
+      _profileSelectionRecovery = widget.mfcInfo.recovery;
+      _profileSelectionInitialized = false;
+    }
     widget.mfcInfo.recovery?.dictionaries =
         appState.sharedPreferencesProvider.getDictionaries(keyLength: 12);
     widget.mfcInfo.recovery?.dictionaries
         .insert(0, Dictionary(id: "", name: localizations.empty, keys: []));
     widget.mfcInfo.recovery?.selectedDictionary ??=
         widget.mfcInfo.recovery?.dictionaries[0];
+    final sectorCount = mfClassicGetSectorCount(widget.mfcInfo.type,
+        isEV1: widget.mfcInfo.isEV1);
+    widget.mfcInfo.recovery?.keyProfiles = appState.sharedPreferencesProvider
+        .getMifareClassicKeyProfiles()
+        .where((profile) => profile.isCompatible(
+            cardType: widget.mfcInfo.type.name, sectorCount: sectorCount))
+        .toList();
+    final selectedProfile = widget.mfcInfo.recovery?.selectedKeyProfile;
+    if (selectedProfile != null &&
+        !(widget.mfcInfo.recovery?.keyProfiles
+                .any((profile) => profile.id == selectedProfile.id) ??
+            false)) {
+      widget.mfcInfo.recovery?.selectedKeyProfile = null;
+    }
+    if (!_profileSelectionInitialized) {
+      for (final profile in widget.mfcInfo.recovery?.keyProfiles ??
+          <MifareClassicKeyProfile>[]) {
+        if (profile.matchesUid(widget.hfInfo.uid)) {
+          widget.mfcInfo.recovery?.selectedKeyProfile = profile;
+          break;
+        }
+      }
+      _profileSelectionInitialized = true;
+    }
 
     WakelockPlus.toggle(
         enable: [
@@ -137,6 +346,19 @@ class CardReaderState extends State<MifareClassicHelper> {
             const Spacer(),
           ],
         ),
+        if (widget.mfcInfo.recovery!.hasVerifiedKeys &&
+            ![
+              MifareClassicState.checkKeysOngoing,
+              MifareClassicState.recoveryOngoing,
+              MifareClassicState.dumpOngoing,
+            ].contains(widget.mfcInfo.state)) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: saveKeyProfile,
+            icon: const Icon(Icons.key),
+            label: Text(localizations.mifare_classic_save_key_profile),
+          ),
+        ],
         if (widget.mfcInfo.recovery?.error != "") ...[
           const SizedBox(height: 16),
           ErrorMessage(errorMessage: widget.mfcInfo.recovery!.error),
@@ -254,6 +476,62 @@ class CardReaderState extends State<MifareClassicHelper> {
                           controlAffinity: ListTileControlAffinity.leading,
                         ))),
                 const SizedBox(height: 8),
+                Text(localizations.mifare_classic_assigned_key_profile),
+                const SizedBox(height: 4),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 340,
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value:
+                            widget.mfcInfo.recovery?.selectedKeyProfile?.id ??
+                                '',
+                        items: [
+                          DropdownMenuItem<String>(
+                            value: '',
+                            child: Text(localizations.empty),
+                          ),
+                          ...widget.mfcInfo.recovery!.keyProfiles.map(
+                            (profile) => DropdownMenuItem<String>(
+                              value: profile.id,
+                              child: Text(
+                                profile.uid == null
+                                    ? localizations
+                                        .mifare_classic_key_profile_option(
+                                        profile.name,
+                                        profile.keyCount,
+                                      )
+                                    : localizations
+                                        .mifare_classic_key_profile_option_with_uid(
+                                        profile.name,
+                                        profile.keyCount,
+                                        profile.uid!,
+                                      ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (profileId) {
+                          setState(() {
+                            if (profileId == null || profileId.isEmpty) {
+                              widget.mfcInfo.recovery?.selectedKeyProfile =
+                                  null;
+                              return;
+                            }
+                            widget.mfcInfo.recovery?.selectedKeyProfile =
+                                widget.mfcInfo.recovery!.keyProfiles.firstWhere(
+                                    (profile) => profile.id == profileId);
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Text(localizations.additional_key_dict),
                 const SizedBox(height: 4),
                 DropdownButton<String>(
@@ -290,6 +568,12 @@ class CardReaderState extends State<MifareClassicHelper> {
                       });
 
                       try {
+                        if (!await _confirmSelectedProfileUid()) {
+                          setState(() {
+                            widget.mfcInfo.state = MifareClassicState.checkKeys;
+                          });
+                          return;
+                        }
                         await widget.mfcInfo.recovery!.checkKeys(
                             skipDefaultDictionary: skipDefaultDictionary);
 
