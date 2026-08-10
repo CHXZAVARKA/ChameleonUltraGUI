@@ -799,35 +799,20 @@ class SavedCardsPageState extends State<SavedCardsPage> {
                                       } catch (_) {
                                         // Non-JSON formats are handled below.
                                       }
-                                      if (decodedJson is Map &&
-                                          decodedJson['format'] ==
-                                              'chameleon-ultra-gui-folder') {
+                                      if (isCardFolderBundleJson(decodedJson)) {
                                         await _importFolderSource(string);
                                         return;
                                       }
                                       var tags = appState
                                           .sharedPreferencesProvider
                                           .getCards();
-                                      CardSave tag;
-                                      if (string.contains(
-                                          "\"Created\": \"proxmark3\",")) {
-                                        // PM3 JSON
-                                        tag = pm3JsonToCardSave(string);
-                                      } else if (string.contains(
-                                          "Filetype: Flipper NFC device")) {
-                                        // Flipper NFC
-                                        tag = flipperNfcToCardSave(string);
-                                      } else if (string
-                                          .contains("+Sector: 0")) {
-                                        // Mifare Classic Tool
-                                        tag = mctToCardSave(string);
-                                      } else if (string.contains(
-                                          "Filetype: Flipper RFID key")) {
-                                        // Flipper RFID
-                                        tag = flipperRfidToCardSave(string);
-                                      } else {
-                                        tag = CardSave.fromJson(string);
-                                      }
+                                      final tag = cardSaveFromText(
+                                        string,
+                                        format: detectCardSaveTextFormat(
+                                          string,
+                                          decodedJson: decodedJson,
+                                        ),
+                                      );
 
                                       tag.name = basename(file.path)
                                               .contains('.')
