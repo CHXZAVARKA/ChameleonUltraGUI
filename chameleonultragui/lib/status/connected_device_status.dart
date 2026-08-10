@@ -1432,6 +1432,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
               : SlotReorderOutcome.confirmed;
         }
         if (_reorderReconciliationUnresolved(reconciled)) {
+          if (_swapIsVisiblyIndistinguishable(previous, source, target)) {
+            _rememberSemanticReorderAmbiguity(source, target);
+          }
           _publish(
             _snapshot.copyWith(
               slots: _withSemanticReorderAmbiguity(reconciled),
@@ -1687,6 +1690,13 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   bool _matchesConfirmedOrder(SlotsStatus before, SlotsStatus after) =>
       _slotListsEqual(before.slots, after.slots) &&
       before.activeSlot.value == after.activeSlot.value;
+
+  bool _swapIsVisiblyIndistinguishable(
+    SlotsStatus before,
+    int source,
+    int target,
+  ) =>
+      _matchesExpectedSwap(before, before, source, target);
 
   bool _slotListsEqual(
     List<DeviceSlotStatus> left,

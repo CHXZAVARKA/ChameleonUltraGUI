@@ -313,6 +313,52 @@ void main() {
     expect(slots.pendingReorder, isNull);
   });
 
+  test(
+      'complete refresh preserves identical-slot ambiguity after partial read-back',
+      () async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    fixture.communicator
+      ..makeSlotsVisiblyIdentical(0, 1)
+      ..activeSlot = 7;
+    await fixture.status.refreshSlots();
+    fixture.communicator
+      ..events.clear()
+      ..loseSwapReply = true
+      ..applySwapBeforeLostReply = true
+      ..failNames = true;
+
+    expect(
+      await fixture.status.reorderSlots(0, 1),
+      SlotReorderOutcome.ambiguous,
+    );
+    expect(fixture.communicator.swapCalls, 1);
+
+    fixture.communicator
+      ..events.clear()
+      ..failNames = false;
+    await fixture.status.refreshSlots();
+
+    final slots = fixture.status.snapshot.slots;
+    expect(fixture.communicator.swapCalls, 1);
+    expect(
+      fixture.communicator.events,
+      ['types', 'enabled', 'names', 'active'],
+    );
+    expect(slots.availability, SlotsAvailability.stale);
+    expect(slots.staleFacets, isEmpty);
+    expect(slots.staleSlotFacets.keys, {0, 1});
+    expect(
+      slots.staleSlotFacets[0],
+      {SlotFacet.types, SlotFacet.enabledStates, SlotFacet.names},
+    );
+    expect(
+      slots.staleSlotFacets[1],
+      {SlotFacet.types, SlotFacet.enabledStates, SlotFacet.names},
+    );
+    expect(slots.pendingReorder, isNull);
+  });
+
   test('confirmed reorder moves unresolved bundle identity with its slot',
       () async {
     final fixture = _fixture();
