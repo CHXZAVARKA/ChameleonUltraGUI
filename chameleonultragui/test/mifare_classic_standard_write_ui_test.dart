@@ -97,11 +97,21 @@ void main() {
     final loadFileRect = tester.getRect(loadFile);
     final separatorRect = tester.getRect(separator);
     final selectSavedCardRect = tester.getRect(selectSavedCard);
+    final scrollView = find.byType(SingleChildScrollView);
+    final scrollViewRect = tester.getRect(scrollView);
+    final scrollViewPadding = tester
+        .widget<SingleChildScrollView>(scrollView)
+        .padding!
+        .resolve(Directionality.of(tester.element(scrollView)));
+    final contentLeft = scrollViewRect.left + scrollViewPadding.left;
+    final contentRight = scrollViewRect.right - scrollViewPadding.right;
 
     expect(loadFileRect.bottom, lessThan(separatorRect.top));
     expect(separatorRect.bottom, lessThan(selectSavedCardRect.top));
-    expect(loadFileRect.left, selectSavedCardRect.left);
-    expect(loadFileRect.right, selectSavedCardRect.right);
+    expect(loadFileRect.left, contentLeft);
+    expect(loadFileRect.right, contentRight);
+    expect(selectSavedCardRect.left, contentLeft);
+    expect(selectSavedCardRect.right, contentRight);
     expect(tester.takeException(), isNull);
   });
 
