@@ -22,7 +22,6 @@ class WriteCardPage extends StatefulWidget {
 
 class WriteCardPageState extends State<WriteCardPage> {
   _WriteCardMode _mode = _WriteCardMode.magic;
-  bool _standardWriteBusy = false;
   int step = 0;
   int progress = -1;
   bool written = false;
@@ -38,6 +37,13 @@ class WriteCardPageState extends State<WriteCardPage> {
       session.isCurrent &&
       candidate != null &&
       identical(candidate.communicator, session.communicator);
+
+  void selectStandardMode() {
+    if (_mode == _WriteCardMode.standard) {
+      return;
+    }
+    setState(() => _mode = _WriteCardMode.standard);
+  }
 
   Future<String?> cardSelectDialog(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
@@ -515,7 +521,7 @@ class WriteCardPageState extends State<WriteCardPage> {
                 ),
               ],
               selected: {_mode},
-              onSelectionChanged: _standardWriteBusy || progress != -1
+              onSelectionChanged: progress != -1
                   ? null
                   : (selection) {
                       setState(() => _mode = selection.first);
@@ -523,15 +529,16 @@ class WriteCardPageState extends State<WriteCardPage> {
             ),
           ),
           Expanded(
-            child: _mode == _WriteCardMode.standard
-                ? StandardMifareClassicWritePanel(
-                    onBusyChanged: (busy) {
-                      if (mounted) {
-                        setState(() => _standardWriteBusy = busy);
-                      }
-                    },
-                  )
-                : SingleChildScrollView(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Offstage(
+                  offstage: _mode != _WriteCardMode.standard,
+                  child: const StandardMifareClassicWritePanel(),
+                ),
+                Offstage(
+                  offstage: _mode != _WriteCardMode.magic,
+                  child: SingleChildScrollView(
                     child: Center(
                       child: Stepper(
                         physics: const ClampingScrollPhysics(),
@@ -666,6 +673,9 @@ class WriteCardPageState extends State<WriteCardPage> {
                       ),
                     ),
                   ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
