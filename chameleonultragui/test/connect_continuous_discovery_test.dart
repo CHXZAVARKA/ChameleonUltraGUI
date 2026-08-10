@@ -21,54 +21,71 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/firmware_catalog_stub.dart';
 
 void main() {
-  testWidgets(
-    'tapping a BLE device shows progress immediately and opens Home after connect',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'auto_connect_first_found': false,
-      });
-      final connectGate = Completer<void>();
-      final logger = Logger(output: MemoryOutput());
-      final serial = _DelayedConnectSerial(log: logger, gate: connectGate);
-      final preferences = SharedPreferencesProvider();
-      await preferences.load();
-      final appState = ChameleonGUIState(
-        preferences,
-        firmwareCatalog: const CurrentFirmwareCatalogStub(),
-      )
-        ..connector = serial
-        ..log = logger;
-      addTearDown(logger.close);
+  for (final connectionType in [ConnectionType.ble, ConnectionType.usb]) {
+    testWidgets(
+      'tapping a ${connectionType.name.toUpperCase()} device preserves its '
+      'transport, shows progress immediately, and opens Home after connect',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'auto_connect_first_found': false,
+        });
+        final connectGate = Completer<void>();
+        final logger = Logger(output: MemoryOutput());
+        final selectedDevice = Chameleon(
+          port: connectionType == ConnectionType.ble
+              ? 'ble-device-a'
+              : '/dev/usb-device-a',
+          device: ChameleonDevice.ultra,
+          type: connectionType,
+          dfu: false,
+        );
+        final serial = _DelayedConnectSerial(
+          log: logger,
+          gate: connectGate,
+          selectedDevice: selectedDevice,
+        );
+        final preferences = SharedPreferencesProvider();
+        await preferences.load();
+        final appState = ChameleonGUIState(
+          preferences,
+          firmwareCatalog: const CurrentFirmwareCatalogStub(),
+        )
+          ..connector = serial
+          ..log = logger;
+        addTearDown(logger.close);
 
-      await tester.pumpWidget(
-        ChangeNotifierProvider<ChameleonGUIState>.value(
-          value: appState,
-          child: MainPage(sharedPreferencesProvider: preferences),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
+        await tester.pumpWidget(
+          ChangeNotifierProvider<ChameleonGUIState>.value(
+            value: appState,
+            child: MainPage(sharedPreferencesProvider: preferences),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
 
-      await tester.tap(find.text('Chameleon Ultra'));
-      await tester.pump();
+        await tester.tap(find.text('Chameleon Ultra'));
+        await tester.pump();
 
-      expect(find.byType(PendingConnectionPage), findsOneWidget);
-      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+        expect(serial.connectCalls, 1);
+        expect(find.byType(PendingConnectionPage), findsOneWidget);
+        expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+        expect(serial.receivedSelection, same(selectedDevice));
 
-      connectGate.complete();
-      await tester.pump();
-      await tester.pump();
+        connectGate.complete();
+        await tester.pump();
+        await tester.pump();
 
-      expect(find.byType(HomePage), findsOneWidget);
-      expect(find.byKey(const Key('home-bottom-dashboard')), findsOneWidget);
-      expect(appState.communicator, isNotNull);
+        expect(find.byType(HomePage), findsOneWidget);
+        expect(find.byKey(const Key('home-bottom-dashboard')), findsOneWidget);
+        expect(appState.communicator, isNotNull);
 
-      await tester.pump(const Duration(milliseconds: 500));
-      await appState.disconnect();
-      appState.dispose();
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+        await tester.pump(const Duration(milliseconds: 500));
+        await appState.disconnect();
+        appState.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets(
     'loader replaces refresh until discovery finds a device',
@@ -168,25 +185,39 @@ void main() {
 }
 
 class _DelayedConnectSerial extends EmulatorSerial {
-  _DelayedConnectSerial({required super.log, required this.gate});
+  _DelayedConnectSerial({
+    required super.log,
+    required this.gate,
+    required this.selectedDevice,
+  });
 
   final Completer<void> gate;
+  final Chameleon selectedDevice;
   final Completer<bool> statusWriteGate = Completer<bool>();
+  dynamic receivedSelection;
+  int connectCalls = 0;
 
   @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [
-        Chameleon(
-          port: 'device-a',
-          device: ChameleonDevice.ultra,
-          type: ConnectionType.ble,
-          dfu: false,
-        ),
+  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => [
+        selectedDevice,
       ];
 
   @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async {
+  Future<bool> connectSpecificDevice(dynamic selection) async {
+    connectCalls++;
+    receivedSelection = selection;
     await gate.future;
-    return super.connectSpecificDevice(devicePort);
+    return super.connectSpecificDevice(
+      selection is Chameleon ? selection.port : selection,
+    );
+  }
+
+  @override
+  Future<bool> connectDiscoveredDevice(Chameleon selection) async {
+    connectCalls++;
+    receivedSelection = selection;
+    await gate.future;
+    return super.connectSpecificDevice(selection.port);
   }
 
   @override

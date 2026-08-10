@@ -6,19 +6,30 @@ import 'package:chameleonultragui/connector/serial_native.dart';
 
 // Class combines macOS Native Serial and BLE serial
 class MacOSSerial extends AbstractSerial {
-  late BLESerial bleSerial = BLESerial(log: log);
-  late NativeSerial nativeSerial = NativeSerial(log: log);
+  late BLESerial bleSerial;
+  late NativeSerial nativeSerial;
 
-  MacOSSerial({required super.log}) {
-    bleSerial.connectionStateCallback = notifyConnectionStateChanged;
-    nativeSerial.connectionStateCallback = notifyConnectionStateChanged;
+  MacOSSerial({
+    required super.log,
+    BLESerial? bleSerial,
+    NativeSerial? nativeSerial,
+  }) {
+    this.bleSerial = bleSerial ?? BLESerial(log: log);
+    this.nativeSerial = nativeSerial ?? NativeSerial(log: log);
+    this.bleSerial.connectionStateCallback = notifyConnectionStateChanged;
+    this.nativeSerial.connectionStateCallback = notifyConnectionStateChanged;
   }
 
   @override
   Future<bool> performDisconnect() async {
     bool ble = await bleSerial.performDisconnect();
     bool native = await nativeSerial.performDisconnect();
-    return (ble || native);
+    final wasPending = pendingConnection;
+    pendingConnection = false;
+    if (wasPending) {
+      notifyConnectionStateChanged();
+    }
+    return (ble || native || wasPending);
   }
 
   @override
@@ -28,12 +39,27 @@ class MacOSSerial extends AbstractSerial {
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async {
+    if (connected || pendingConnection) {
+      return [];
+    }
     List<Chameleon> output = [];
 
     output.addAll(await nativeSerial.availableChameleons(onlyDFU));
     output.addAll(await bleSerial.availableChameleons(onlyDFU));
 
     return output;
+  }
+
+  @override
+  Future<bool> connectDiscoveredDevice(Chameleon chameleon) {
+    switch (chameleon.type) {
+      case ConnectionType.ble:
+        return bleSerial.connectSpecificDevice(chameleon.port);
+      case ConnectionType.usb:
+        return nativeSerial.connectSpecificDevice(chameleon.port);
+      case ConnectionType.none:
+        return Future.value(false);
+    }
   }
 
   @override
@@ -89,13 +115,6 @@ class MacOSSerial extends AbstractSerial {
 
   @override
   bool get isDFU => (bleSerial.isDFU || nativeSerial.isDFU);
-
-  @override
-  bool get pendingConnection => bleSerial.pendingConnection;
-
-  @override
-  set pendingConnection(pendingConnection) =>
-      {bleSerial.pendingConnection = pendingConnection};
 
   @override
   Future<void> open() async {

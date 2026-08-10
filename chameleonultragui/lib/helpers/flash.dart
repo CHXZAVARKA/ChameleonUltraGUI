@@ -208,7 +208,7 @@ Future<void> flashFile(
     }
   }
 
-  await appState.connector!.connectSpecificDevice(chameleons[0].port);
+  await appState.connector!.connectDiscoveredDevice(toFlash);
 
   if (scaffoldMessenger != null) {
     scaffoldMessenger.removeCurrentSnackBar();

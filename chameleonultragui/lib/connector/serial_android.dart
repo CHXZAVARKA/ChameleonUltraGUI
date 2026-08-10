@@ -8,21 +8,32 @@ import 'package:permission_handler/permission_handler.dart';
 
 // Class combines Android OTG and BLE serial
 class AndroidSerial extends AbstractSerial {
-  late BLESerial bleSerial = BLESerial(log: log);
-  late MobileSerial mobileSerial = MobileSerial(log: log);
+  late BLESerial bleSerial;
+  late MobileSerial mobileSerial;
   Future<bool>? permissionRequestFuture;
   late bool hasAllPermissions = true;
 
-  AndroidSerial({required super.log}) {
-    bleSerial.connectionStateCallback = notifyConnectionStateChanged;
-    mobileSerial.connectionStateCallback = notifyConnectionStateChanged;
+  AndroidSerial({
+    required super.log,
+    BLESerial? bleSerial,
+    MobileSerial? mobileSerial,
+  }) {
+    this.bleSerial = bleSerial ?? BLESerial(log: log);
+    this.mobileSerial = mobileSerial ?? MobileSerial(log: log);
+    this.bleSerial.connectionStateCallback = notifyConnectionStateChanged;
+    this.mobileSerial.connectionStateCallback = notifyConnectionStateChanged;
   }
 
   @override
   Future<bool> performDisconnect() async {
     bool ble = await bleSerial.performDisconnect();
     bool otg = await mobileSerial.performDisconnect();
-    return (ble || otg);
+    final wasPending = pendingConnection;
+    pendingConnection = false;
+    if (wasPending) {
+      notifyConnectionStateChanged();
+    }
+    return (ble || otg || wasPending);
   }
 
   @override
@@ -32,6 +43,9 @@ class AndroidSerial extends AbstractSerial {
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async {
+    if (connected || pendingConnection) {
+      return [];
+    }
     List<Chameleon> output = [];
 
     output.addAll(await mobileSerial.availableChameleons(onlyDFU));
@@ -41,6 +55,18 @@ class AndroidSerial extends AbstractSerial {
     }
 
     return output;
+  }
+
+  @override
+  Future<bool> connectDiscoveredDevice(Chameleon chameleon) {
+    switch (chameleon.type) {
+      case ConnectionType.ble:
+        return bleSerial.connectSpecificDevice(chameleon.port);
+      case ConnectionType.usb:
+        return mobileSerial.connectSpecificDevice(chameleon.port);
+      case ConnectionType.none:
+        return Future.value(false);
+    }
   }
 
   @override
@@ -123,11 +149,4 @@ class AndroidSerial extends AbstractSerial {
 
   @override
   bool get isDFU => (bleSerial.isDFU || mobileSerial.isDFU);
-
-  @override
-  bool get pendingConnection => bleSerial.pendingConnection;
-
-  @override
-  set pendingConnection(pendingConnection) =>
-      {bleSerial.pendingConnection = pendingConnection};
 }

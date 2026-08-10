@@ -243,13 +243,11 @@ class _ConnectPageState extends State<ConnectPage> {
     }
 
     try {
-      if (chameleonDevice.type == ConnectionType.ble) {
-        appState.connector!.pendingConnection = true;
-        appState.changesMade();
-      }
+      appState.connector!.pendingConnection = true;
+      appState.changesMade();
 
       final connected =
-          await appState.connector!.connectSpecificDevice(chameleonDevice.port);
+          await appState.connector!.connectDiscoveredDevice(chameleonDevice);
       if (connected) {
         appState.connector!.pendingConnection = false;
         appState.clearAutoReconnectSuppression(chameleonDevice.port);
