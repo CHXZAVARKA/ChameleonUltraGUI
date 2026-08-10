@@ -111,6 +111,46 @@ void main() {
     expect(communicator.authenticatedWrites, 1);
   });
 
+  test('Gen2 reports a stale session after an issued write as ambiguous',
+      () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    var sessionCurrent = true;
+    final communicator = _CompletedClassicWriteCommunicator(
+      logger,
+      afterWrite: () => sessionCurrent = false,
+    );
+    final helper = _ExposedGen2WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+    )..setOperationContinuation(() => sessionCurrent);
+
+    final outcome = await helper.writeAuthenticatedOutcome();
+
+    expect(outcome, MifareClassicMagicWriteOutcome.ambiguous);
+    expect(communicator.authenticatedWrites, 1);
+  });
+
+  test('Gen2 maps a successful direct write followed by staleness to ambiguous',
+      () async {
+    final logger = Logger(output: MemoryOutput());
+    addTearDown(logger.close);
+    var sessionCurrent = true;
+    final communicator = _CompletedClassicWriteCommunicator(
+      logger,
+      afterWrite: () {},
+    );
+    final helper = _CompletedModifierGen2WriteHelper(
+      communicator,
+      recovery: await recoveryFor(communicator),
+      afterWrite: () => sessionCurrent = false,
+    )..setOperationContinuation(() => sessionCurrent);
+
+    final outcome = await helper.writeModifierOutcome();
+
+    expect(outcome, MifareClassicMagicWriteOutcome.ambiguous);
+  });
+
   test('Gen2 full write stops after an ambiguous trailer write', () async {
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
@@ -474,6 +514,68 @@ class _AmbiguousWriteCommunicator extends ChameleonCommunicator {
       );
     }
     return null;
+  }
+}
+
+class _ExposedGen2WriteHelper extends MifareClassicGen2WriteHelper {
+  _ExposedGen2WriteHelper(super.communicator, {required super.recovery});
+
+  Future<MifareClassicMagicWriteOutcome> writeAuthenticatedOutcome() {
+    return writeAuthenticatedBlock(
+      1,
+      0x60,
+      Uint8List.fromList(const [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+      Uint8List(16),
+    );
+  }
+}
+
+class _CompletedClassicWriteCommunicator extends ChameleonCommunicator {
+  _CompletedClassicWriteCommunicator(super.log, {required this.afterWrite});
+
+  final void Function() afterWrite;
+  int authenticatedWrites = 0;
+
+  @override
+  Future<bool> mf1WriteBlock(
+    int block,
+    int keyType,
+    Uint8List key,
+    Uint8List data,
+  ) async {
+    authenticatedWrites++;
+    afterWrite();
+    return true;
+  }
+}
+
+class _CompletedModifierGen2WriteHelper extends MifareClassicGen2WriteHelper {
+  _CompletedModifierGen2WriteHelper(
+    super.communicator, {
+    required super.recovery,
+    required this.afterWrite,
+  });
+
+  final void Function() afterWrite;
+
+  Future<MifareClassicMagicWriteOutcome> writeModifierOutcome() {
+    return writeBlockModifierOutcome(
+      _classicCard(),
+      1,
+      Uint8List(16),
+    );
+  }
+
+  @override
+  Future<MifareClassicMagicWriteOutcome> writeSingleBlockOutcome(
+    CardSave card,
+    int block,
+    Uint8List data, {
+    bool tryBothKeys = false,
+    bool useGenericKey = false,
+  }) async {
+    afterWrite();
+    return MifareClassicMagicWriteOutcome.success;
   }
 }
 
