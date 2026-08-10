@@ -921,5 +921,63 @@
   "slot_grid_description": "Eight device slots. HF is the top row and LF is the bottom row.",
   "slot_layout": "Slot layout",
   "slot_layout_eight_across": "Eight slots in one row",
-  "slot_layout_two_by_four": "Two rows of four slots"
+  "slot_layout_two_by_four": "Two rows of four slots",
+  "slot_reorder_unsupported_firmware": "Slot reordering is not supported by this firmware.",
+  "@slot_reorder_unsupported_firmware": {
+    "description": "Short explanation shown when connected firmware lacks atomic whole-slot reordering"
+  },
+  "slot_reorder_check_unavailable": "Slot reordering availability could not be checked.",
+  "@slot_reorder_check_unavailable": {
+    "description": "Short explanation shown when the app cannot check whole-slot reordering support"
+  },
+  "slot_reorder_checking": "Checking whether this firmware supports slot reordering.",
+  "@slot_reorder_checking": {
+    "description": "Short explanation shown while checking whole-slot reordering support"
+  },
+  "slot_reorder_source": "Reorder source",
+  "@slot_reorder_source": {
+    "description": "Screen-reader state for the slot bundle currently being dragged"
+  },
+  "slot_reorder_source_with_destination": "Reorder source, destination slot {slot}",
+  "@slot_reorder_source_with_destination": {
+    "description": "Screen-reader state for a dragged source with a current destination",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_destination": "Reorder destination, source slot {slot}",
+  "@slot_reorder_destination": {
+    "description": "Screen-reader state for a drag destination",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_pending_source": "Reorder pending: source, destination slot {slot}",
+  "@slot_reorder_pending_source": {
+    "description": "Screen-reader state for the source of a pending whole-slot swap",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_pending_destination": "Reorder pending: destination, source slot {slot}",
+  "@slot_reorder_pending_destination": {
+    "description": "Screen-reader state for the destination of a pending whole-slot swap",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_move_before": "Move before slot {slot}",
+  "@slot_reorder_move_before": {
+    "description": "Screen-reader action that swaps a slot bundle with its preceding visual neighbor",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_move_after": "Move after slot {slot}",
+  "@slot_reorder_move_after": {
+    "description": "Screen-reader action that swaps a slot bundle with its following visual neighbor",
+    "placeholders": {"slot": {"type": "int"}}
+  },
+  "slot_reorder_ambiguous": "The slot swap could not be confirmed. Check the slot contents before retrying.",
+  "@slot_reorder_ambiguous": {
+    "description": "Actionable error after losing a slot-swap reply and failing to prove the result"
+  },
+  "slot_reorder_reconciliation_failed": "The slot swap completed, but the refreshed slot state is incomplete. Check the slot contents before retrying.",
+  "@slot_reorder_reconciliation_failed": {
+    "description": "Actionable error after a confirmed slot swap with incomplete refreshed state"
+  },
+  "slot_reorder_failed": "The slot swap failed. The confirmed slot order was kept.",
+  "@slot_reorder_failed": {
+    "description": "Actionable error after a rejected or failed whole-slot swap"
+  }
 }

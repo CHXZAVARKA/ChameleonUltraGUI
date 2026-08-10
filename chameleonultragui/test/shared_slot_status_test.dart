@@ -507,7 +507,7 @@ void main() {
         'HF: Lab pass · Mifare Classic 1K · Enabled\n'
         'LF: Garage fob · EM410X · Disabled\n'
         'Active slot\n'
-        'Firmware: Unavailable',
+        'Slot reordering is not supported by this firmware.',
       ),
       findsOneWidget,
     );

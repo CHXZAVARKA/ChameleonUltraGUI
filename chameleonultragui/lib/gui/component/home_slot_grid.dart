@@ -46,6 +46,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   var _restoringEightAcrossOffset = false;
   Timer? _autoScrollTimer;
   double _autoScrollDirection = 0;
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _reorderFeedback;
 
   @override
   void initState() {
@@ -64,6 +65,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   void didUpdateWidget(HomeSlotGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.status, widget.status)) {
+      _dismissReorderFeedback();
       _lastConfirmedActiveSlot = null;
       _stopAutoScroll();
       _dragSource = null;
@@ -99,6 +101,8 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   @override
   void dispose() {
     _stopAutoScroll();
+    _reorderFeedback?.close();
+    _reorderFeedback = null;
     _eightAcrossController
       ..removeListener(_rememberEightAcrossOffset)
       ..dispose();
@@ -126,10 +130,11 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     };
     if (direction != null) {
       if (HardwareKeyboard.instance.isShiftPressed) {
-        final target = _keyboardReorderTarget(
-          _focusedSlot,
-          event.logicalKey,
-        );
+        final target = _SlotReorderNeighbors.forSlot(
+          index: _focusedSlot,
+          layout: widget.layout,
+          textDirection: Directionality.of(context),
+        ).targetForKey(event.logicalKey);
         if (target != null && _canStartReorder) {
           unawaited(_reorder(_focusedSlot, target));
         }
@@ -216,38 +221,21 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   }
 
   bool get _canStartReorder {
-    final slots = widget.status.snapshot.slots;
-    return slots.reorderCapability == SlotReorderCapability.supported &&
-        slots.pendingActivation == null &&
-        slots.pendingReorder == null;
+    return _canStartReorderFor(widget.status);
   }
 
-  int? _keyboardReorderTarget(int source, LogicalKeyboardKey key) {
-    if (widget.layout == SlotLayout.twoByFour) {
-      return switch (key) {
-        LogicalKeyboardKey.arrowLeft when source % 4 > 0 => source - 1,
-        LogicalKeyboardKey.arrowRight when source % 4 < 3 => source + 1,
-        LogicalKeyboardKey.arrowUp when source >= 4 => source - 4,
-        LogicalKeyboardKey.arrowDown when source < 4 => source + 4,
-        _ => null,
-      };
-    }
-    return switch (key) {
-      LogicalKeyboardKey.arrowLeft ||
-      LogicalKeyboardKey.arrowUp when source > 0 =>
-        source - 1,
-      LogicalKeyboardKey.arrowRight ||
-      LogicalKeyboardKey.arrowDown when source < 7 =>
-        source + 1,
-      _ => null,
-    };
-  }
-
-  Future<void> _reorder(int source, int target) async {
-    if (source == target || !_canStartReorder) {
+  Future<void> _reorder(
+    int source,
+    int target, {
+    ConnectedDeviceStatus? originatingStatus,
+  }) async {
+    final invokedStatus = originatingStatus ?? widget.status;
+    if (!identical(widget.status, invokedStatus) ||
+        !invokedStatus.isCurrentSession ||
+        source == target ||
+        !_canStartReorderFor(invokedStatus)) {
       return;
     }
-    final invokedStatus = widget.status;
     final outcome = await invokedStatus.reorderSlots(source, target);
     if (!mounted ||
         !invokedStatus.isCurrentSession ||
@@ -269,26 +257,49 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     final localizations = AppLocalizations.of(context)!;
     final detail = switch (outcome) {
       SlotReorderOutcome.unsupported =>
-        '${localizations.firmware}: ${localizations.unavailable}',
-      SlotReorderOutcome.ambiguous ||
+        localizations.slot_reorder_unsupported_firmware,
+      SlotReorderOutcome.ambiguous => localizations.slot_reorder_ambiguous,
       SlotReorderOutcome.reconciliationFailed =>
-        '${localizations.slot} ${source + 1} · '
-            '${localizations.slot} ${target + 1}: '
-            '${localizations.unavailable}',
-      _ => localizations.unavailable,
+        localizations.slot_reorder_reconciliation_failed,
+      _ => localizations.slot_reorder_failed,
     };
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('home-slot-reorder-error'),
-          content: Text('${localizations.error}: $detail'),
-          action: SnackBarAction(
-            label: localizations.retry,
-            onPressed: () => unawaited(_reorder(source, target)),
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    final feedback = messenger.showSnackBar(
+      SnackBar(
+        key: const Key('home-slot-reorder-error'),
+        content: Text('${localizations.error}: $detail'),
+        action: SnackBarAction(
+          label: localizations.retry,
+          onPressed: () => unawaited(
+            _reorder(
+              source,
+              target,
+              originatingStatus: invokedStatus,
+            ),
           ),
         ),
-      );
+      ),
+    );
+    _reorderFeedback = feedback;
+    unawaited(
+      feedback.closed.then((_) {
+        if (identical(_reorderFeedback, feedback)) {
+          _reorderFeedback = null;
+        }
+      }),
+    );
+  }
+
+  bool _canStartReorderFor(ConnectedDeviceStatus status) {
+    final slots = status.snapshot.slots;
+    return slots.reorderCapability == SlotReorderCapability.supported &&
+        slots.pendingActivation == null &&
+        slots.pendingReorder == null;
+  }
+
+  void _dismissReorderFeedback() {
+    _reorderFeedback?.close();
+    _reorderFeedback = null;
   }
 
   void _startDrag(int source) {
@@ -502,48 +513,91 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                         Widget slotColumn(
                           int index, {
                           bool preview = false,
-                        }) =>
-                            _SlotColumn(
-                              index: index,
-                              slot: slots.slots[index],
-                              markSize: markSize,
-                              markRowHeight: markRowHeight,
-                              loading: slots.availability ==
-                                  SlotsAvailability.loading,
-                              active: activeSlot == index &&
-                                  slots.activeSlot.isConfirmed,
-                              activating: slots.pendingActivation == index,
-                              focused: !preview &&
-                                  _hasFocus &&
-                                  _focusedSlot == index,
-                              blocked: _activationBlocked,
-                              reorderEnabled: _canStartReorder,
-                              reorderSource: pendingReorder?.source == index ||
-                                  _dragSource == index,
-                              reorderTarget: pendingReorder?.target == index ||
-                                  _dragTarget == index,
-                              reorderPending: pendingReorder != null &&
-                                  (pendingReorder.source == index ||
-                                      pendingReorder.target == index),
-                              reorderPartner: pendingReorder?.source == index
-                                  ? pendingReorder!.target
-                                  : pendingReorder?.target == index
-                                      ? pendingReorder!.source
-                                      : _dragSource == index
-                                          ? _dragTarget
-                                          : _dragTarget == index
-                                              ? _dragSource
-                                              : null,
-                              reorderCapability: slots.reorderCapability,
-                              preview: preview,
-                              onTap: () => _activate(index),
-                              onMoveBefore: index > 0 && _canStartReorder
-                                  ? () => unawaited(_reorder(index, index - 1))
-                                  : null,
-                              onMoveAfter: index < 7 && _canStartReorder
-                                  ? () => unawaited(_reorder(index, index + 1))
-                                  : null,
+                        }) {
+                          final neighbors = _SlotReorderNeighbors.forSlot(
+                            index: index,
+                            layout: widget.layout,
+                            textDirection: textDirection,
+                          );
+                          final actions = _canStartReorder
+                              ? _SlotReorderActions(
+                                  before: neighbors.before == null
+                                      ? null
+                                      : _SlotReorderAction(
+                                          target: neighbors.before!,
+                                          invoke: () => unawaited(
+                                            _reorder(index, neighbors.before!),
+                                          ),
+                                        ),
+                                  after: neighbors.after == null
+                                      ? null
+                                      : _SlotReorderAction(
+                                          target: neighbors.after!,
+                                          invoke: () => unawaited(
+                                            _reorder(index, neighbors.after!),
+                                          ),
+                                        ),
+                                )
+                              : const _SlotReorderActions.disabled();
+                          final _SlotReorderPresentation reorder;
+                          if (pendingReorder?.source == index) {
+                            reorder = _SlotReorderPresentation.source(
+                              capability: slots.reorderCapability,
+                              enabled: false,
+                              pending: true,
+                              partner: pendingReorder!.target,
+                              actions: actions,
                             );
+                          } else if (pendingReorder?.target == index) {
+                            reorder = _SlotReorderPresentation.destination(
+                              capability: slots.reorderCapability,
+                              enabled: false,
+                              pending: true,
+                              partner: pendingReorder!.source,
+                              actions: actions,
+                            );
+                          } else if (_dragSource == index) {
+                            reorder = _SlotReorderPresentation.source(
+                              capability: slots.reorderCapability,
+                              enabled: _canStartReorder,
+                              pending: false,
+                              partner: _dragTarget,
+                              actions: actions,
+                            );
+                          } else if (_dragTarget == index) {
+                            reorder = _SlotReorderPresentation.destination(
+                              capability: slots.reorderCapability,
+                              enabled: _canStartReorder,
+                              pending: false,
+                              partner: _dragSource!,
+                              actions: actions,
+                            );
+                          } else {
+                            reorder = _SlotReorderPresentation.idle(
+                              capability: slots.reorderCapability,
+                              enabled: _canStartReorder,
+                              actions: actions,
+                            );
+                          }
+                          return _SlotColumn(
+                            index: index,
+                            slot: slots.slots[index],
+                            markSize: markSize,
+                            markRowHeight: markRowHeight,
+                            loading:
+                                slots.availability == SlotsAvailability.loading,
+                            active: activeSlot == index &&
+                                slots.activeSlot.isConfirmed,
+                            activating: slots.pendingActivation == index,
+                            focused:
+                                !preview && _hasFocus && _focusedSlot == index,
+                            blocked: _activationBlocked,
+                            reorder: reorder,
+                            preview: preview,
+                            onTap: () => _activate(index),
+                          );
+                        }
+
                         Widget buildSlot(int index) {
                           Widget child = slotColumn(index);
                           if (_canStartReorder) {
@@ -738,6 +792,116 @@ enum _SlotMarkState {
   loading
 }
 
+class _SlotReorderNeighbors {
+  const _SlotReorderNeighbors._({
+    required this.before,
+    required this.after,
+    required this.left,
+    required this.right,
+    required this.up,
+    required this.down,
+  });
+
+  factory _SlotReorderNeighbors.forSlot({
+    required int index,
+    required SlotLayout layout,
+    required TextDirection textDirection,
+  }) {
+    final columns = layout == SlotLayout.twoByFour ? 4 : 8;
+    final column = index % columns;
+    final before = column > 0 ? index - 1 : null;
+    final after = column < columns - 1 ? index + 1 : null;
+    final left = textDirection == TextDirection.ltr ? before : after;
+    final right = textDirection == TextDirection.ltr ? after : before;
+    return _SlotReorderNeighbors._(
+      before: before,
+      after: after,
+      left: left,
+      right: right,
+      up: layout == SlotLayout.twoByFour
+          ? (index >= 4 ? index - 4 : null)
+          : before,
+      down: layout == SlotLayout.twoByFour
+          ? (index < 4 ? index + 4 : null)
+          : after,
+    );
+  }
+
+  final int? before;
+  final int? after;
+  final int? left;
+  final int? right;
+  final int? up;
+  final int? down;
+
+  int? targetForKey(LogicalKeyboardKey key) => switch (key) {
+        LogicalKeyboardKey.arrowLeft => left,
+        LogicalKeyboardKey.arrowRight => right,
+        LogicalKeyboardKey.arrowUp => up,
+        LogicalKeyboardKey.arrowDown => down,
+        _ => null,
+      };
+}
+
+class _SlotReorderAction {
+  const _SlotReorderAction({required this.target, required this.invoke});
+
+  final int target;
+  final VoidCallback invoke;
+}
+
+class _SlotReorderActions {
+  const _SlotReorderActions({required this.before, required this.after});
+
+  const _SlotReorderActions.disabled()
+      : before = null,
+        after = null;
+
+  final _SlotReorderAction? before;
+  final _SlotReorderAction? after;
+}
+
+enum _SlotReorderRole { idle, source, destination }
+
+class _SlotReorderPresentation {
+  const _SlotReorderPresentation.idle({
+    required this.capability,
+    required this.enabled,
+    required this.actions,
+  })  : role = _SlotReorderRole.idle,
+        pending = false,
+        partner = null;
+
+  const _SlotReorderPresentation.source({
+    required this.capability,
+    required this.enabled,
+    required this.pending,
+    required this.partner,
+    required this.actions,
+  })  : assert(!pending || partner != null),
+        assert(!pending || !enabled),
+        role = _SlotReorderRole.source;
+
+  const _SlotReorderPresentation.destination({
+    required this.capability,
+    required this.enabled,
+    required this.pending,
+    required int this.partner,
+    required this.actions,
+  })  : assert(!pending || !enabled),
+        role = _SlotReorderRole.destination;
+
+  final SlotReorderCapability capability;
+  final bool enabled;
+  final _SlotReorderRole role;
+  final bool pending;
+  final int? partner;
+  final _SlotReorderActions actions;
+
+  bool get isSource => role == _SlotReorderRole.source;
+  bool get isDestination => role == _SlotReorderRole.destination;
+}
+
 class _SlotColumn extends StatelessWidget {
   const _SlotColumn({
     required this.index,
@@ -749,16 +913,9 @@ class _SlotColumn extends StatelessWidget {
     required this.activating,
     required this.focused,
     required this.blocked,
-    required this.reorderEnabled,
-    required this.reorderSource,
-    required this.reorderTarget,
-    required this.reorderPending,
-    required this.reorderPartner,
-    required this.reorderCapability,
+    required this.reorder,
     required this.preview,
     required this.onTap,
-    required this.onMoveBefore,
-    required this.onMoveAfter,
   });
 
   final int index;
@@ -770,16 +927,9 @@ class _SlotColumn extends StatelessWidget {
   final bool activating;
   final bool focused;
   final bool blocked;
-  final bool reorderEnabled;
-  final bool reorderSource;
-  final bool reorderTarget;
-  final bool reorderPending;
-  final int? reorderPartner;
-  final SlotReorderCapability reorderCapability;
+  final _SlotReorderPresentation reorder;
   final bool preview;
   final VoidCallback onTap;
-  final VoidCallback? onMoveBefore;
-  final VoidCallback? onMoveAfter;
 
   String _frequencyDescription(
     AppLocalizations localizations,
@@ -831,42 +981,48 @@ class _SlotColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final widgetsLocalizations = WidgetsLocalizations.of(context);
     const activeFrameColor = Colors.white;
-    final reorderDescription = reorderPartner == null
-        ? ''
-        : '\n${reorderPending ? localizations.loading : localizations.slot} · '
-            '${localizations.slot} ${reorderPartner! + 1}';
-    final capabilityDescription = switch (reorderCapability) {
-      SlotReorderCapability.unsupported ||
+    final reorderDescription = switch (reorder.role) {
+      _SlotReorderRole.idle => '',
+      _SlotReorderRole.source when reorder.pending =>
+        '\n${localizations.slot_reorder_pending_source(reorder.partner! + 1)}',
+      _SlotReorderRole.source when reorder.partner != null =>
+        '\n${localizations.slot_reorder_source_with_destination(reorder.partner! + 1)}',
+      _SlotReorderRole.source => '\n${localizations.slot_reorder_source}',
+      _SlotReorderRole.destination when reorder.pending =>
+        '\n${localizations.slot_reorder_pending_destination(reorder.partner! + 1)}',
+      _SlotReorderRole.destination =>
+        '\n${localizations.slot_reorder_destination(reorder.partner! + 1)}',
+    };
+    final capabilityReason = switch (reorder.capability) {
+      SlotReorderCapability.unsupported =>
+        localizations.slot_reorder_unsupported_firmware,
       SlotReorderCapability.unavailable =>
-        '\n${localizations.firmware}: ${localizations.unavailable}',
-      SlotReorderCapability.unknown =>
-        '\n${localizations.firmware}: ${localizations.loading}',
+        localizations.slot_reorder_check_unavailable,
+      SlotReorderCapability.unknown => localizations.slot_reorder_checking,
       SlotReorderCapability.supported => '',
     };
+    final capabilityDescription =
+        capabilityReason.isEmpty ? '' : '\n$capabilityReason';
     final tooltip = '${localizations.slot} ${index + 1}\n'
         '${_frequencyDescription(localizations, localizations.hf, slot.hf)}\n'
         '${_frequencyDescription(localizations, localizations.lf, slot.lf)}'
         '${active ? '\n${localizations.active_slot}' : ''}'
         '${activating ? '\n${localizations.activating}' : ''}'
         '$reorderDescription$capabilityDescription';
-    final textDirection = Directionality.of(context);
-    final moveBeforeLabel = textDirection == TextDirection.ltr
-        ? widgetsLocalizations.reorderItemLeft
-        : widgetsLocalizations.reorderItemRight;
-    final moveAfterLabel = textDirection == TextDirection.ltr
-        ? widgetsLocalizations.reorderItemRight
-        : widgetsLocalizations.reorderItemLeft;
     final customActions = <CustomSemanticsAction, VoidCallback>{
-      if (onMoveBefore != null)
-        CustomSemanticsAction(label: moveBeforeLabel): onMoveBefore!,
-      if (onMoveAfter != null)
-        CustomSemanticsAction(label: moveAfterLabel): onMoveAfter!,
+      if (reorder.actions.before case final action?)
+        CustomSemanticsAction(
+          label: localizations.slot_reorder_move_before(action.target + 1),
+        ): action.invoke,
+      if (reorder.actions.after case final action?)
+        CustomSemanticsAction(
+          label: localizations.slot_reorder_move_after(action.target + 1),
+        ): action.invoke,
     };
     return Tooltip(
       message: tooltip,
-      triggerMode: reorderEnabled
+      triggerMode: reorder.enabled
           ? TooltipTriggerMode.manual
           : TooltipTriggerMode.longPress,
       child: Semantics(
@@ -874,19 +1030,14 @@ class _SlotColumn extends StatelessWidget {
         enabled: !blocked,
         selected: active,
         label: tooltip.replaceAll('\n', '. '),
-        hint: switch (reorderCapability) {
-          SlotReorderCapability.supported => null,
-          SlotReorderCapability.unknown =>
-            '${localizations.firmware}: ${localizations.loading}',
-          _ => '${localizations.firmware}: ${localizations.unavailable}',
-        },
+        hint: capabilityReason.isEmpty ? null : capabilityReason,
         excludeSemantics: true,
         onTap: blocked ? null : onTap,
         customSemanticsActions: customActions,
         child: MouseRegion(
           cursor: blocked
               ? SystemMouseCursors.basic
-              : reorderEnabled
+              : reorder.enabled
                   ? SystemMouseCursors.grab
                   : SystemMouseCursors.click,
           child: Material(
@@ -913,12 +1064,12 @@ class _SlotColumn extends StatelessWidget {
                     curve: Curves.easeOut,
                     padding: const EdgeInsets.fromLTRB(3, 6, 3, 5),
                     decoration: BoxDecoration(
-                      color: reorderPending
+                      color: reorder.pending
                           ? theme.colorScheme.primary.withValues(alpha: 0.14)
-                          : reorderTarget
+                          : reorder.isDestination
                               ? theme.colorScheme.primary
                                   .withValues(alpha: 0.12)
-                              : reorderSource
+                              : reorder.isSource
                                   ? theme.colorScheme.primary
                                       .withValues(alpha: 0.07)
                                   : focused
@@ -929,12 +1080,15 @@ class _SlotColumn extends StatelessWidget {
                       border: Border.all(
                         color: active
                             ? activeFrameColor
-                            : reorderSource || reorderTarget
+                            : reorder.isSource || reorder.isDestination
                                 ? theme.colorScheme.primary
                                 : focused
                                     ? theme.colorScheme.outline
                                     : Colors.transparent,
-                        width: active || reorderSource || reorderTarget ? 2 : 1,
+                        width:
+                            active || reorder.isSource || reorder.isDestination
+                                ? 2
+                                : 1,
                       ),
                     ),
                     child: Column(
@@ -990,7 +1144,7 @@ class _SlotColumn extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (reorderPending)
+                  if (reorder.pending)
                     Positioned(
                       top: 3,
                       left: 12,

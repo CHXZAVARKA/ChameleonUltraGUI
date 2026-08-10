@@ -105,8 +105,14 @@ void main() {
     expect(find.byType(LongPressDraggable<int>), findsNothing);
     final slotSemantics =
         tester.getSemantics(find.byKey(const Key('home-slot-1')));
-    expect(slotSemantics.label, contains('Firmware: Unavailable'));
-    expect(slotSemantics.hint, contains('Firmware: Unavailable'));
+    expect(
+      slotSemantics.label,
+      contains('Slot reordering is not supported by this firmware.'),
+    );
+    expect(
+      slotSemantics.hint,
+      'Slot reordering is not supported by this firmware.',
+    );
 
     await tester.tap(find.byKey(const Key('home-slot-2')));
     await tester.pumpAndSettle();
@@ -141,7 +147,11 @@ void main() {
     );
     expect(
       tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
-      contains('Loading · Slot 2'),
+      contains('Reorder pending: source, destination slot 2'),
+    );
+    expect(
+      tester.getSemantics(find.byKey(const Key('home-slot-2'))).label,
+      contains('Reorder pending: destination, source slot 1'),
     );
     expect(
       find.byKey(const Key('home-slot-1-hf-mark-enabled')),
@@ -190,6 +200,80 @@ void main() {
     );
   });
 
+  testWidgets(
+      'lost response is ambiguous, runs one command, and offers manual retry',
+      (tester) async {
+    final fixture = _fixture(activeSlot: 2);
+    addTearDown(fixture.dispose);
+    fixture.communicator
+      ..makeSlotsVisiblyIdentical(0, 1)
+      ..throwAfterSwap = true;
+    await _prepareGrid(tester, fixture);
+
+    await _dragSlot(tester, source: 0, target: 1);
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.swaps, [(0, 1)]);
+    expect(
+      find.textContaining(
+        'The slot swap could not be confirmed. Check the slot contents before retrying.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<SnackBar>(find.byType(SnackBar)).action?.label,
+      'Retry',
+    );
+    await tester.pump(const Duration(seconds: 2));
+    expect(fixture.communicator.swaps, [(0, 1)]);
+  });
+
+  testWidgets('incomplete reconciliation has distinct actionable feedback',
+      (tester) async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    fixture.communicator.failNamesReadAfterSwap = true;
+    await _prepareGrid(tester, fixture);
+
+    await _dragSlot(tester, source: 0, target: 1);
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.swaps, [(0, 1)]);
+    expect(
+      find.textContaining(
+        'The slot swap completed, but the refreshed slot state is incomplete.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<SnackBar>(find.byType(SnackBar)).action?.label,
+      'Retry',
+    );
+  });
+
+  testWidgets('Retry from old feedback never reorders a replacement device',
+      (tester) async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    fixture.communicator.rejectSwap = true;
+    await _prepareGrid(tester, fixture);
+
+    await _dragSlot(tester, source: 0, target: 1);
+    await tester.pumpAndSettle();
+    final staleRetry =
+        tester.widget<SnackBar>(find.byType(SnackBar)).action!.onPressed;
+
+    final replacement = fixture.replaceConnection();
+    await replacement.status.refreshSlots();
+    await replacement.status.refreshSlotReorderCapability();
+    await _pumpGrid(tester, replacement.status);
+    staleRetry();
+    await tester.pumpAndSettle();
+
+    expect(replacement.communicator.swaps, isEmpty);
+    expect(find.byKey(const Key('home-slot-reorder-error')), findsNothing);
+  });
+
   testWidgets('late result from a replaced session has no old-page feedback',
       (tester) async {
     final fixture = _fixture();
@@ -210,6 +294,26 @@ void main() {
 
     expect(find.byKey(const Key('home-slot-reorder-error')), findsNothing);
     expect(replacement.status.snapshot.slots.pendingReorder, isNull);
+  });
+
+  testWidgets('disconnect during reorder clears UI without stale feedback',
+      (tester) async {
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    final gate = Completer<void>();
+    fixture.communicator.swapGate = gate;
+    await _prepareGrid(tester, fixture);
+
+    await _dragSlot(tester, source: 0, target: 1);
+    await tester.pump();
+    final disconnectedStatus = fixture.status;
+    fixture.disconnect();
+    expect(disconnectedStatus.isCurrentSession, isFalse);
+
+    gate.complete();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.byKey(const Key('home-slot-reorder-error')), findsNothing);
   });
 
   testWidgets('Shift arrows reorder while plain arrows still activate',
@@ -247,6 +351,64 @@ void main() {
     expect(fixture.communicator.activations, [3]);
   });
 
+  testWidgets('two-by-four Shift arrows stop at physical row edges',
+      (tester) async {
+    final ltr = _fixture(activeSlot: 3);
+    addTearDown(ltr.dispose);
+    await _prepareGrid(tester, ltr, layout: SlotLayout.twoByFour);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(ltr.communicator.swaps, isEmpty);
+
+    final rtl = _fixture(activeSlot: 3);
+    addTearDown(rtl.dispose);
+    await _prepareGrid(
+      tester,
+      rtl,
+      layout: SlotLayout.twoByFour,
+      textDirection: TextDirection.rtl,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(rtl.communicator.swaps, isEmpty);
+  });
+
+  testWidgets('Shift arrows follow RTL visual geometry in both layouts',
+      (tester) async {
+    final eightAcross = _fixture();
+    addTearDown(eightAcross.dispose);
+    await _prepareGrid(
+      tester,
+      eightAcross,
+      textDirection: TextDirection.rtl,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(eightAcross.communicator.swaps, [(0, 1)]);
+
+    final twoByFour = _fixture(activeSlot: 3);
+    addTearDown(twoByFour.dispose);
+    await _prepareGrid(
+      tester,
+      twoByFour,
+      layout: SlotLayout.twoByFour,
+      textDirection: TextDirection.rtl,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(twoByFour.communicator.swaps, [(3, 2)]);
+  });
+
   testWidgets('Demo session uses the same deterministic whole-slot gesture',
       (tester) async {
     final fixture = _fixture(demo: true);
@@ -281,10 +443,13 @@ void main() {
       for (final id in data.customSemanticsActionIds!)
         CustomSemanticsAction.getAction(id)!.label,
     ];
-    expect(actions, containsAll(['Move left', 'Move right']));
+    expect(
+      actions,
+      containsAll(['Move before slot 1', 'Move after slot 3']),
+    );
 
     final moveAfter = data.customSemanticsActionIds!.firstWhere(
-      (id) => CustomSemanticsAction.getAction(id)!.label == 'Move right',
+      (id) => CustomSemanticsAction.getAction(id)!.label == 'Move after slot 3',
     );
     node.owner!.performAction(
       node.id,
@@ -296,7 +461,63 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('narrow eight-across drag auto-scrolls toward hidden targets',
+  testWidgets(
+      'screen reader actions share RTL two-by-four neighbors without row crossover',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    await _prepareGrid(
+      tester,
+      fixture,
+      layout: SlotLayout.twoByFour,
+      textDirection: TextDirection.rtl,
+    );
+
+    final node = tester.getSemantics(find.byKey(const Key('home-slot-4')));
+    final data = node.getSemanticsData();
+    final actions = [
+      for (final id in data.customSemanticsActionIds!)
+        CustomSemanticsAction.getAction(id)!.label,
+    ];
+    expect(actions, ['Move before slot 3']);
+    node.owner!.performAction(
+      node.id,
+      SemanticsAction.customAction,
+      data.customSemanticsActionIds!.single,
+    );
+    await tester.pumpAndSettle();
+    expect(fixture.communicator.swaps, [(3, 2)]);
+    semantics.dispose();
+  });
+
+  testWidgets('drag semantics identify source and destination without color',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final fixture = _fixture();
+    addTearDown(fixture.dispose);
+    await _prepareGrid(tester, fixture);
+
+    final gesture = await _startSlotDrag(tester, 0);
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('home-slot-2'))),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
+      contains('Reorder source, destination slot 2'),
+    );
+    expect(
+      tester.getSemantics(find.byKey(const Key('home-slot-2'))).label,
+      contains('Reorder destination, source slot 1'),
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
+  testWidgets('narrow auto-scroll reveals a destination and drops exact swap',
       (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
@@ -307,20 +528,26 @@ void main() {
     await _prepareGrid(tester, fixture);
 
     final scroll = find.byKey(const Key('home-slot-grid-scroll'));
-    final gesture = await _startSlotDrag(tester, 3);
+    final gesture = await _startSlotDrag(tester, 0);
     final rect = tester.getRect(scroll);
     await gesture.moveTo(Offset(rect.right - 2, rect.center.dy));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pump(const Duration(milliseconds: 900));
     final scrollable = tester.state<ScrollableState>(
       find.descendant(of: scroll, matching: find.byType(Scrollable)),
     );
     expect(scrollable.position.pixels, greaterThan(0));
 
-    await gesture.moveTo(const Offset(2, 2));
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('home-slot-8'))),
+    );
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
+
+    expect(fixture.communicator.swaps, [(0, 7)]);
+    expect(fixture.status.snapshot.slots.slots[0].hf.name.value, 'Slot 8 HF');
+    expect(fixture.status.snapshot.slots.slots[7].lf.name.value, 'Slot 1 LF');
   });
 
   testWidgets('reduced motion keeps drag and pending progress without lift',
@@ -404,10 +631,16 @@ Future<void> _prepareGrid(
   WidgetTester tester,
   _Fixture fixture, {
   SlotLayout layout = SlotLayout.eightAcross,
+  TextDirection textDirection = TextDirection.ltr,
 }) async {
   await fixture.status.refreshSlots();
   await fixture.status.refreshSlotReorderCapability();
-  await _pumpGrid(tester, fixture.status, layout: layout);
+  await _pumpGrid(
+    tester,
+    fixture.status,
+    layout: layout,
+    textDirection: textDirection,
+  );
   await tester.pump();
 }
 
@@ -454,6 +687,7 @@ Future<void> _pumpGrid(
   SlotLayout layout = SlotLayout.eightAcross,
   MediaQueryData mediaQuery = const MediaQueryData(),
   ThemeData? theme,
+  TextDirection textDirection = TextDirection.ltr,
 }) =>
     tester.pumpWidget(
       MaterialApp(
@@ -464,17 +698,27 @@ Future<void> _pumpGrid(
         home: Scaffold(
           body: MediaQuery(
             data: mediaQuery,
-            child: Center(child: HomeSlotGrid(status: status, layout: layout)),
+            child: Directionality(
+              textDirection: textDirection,
+              child: Center(
+                child: HomeSlotGrid(status: status, layout: layout),
+              ),
+            ),
           ),
         ),
       ),
     );
 
 class _Fixture {
-  const _Fixture({required this.appState, required this.communicator});
+  const _Fixture({
+    required this.appState,
+    required this.communicator,
+    required this.serial,
+  });
 
   final ChameleonGUIState appState;
   final _ReorderCommunicator communicator;
+  final _TestSerial serial;
 
   ConnectedDeviceStatus get status => appState.connectedDeviceStatus!;
 
@@ -492,14 +736,25 @@ class _Fixture {
     return _Fixture(
       appState: appState,
       communicator: replacementCommunicator,
+      serial: replacementSerial,
     );
+  }
+
+  void disconnect() {
+    serial.connected = false;
+    appState.onConnectorStateChanged();
   }
 
   void dispose() => appState.dispose();
 }
 
-_Fixture _fixture({bool supportsSwap = true, bool demo = false}) {
+_Fixture _fixture({
+  bool supportsSwap = true,
+  bool demo = false,
+  int activeSlot = 0,
+}) {
   final communicator = _ReorderCommunicator()..supportsSwap = supportsSwap;
+  communicator.activeSlot = activeSlot;
   final serial = _TestSerial(log: Logger())
     ..connected = true
     ..device = ChameleonDevice.ultra
@@ -513,7 +768,11 @@ _Fixture _fixture({bool supportsSwap = true, bool demo = false}) {
     ..connector = serial
     ..communicator = communicator
     ..log = Logger();
-  return _Fixture(appState: appState, communicator: communicator);
+  return _Fixture(
+    appState: appState,
+    communicator: communicator,
+    serial: serial,
+  );
 }
 
 class _ReorderCommunicator extends ChameleonCommunicator {
@@ -540,6 +799,8 @@ class _ReorderCommunicator extends ChameleonCommunicator {
 
   bool supportsSwap = true;
   bool rejectSwap = false;
+  bool throwAfterSwap = false;
+  bool failNamesReadAfterSwap = false;
   int activeSlot = 0;
   Completer<void>? swapGate;
   final List<int> activations = [];
@@ -547,6 +808,21 @@ class _ReorderCommunicator extends ChameleonCommunicator {
   late List<SlotTypes> slotTypes;
   late List<EnabledSlotInfo> enabledSlots;
   late List<SlotNames> slotNames;
+
+  void makeSlotsVisiblyIdentical(int source, int target) {
+    slotTypes[target] = SlotTypes(
+      hf: slotTypes[source].hf,
+      lf: slotTypes[source].lf,
+    );
+    enabledSlots[target] = EnabledSlotInfo(
+      hf: enabledSlots[source].hf,
+      lf: enabledSlots[source].lf,
+    );
+    slotNames[target] = SlotNames(
+      hf: slotNames[source].hf,
+      lf: slotNames[source].lf,
+    );
+  }
 
   @override
   Future<List<int>> getDeviceCapabilities() async =>
@@ -579,6 +855,9 @@ class _ReorderCommunicator extends ChameleonCommunicator {
     } else if (activeSlot == target) {
       activeSlot = source;
     }
+    if (throwAfterSwap) {
+      throw StateError('Lost whole-slot reorder reply');
+    }
   }
 
   @override
@@ -593,9 +872,14 @@ class _ReorderCommunicator extends ChameleonCommunicator {
       ];
 
   @override
-  Future<List<SlotNames>> getSlotTagNames() async => [
-        for (final slot in slotNames) SlotNames(hf: slot.hf, lf: slot.lf),
-      ];
+  Future<List<SlotNames>> getSlotTagNames() async {
+    if (failNamesReadAfterSwap && swaps.isNotEmpty) {
+      throw StateError('Slot names unavailable during reconciliation');
+    }
+    return [
+      for (final slot in slotNames) SlotNames(hf: slot.hf, lf: slot.lf),
+    ];
+  }
 
   @override
   Future<int> getActiveSlot() async => activeSlot;
