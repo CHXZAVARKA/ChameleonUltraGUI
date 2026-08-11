@@ -123,6 +123,7 @@ class BLESerial extends AbstractSerial {
   static const defaultConnectionAttemptTimeout = Duration(seconds: 7);
   static const defaultHandshakeTimeout = Duration(seconds: 3);
   static const defaultRetryDelay = Duration(milliseconds: 250);
+  static const _connectionCleanupTimeout = Duration(milliseconds: 250);
 
   final ReactiveBleClient _reactiveBle;
   final Duration _handshakeTimeout;
@@ -175,13 +176,13 @@ class BLESerial extends AbstractSerial {
       }
     });
 
-    Timer(const Duration(seconds: 2), () {
-      subscription.cancel();
+    Timer(const Duration(seconds: 2), () async {
+      await subscription.cancel();
       inSearch = false;
-      try {
+      if (!completer.isCompleted) {
         completer.complete(foundDevices);
         log.d('Found BLE devices: ${foundDevices.length}');
-      } catch (_) {}
+      }
     });
 
     return completer.future;
@@ -401,7 +402,7 @@ class BLESerial extends AbstractSerial {
     if (_ownsConnectionAttempt(attempt)) {
       connection = subscription;
     } else {
-      await subscription.cancel();
+      await _cancelConnectionSubscription(subscription);
     }
 
     return attempt.result.future;
@@ -463,7 +464,9 @@ class BLESerial extends AbstractSerial {
     rxCharacteristic = null;
     firmwareCharacteristic = null;
     receivedDataStream = null;
-    await subscription?.cancel();
+    if (subscription != null) {
+      await _cancelConnectionSubscription(subscription);
+    }
     if (!attempt.result.isCompleted) {
       attempt.result.complete(false);
     }
@@ -471,6 +474,16 @@ class BLESerial extends AbstractSerial {
       notifyConnectionStateChanged();
     }
     return hadState;
+  }
+
+  Future<void> _cancelConnectionSubscription(
+    StreamSubscription<ConnectionStateUpdate> subscription,
+  ) async {
+    try {
+      await subscription.cancel().timeout(_connectionCleanupTimeout);
+    } on TimeoutException {
+      log.w('BLE connection cleanup timed out');
+    }
   }
 
   @override

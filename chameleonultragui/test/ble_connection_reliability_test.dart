@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_ble.dart';
@@ -61,6 +62,32 @@ void main() {
 
     expect(serial.connected, isTrue);
     await discovery;
+  });
+
+  test('BLE discovery finishes native scan cleanup before connecting',
+      () async {
+    final reactiveBle = _ScanCleanupThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      connectionAttemptTimeout: const Duration(milliseconds: 20),
+      retryDelay: Duration.zero,
+    );
+    addTearDown(() async {
+      await serial.performDisconnect();
+      serial.log.close();
+    });
+
+    final devices = await serial.availableChameleons(false);
+    expect(devices, hasLength(1));
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 500));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectedWhileScanning, isFalse);
+    expect(reactiveBle.connectionAttempts, 1);
   });
 
   test('one BLE connect retries when the plugin ignores its timeout', () async {
@@ -143,6 +170,30 @@ void main() {
     expect(connected, isTrue);
     expect(reactiveBle.connectionAttempts, 2);
     expect(reactiveBle.retriedBeforeCleanup, isFalse);
+  });
+
+  test('BLE watchdog recovers when native cancellation never completes',
+      () async {
+    final reactiveBle = _CancellationNeverCompletesThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      connectionAttemptTimeout: const Duration(milliseconds: 20),
+      retryDelay: Duration.zero,
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(serial.log.close);
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 800));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectionAttempts, 2);
   });
 
   test('one BLE connect retries after a stalled handshake', () async {
@@ -307,6 +358,65 @@ class _IgnoreTimeoutThenConnectBle extends _StallThenConnectBle {
   }
 }
 
+class _ScanCleanupThenConnectBle extends _StallThenConnectBle {
+  var scanActive = false;
+  var connectedWhileScanning = false;
+
+  @override
+  Stream<DiscoveredDevice> scanForDevices({
+    required List<Uuid> withServices,
+    ScanMode scanMode = ScanMode.balanced,
+    bool requireLocationServicesEnabled = true,
+  }) {
+    late StreamController<DiscoveredDevice> controller;
+    controller = StreamController<DiscoveredDevice>(
+      onListen: () {
+        scanActive = true;
+        controller.add(
+          DiscoveredDevice(
+            id: 'device',
+            name: 'ChameleonUltra',
+            serviceData: const {},
+            manufacturerData: Uint8List(0),
+            rssi: -40,
+            serviceUuids: [nrfUUID],
+          ),
+        );
+      },
+      onCancel: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        scanActive = false;
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    if (scanActive) {
+      connectedWhileScanning = true;
+      return Stream<ConnectionStateUpdate>.error(
+        StateError('simulated native scan is still running'),
+      );
+    }
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
+  }
+}
+
 class _StallThenConnectBle implements ReactiveBleClient {
   final _stalledAttempt = StreamController<ConnectionStateUpdate>();
   var connectionAttempts = 0;
@@ -434,6 +544,34 @@ class _RequiresConnectionCleanupBle extends _StallThenConnectBle {
     if (!cleanupComplete) {
       retriedBeforeCleanup = true;
       throw StateError('native connection task is still registered');
+    }
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
+  }
+}
+
+class _CancellationNeverCompletesThenConnectBle extends _StallThenConnectBle {
+  final _neverCancelled = Completer<void>();
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    if (connectionAttempts == 1) {
+      return StreamController<ConnectionStateUpdate>(
+        onCancel: () => _neverCancelled.future,
+      ).stream;
     }
     return Stream.value(
       const ConnectionStateUpdate(
