@@ -114,16 +114,20 @@ class BLESerial extends AbstractSerial {
     ReactiveBleClient? reactiveBle,
     Duration handshakeTimeout = defaultHandshakeTimeout,
     Duration connectionAttemptTimeout = defaultConnectionAttemptTimeout,
+    Duration retryDelay = defaultRetryDelay,
   })  : _reactiveBle = reactiveBle ?? FlutterReactiveBleClient(),
         _handshakeTimeout = handshakeTimeout,
-        _connectionAttemptTimeout = connectionAttemptTimeout;
+        _connectionAttemptTimeout = connectionAttemptTimeout,
+        _retryDelay = retryDelay;
 
   static const defaultConnectionAttemptTimeout = Duration(seconds: 7);
   static const defaultHandshakeTimeout = Duration(seconds: 3);
+  static const defaultRetryDelay = Duration(milliseconds: 250);
 
   final ReactiveBleClient _reactiveBle;
   final Duration _handshakeTimeout;
   final Duration _connectionAttemptTimeout;
+  final Duration _retryDelay;
   QualifiedCharacteristic? txCharacteristic;
   QualifiedCharacteristic? rxCharacteristic;
   QualifiedCharacteristic? firmwareCharacteristic;
@@ -238,6 +242,9 @@ class BLESerial extends AbstractSerial {
       ret = await connectSpecificInternal(devicePort);
       if (ret) {
         break;
+      }
+      if (i < 4) {
+        await Future<void>.delayed(_retryDelay);
       }
     }
 

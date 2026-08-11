@@ -85,6 +85,66 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
       },
     );
+
+    testWidgets(
+      'failed ${connectionType.name.toUpperCase()} connection returns to '
+      'discovery without using the unmounted connection page',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'auto_connect_first_found': false,
+        });
+        final connectGate = Completer<void>();
+        final logger = Logger(output: MemoryOutput());
+        final selectedDevice = Chameleon(
+          port: connectionType == ConnectionType.ble
+              ? 'ble-device-a'
+              : '/dev/usb-device-a',
+          device: ChameleonDevice.ultra,
+          type: connectionType,
+          dfu: false,
+        );
+        final serial = _DelayedConnectSerial(
+          log: logger,
+          gate: connectGate,
+          selectedDevice: selectedDevice,
+          connectResult: false,
+        );
+        final preferences = SharedPreferencesProvider();
+        await preferences.load();
+        final appState = ChameleonGUIState(
+          preferences,
+          firmwareCatalog: const CurrentFirmwareCatalogStub(),
+        )
+          ..connector = serial
+          ..log = logger;
+        addTearDown(logger.close);
+
+        await tester.pumpWidget(
+          ChangeNotifierProvider<ChameleonGUIState>.value(
+            value: appState,
+            child: MainPage(sharedPreferencesProvider: preferences),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.text('Chameleon Ultra'));
+        await tester.pump();
+        expect(find.byType(PendingConnectionPage), findsOneWidget);
+
+        connectGate.complete();
+        await tester.pump();
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ConnectPage), findsOneWidget);
+        expect(serial.connectCalls, 1);
+
+        await tester.pump(const Duration(milliseconds: 500));
+        appState.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 
   testWidgets(
@@ -189,10 +249,12 @@ class _DelayedConnectSerial extends EmulatorSerial {
     required super.log,
     required this.gate,
     required this.selectedDevice,
+    this.connectResult = true,
   });
 
   final Completer<void> gate;
   final Chameleon selectedDevice;
+  final bool connectResult;
   final Completer<bool> statusWriteGate = Completer<bool>();
   dynamic receivedSelection;
   int connectCalls = 0;
@@ -207,6 +269,9 @@ class _DelayedConnectSerial extends EmulatorSerial {
     connectCalls++;
     receivedSelection = selection;
     await gate.future;
+    if (!connectResult) {
+      return false;
+    }
     return super.connectSpecificDevice(
       selection is Chameleon ? selection.port : selection,
     );
@@ -217,6 +282,9 @@ class _DelayedConnectSerial extends EmulatorSerial {
     connectCalls++;
     receivedSelection = selection;
     await gate.future;
+    if (!connectResult) {
+      return false;
+    }
     return super.connectSpecificDevice(selection.port);
   }
 

@@ -69,6 +69,7 @@ void main() {
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
       connectionAttemptTimeout: const Duration(milliseconds: 20),
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -100,6 +101,7 @@ void main() {
     final serial = BLESerial(
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -118,12 +120,38 @@ void main() {
     expect(serial.pendingConnection, isFalse);
   });
 
+  test('BLE retry waits for the native connection task to settle', () async {
+    final reactiveBle = _RequiresConnectionCleanupBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(() async {
+      await serial.performDisconnect();
+      serial.log.close();
+    });
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(seconds: 1));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectionAttempts, 2);
+    expect(reactiveBle.retriedBeforeCleanup, isFalse);
+  });
+
   test('one BLE connect retries after a stalled handshake', () async {
     final reactiveBle = _StallHandshakeThenConnectBle();
     final serial = BLESerial(
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
       handshakeTimeout: const Duration(milliseconds: 20),
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -148,6 +176,7 @@ void main() {
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
       handshakeTimeout: const Duration(milliseconds: 10),
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -171,6 +200,7 @@ void main() {
     final serial = BLESerial(
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -203,6 +233,7 @@ void main() {
       log: app_logger.Logger(output: app_logger.MemoryOutput()),
       reactiveBle: reactiveBle,
       handshakeTimeout: const Duration(seconds: 1),
+      retryDelay: Duration.zero,
     )..chameleonMap['device'] = const Chameleon(
         port: 'device',
         device: ChameleonDevice.ultra,
@@ -367,6 +398,50 @@ class _StallHandshakeThenConnectBle extends _StallThenConnectBle {
       return Completer<void>().future;
     }
     return Future.value();
+  }
+}
+
+class _RequiresConnectionCleanupBle extends _StallThenConnectBle {
+  var cleanupComplete = false;
+  var retriedBeforeCleanup = false;
+
+  @override
+  Stream<ConnectionStateUpdate> connectToAdvertisingDevice({
+    required String id,
+    required List<Uuid> withServices,
+    required Duration prescanDuration,
+    Map<Uuid, List<Uuid>>? servicesWithCharacteristicsToDiscover,
+    Duration? connectionTimeout,
+  }) {
+    connectionAttempts++;
+    connectionTimeouts.add(connectionTimeout);
+    if (connectionAttempts == 1) {
+      late StreamController<ConnectionStateUpdate> controller;
+      controller = StreamController<ConnectionStateUpdate>(
+        onListen: () {
+          controller.addError(
+            TimeoutException('simulated native connection timeout'),
+          );
+        },
+        onCancel: () {
+          Timer(const Duration(milliseconds: 10), () {
+            cleanupComplete = true;
+          });
+        },
+      );
+      return controller.stream;
+    }
+    if (!cleanupComplete) {
+      retriedBeforeCleanup = true;
+      throw StateError('native connection task is still registered');
+    }
+    return Stream.value(
+      const ConnectionStateUpdate(
+        deviceId: 'device',
+        connectionState: DeviceConnectionState.connected,
+        failure: null,
+      ),
+    );
   }
 }
 

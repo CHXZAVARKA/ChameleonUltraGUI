@@ -273,7 +273,7 @@ class _ConnectPageState extends State<ConnectPage> {
         });
       }
 
-      if (!appState.connector!.connected) {
+      if (mounted && !appState.connector!.connected) {
         _scheduleNextScan();
       }
     }
