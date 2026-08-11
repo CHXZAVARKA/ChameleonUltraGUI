@@ -744,8 +744,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<SlotReorderCapability> _refreshSlotReorderCapability() async {
     try {
       while (_canPublish) {
-        final result = await _rfOperations.tryRunBackground<List<int>>(
-          _readDeviceCapabilitiesOnce,
+        final result =
+            await _rfOperations.tryRunBackground<SlotReorderCapability>(
+          _readSlotReorderCapability,
           group: _backgroundOperationGroup,
         );
         if (!result.acquired) {
@@ -755,7 +756,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish) {
           return SlotReorderCapability.unknown;
         }
-        final capability = _deriveSlotReorderCapability(result.value!);
+        final capability = result.value!;
         _publishSlotReorderCapability(capability);
         return capability;
       }
@@ -1050,13 +1051,15 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             return null;
           }
 
-          try {
-            capabilities = await _readDeviceCapabilitiesOnce();
-          } catch (error, stackTrace) {
-            if (!_canPublish) {
-              return null;
+          if (!_usesBleTransport) {
+            try {
+              capabilities = await _readDeviceCapabilitiesOnce();
+            } catch (error, stackTrace) {
+              if (!_canPublish) {
+                return null;
+              }
+              _logFirmwareFactFailure('compatibility', error, stackTrace);
             }
-            _logFirmwareFactFailure('compatibility', error, stackTrace);
           }
           if (!_canPublish) {
             return null;
@@ -1556,11 +1559,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return cached;
     }
     try {
-      final capabilities = await _readDeviceCapabilitiesOnce();
+      final capability = await _readSlotReorderCapability();
       if (!_canPublish) {
         return SlotReorderCapability.unknown;
       }
-      final capability = _deriveSlotReorderCapability(capabilities);
       _publishSlotReorderCapability(capability);
       return capability;
     } catch (error, stackTrace) {
@@ -1584,6 +1586,26 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<List<int>> _readDeviceCapabilitiesOnce() =>
       _deviceCapabilitiesRead ??= _session.communicator.getDeviceCapabilities();
+
+  bool get _usesBleTransport =>
+      _session.connector.connectionType == ConnectionType.ble;
+
+  Future<SlotReorderCapability> _readSlotReorderCapability() async {
+    if (_usesBleTransport) {
+      try {
+        // Command 1035 can exceed one BLE notification on older firmware.
+        // A same-slot swap is the protocol-defined, non-writing capability
+        // probe and keeps those devices responsive while still detecting 1041.
+        await _session.communicator.swapSlots(0, 0);
+        return SlotReorderCapability.supported;
+      } on SlotReorderRejected {
+        return SlotReorderCapability.unsupported;
+      }
+    }
+
+    final capabilities = await _readDeviceCapabilitiesOnce();
+    return _deriveSlotReorderCapability(capabilities);
+  }
 
   SlotReorderCapability _deriveSlotReorderCapability(
     List<int> capabilities,

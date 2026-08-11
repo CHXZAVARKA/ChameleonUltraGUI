@@ -81,6 +81,40 @@ void main() {
     expect(fixture.communicator.events.first, 'swap:0:1');
   });
 
+  test('BLE probes slot reorder support without requesting capabilities',
+      () async {
+    final fixture = _fixture(connectionType: ConnectionType.ble);
+    addTearDown(fixture.dispose);
+
+    expect(
+      await fixture.status.refreshSlotReorderCapability(),
+      SlotReorderCapability.supported,
+    );
+    expect(
+      await fixture.status.refreshSlotReorderCapability(),
+      SlotReorderCapability.supported,
+    );
+    expect(fixture.communicator.capabilityReads, 0);
+    expect(fixture.communicator.swapCalls, 1);
+    expect(fixture.communicator.events, ['swap:0:0']);
+  });
+
+  test('BLE maps a rejected no-op probe to unsupported firmware', () async {
+    final fixture = _fixture(
+      supportsSwap: false,
+      connectionType: ConnectionType.ble,
+    );
+    addTearDown(fixture.dispose);
+
+    expect(
+      await fixture.status.refreshSlotReorderCapability(),
+      SlotReorderCapability.unsupported,
+    );
+    expect(fixture.communicator.capabilityReads, 0);
+    expect(fixture.communicator.swapCalls, 1);
+    expect(fixture.communicator.events, ['swap:0:0']);
+  });
+
   test(
       'successful reorder exposes source and target, owns one foreground lease, and reconciles once',
       () async {
@@ -689,12 +723,15 @@ class _Fixture {
   }
 }
 
-_Fixture _fixture({bool supportsSwap = true}) {
+_Fixture _fixture({
+  bool supportsSwap = true,
+  ConnectionType connectionType = ConnectionType.usb,
+}) {
   final communicator = _ReorderCommunicator()..supportsSwap = supportsSwap;
   final serial = _TestSerial(log: Logger())
     ..connected = true
     ..device = ChameleonDevice.ultra
-    ..connectionType = ConnectionType.usb
+    ..connectionType = connectionType
     ..portName = 'test-device'
     ..activeDevicePort = 'test-device';
   final appState = ChameleonGUIState(
@@ -783,6 +820,9 @@ class _ReorderCommunicator extends ChameleonCommunicator {
       swapStarted.complete();
     }
     await swapGate?.future;
+    if (!supportsSwap) {
+      throw const SlotReorderRejected(0x67);
+    }
     if (rejectSwap) {
       throw const SlotReorderRejected(0x66);
     }

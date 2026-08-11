@@ -47,6 +47,30 @@ void main() {
     );
   });
 
+  testWidgets('BLE Home avoids the multi-packet capabilities response',
+      (tester) async {
+    final communicator = _FirmwareCommunicator.current();
+    final appState = _connectedState(
+      communicator,
+      catalog: _FakeFirmwareCatalog.current(),
+      connectionType: ConnectionType.ble,
+    );
+
+    await _pumpHome(tester, appState);
+    await tester.pumpAndSettle();
+
+    expect(communicator.capabilityReads, 0);
+    expect(communicator.noOpSwapProbes, 1);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.firmware.state,
+      FirmwareState.upToDate,
+    );
+    expect(
+      appState.connectedDeviceStatus!.snapshot.firmware.compatibility,
+      FirmwareCompatibility.unknown,
+    );
+  });
+
   testWidgets('firmware states use their specified semantic colors',
       (tester) async {
     final theme = ThemeData(
@@ -849,6 +873,7 @@ ChameleonGUIState _connectedState(
   ChameleonCommunicator communicator, {
   required FirmwareCatalog catalog,
   String portName = 'firmware-test-device',
+  ConnectionType connectionType = ConnectionType.usb,
   Future<void> Function(ChameleonGUIState appState)? installer,
   Future<void> Function(
     ChameleonGUIState appState,
@@ -858,7 +883,7 @@ ChameleonGUIState _connectedState(
   final serial = _TestSerial(log: Logger())
     ..connected = true
     ..device = ChameleonDevice.ultra
-    ..connectionType = ConnectionType.usb
+    ..connectionType = connectionType
     ..portName = portName
     ..activeDevicePort = 'firmware-test-port';
   late ChameleonGUIState appState;
@@ -910,6 +935,7 @@ class _FirmwareCommunicator extends ChameleonCommunicator {
   int firmwareReads = 0;
   int commitReads = 0;
   int capabilityReads = 0;
+  int noOpSwapProbes = 0;
 
   void completePendingFirmware() {
     _pendingFirmware?.complete(
@@ -933,6 +959,15 @@ class _FirmwareCommunicator extends ChameleonCommunicator {
   Future<List<int>> getDeviceCapabilities() async {
     capabilityReads++;
     return capabilities;
+  }
+
+  @override
+  Future<void> swapSlots(int source, int target) async {
+    if (source == target) {
+      noOpSwapProbes++;
+      return;
+    }
+    throw StateError('unexpected slot swap in firmware status test');
   }
 
   @override
