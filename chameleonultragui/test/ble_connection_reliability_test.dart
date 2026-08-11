@@ -90,6 +90,37 @@ void main() {
     expect(reactiveBle.connectionAttempts, 1);
   });
 
+  test('BLE connect cancels a discovery scan already in progress', () async {
+    final reactiveBle = _ScanCleanupThenConnectBle();
+    final serial = BLESerial(
+      log: app_logger.Logger(output: app_logger.MemoryOutput()),
+      reactiveBle: reactiveBle,
+      connectionAttemptTimeout: const Duration(milliseconds: 20),
+      retryDelay: Duration.zero,
+    )..chameleonMap['device'] = const Chameleon(
+        port: 'device',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+    addTearDown(() async {
+      await serial.performDisconnect();
+      serial.log.close();
+    });
+
+    final discovery = serial.availableDevices();
+    await reactiveBle.scanStarted.future;
+
+    final connected = await serial
+        .connectSpecificDevice('device')
+        .timeout(const Duration(milliseconds: 500));
+
+    expect(connected, isTrue);
+    expect(reactiveBle.connectedWhileScanning, isFalse);
+    expect(reactiveBle.connectionAttempts, 1);
+    await discovery;
+  });
+
   test('one BLE connect retries when the plugin ignores its timeout', () async {
     final reactiveBle = _IgnoreTimeoutThenConnectBle();
     final serial = BLESerial(
@@ -361,6 +392,7 @@ class _IgnoreTimeoutThenConnectBle extends _StallThenConnectBle {
 class _ScanCleanupThenConnectBle extends _StallThenConnectBle {
   var scanActive = false;
   var connectedWhileScanning = false;
+  final scanStarted = Completer<void>();
 
   @override
   Stream<DiscoveredDevice> scanForDevices({
@@ -372,6 +404,9 @@ class _ScanCleanupThenConnectBle extends _StallThenConnectBle {
     controller = StreamController<DiscoveredDevice>(
       onListen: () {
         scanActive = true;
+        if (!scanStarted.isCompleted) {
+          scanStarted.complete();
+        }
         controller.add(
           DiscoveredDevice(
             id: 'device',

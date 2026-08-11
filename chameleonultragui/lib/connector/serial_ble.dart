@@ -135,6 +135,7 @@ class BLESerial extends AbstractSerial {
   Stream<List<int>>? receivedDataStream;
   StreamSubscription<ConnectionStateUpdate>? connection;
   _BleConnectionAttempt? _activeConnectionAttempt;
+  _BleScanAttempt? _activeScan;
   Map<String, Chameleon> chameleonMap = {};
   bool inSearch = false;
 
@@ -147,45 +148,77 @@ class BLESerial extends AbstractSerial {
       return [];
     }
 
-    List<DiscoveredDevice> foundDevices = [];
-
-    Completer<List<DiscoveredDevice>> completer =
-        Completer<List<DiscoveredDevice>>();
-    StreamSubscription<DiscoveredDevice> subscription;
-
+    final attempt = _BleScanAttempt();
+    _activeScan = attempt;
     inSearch = true;
-    subscription = _reactiveBle.scanForDevices(
+    final subscription = _reactiveBle.scanForDevices(
       withServices: [nrfUUID, dfuUUID],
       scanMode: ScanMode.lowLatency,
     ).listen((device) {
-      if (!foundDevices.contains(device)) {
-        for (var foundDevice in foundDevices) {
+      if (!attempt.foundDevices.contains(device)) {
+        for (var foundDevice in attempt.foundDevices) {
           if (foundDevice.id == device.id) {
             return;
           }
         }
-        foundDevices.add(device);
+        attempt.foundDevices.add(device);
       }
-    }, onError: (e) {
-      log.e("Got BLE search error: $e");
+    }, onError: (Object error) async {
+      await _finishScan(
+        attempt,
+        error: Platform.isIOS ? error : null,
+      );
+      log.e("Got BLE search error: $error");
+    });
+    attempt.subscription = subscription;
+
+    attempt.timer = Timer(const Duration(seconds: 2), () async {
+      await _finishScan(attempt);
+    });
+
+    return attempt.result.future;
+  }
+
+  Future<void> _finishScan(
+    _BleScanAttempt attempt, {
+    Object? error,
+  }) {
+    final existing = attempt.finishFuture;
+    if (existing != null) {
+      return existing;
+    }
+    final finishing = _finishScanOnce(attempt, error: error);
+    attempt.finishFuture = finishing;
+    return finishing;
+  }
+
+  Future<void> _finishScanOnce(
+    _BleScanAttempt attempt, {
+    Object? error,
+  }) async {
+    attempt.timer?.cancel();
+    attempt.timer = null;
+    final subscription = attempt.subscription;
+    attempt.subscription = null;
+    if (subscription != null) {
+      try {
+        await subscription.cancel().timeout(_connectionCleanupTimeout);
+      } on TimeoutException {
+        log.w('BLE scan cleanup timed out');
+      }
+    }
+    if (identical(_activeScan, attempt)) {
+      _activeScan = null;
       inSearch = false;
-      if (Platform.isIOS) {
-        throw (e); // BLE is primary there, throw exception
+    }
+    if (!attempt.result.isCompleted) {
+      if (error != null) {
+        attempt.result.completeError(error);
       } else {
-        completer.complete([]); // Other platforms: we don't care
+        attempt.result.complete(attempt.foundDevices);
+        log.d('Found BLE devices: ${attempt.foundDevices.length}');
       }
-    });
-
-    Timer(const Duration(seconds: 2), () async {
-      await subscription.cancel();
-      inSearch = false;
-      if (!completer.isCompleted) {
-        completer.complete(foundDevices);
-        log.d('Found BLE devices: ${foundDevices.length}');
-      }
-    });
-
-    return completer.future;
+    }
   }
 
   @override
@@ -412,6 +445,10 @@ class BLESerial extends AbstractSerial {
   Future<bool> performDisconnect() => _performDisconnect();
 
   Future<bool> _performDisconnect({bool notify = true}) async {
+    final scan = _activeScan;
+    if (scan != null) {
+      await _finishScan(scan);
+    }
     final attempt = _activeConnectionAttempt;
     if (attempt != null) {
       return _disconnectConnectionAttempt(attempt, notify: notify);
@@ -505,4 +542,12 @@ class _BleConnectionAttempt {
   final result = Completer<bool>();
   StreamSubscription<ConnectionStateUpdate>? subscription;
   Timer? connectionWatchdog;
+}
+
+class _BleScanAttempt {
+  final foundDevices = <DiscoveredDevice>[];
+  final result = Completer<List<DiscoveredDevice>>();
+  StreamSubscription<DiscoveredDevice>? subscription;
+  Timer? timer;
+  Future<void>? finishFuture;
 }
