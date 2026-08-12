@@ -2261,6 +2261,45 @@ void main() {
     expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
   });
 
+  testWidgets(
+      'Slot Manager repairs invalid seven-byte MIFARE 4K anticollision data',
+      (tester) async {
+    final communicator = _SlotCommunicator();
+    final appState = _connectedState(communicator);
+    await _pumpPage(tester, appState, const SlotManagerPage());
+    await tester.pumpAndSettle();
+    final state = tester.state<SlotManagerPageState>(
+      find.byType(SlotManagerPage),
+    );
+    final localizations = AppLocalizations.of(
+      tester.element(find.byType(SlotManagerPage)),
+    )!;
+    final dump = List.generate(256, (_) => Uint8List(16));
+
+    await tester.runAsync(
+      () => state.onTap(
+        CardSave(
+          uid: '04 01 02 03 04 05 06',
+          name: 'Seven-byte 4K',
+          tag: TagType.mifare4K,
+          sak: 0x00,
+          atqa: Uint8List.fromList([0x98, 0x16]),
+          data: dump,
+          extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+        ),
+        (_, __) {},
+        localizations,
+      ),
+    );
+
+    final antiCollision = communicator.lastMf1AntiCollision;
+    expect(antiCollision, isNotNull);
+    expect(antiCollision!.uid, hasLength(7));
+    expect(antiCollision.sak, 0x18);
+    expect(antiCollision.atqa, [0x00, 0x42]);
+    expect(communicator.mf1BlockBytesWritten, 4096);
+  });
+
   testWidgets('Slot Settings enable and delete paths reconcile shared slots',
       (tester) async {
     SharedPreferences.setMockInitialValues({'confirm_delete': false});
@@ -2992,6 +3031,8 @@ class _SlotCommunicator extends ChameleonCommunicator {
   final List<int> activations = [];
   final List<Object> scriptedActiveSlotReads = [];
   final List<String> commandEvents = [];
+  CardData? lastMf1AntiCollision;
+  int mf1BlockBytesWritten = 0;
   List<SlotTypes>? slotTypes;
   List<EnabledSlotInfo>? enabledSlots;
   List<SlotNames>? slotNames;
@@ -3131,6 +3172,18 @@ class _SlotCommunicator extends ChameleonCommunicator {
   @override
   Future<void> setDefaultDataToSlot(int slot, TagType type) async {
     commandEvents.add('default:$slot:${type.name}');
+  }
+
+  @override
+  Future<void> setMf1AntiCollision(CardData card) async {
+    lastMf1AntiCollision = card;
+    commandEvents.add('mf1-anti-collision');
+  }
+
+  @override
+  Future<void> setMf1BlockData(int startBlock, Uint8List blocks) async {
+    mf1BlockBytesWritten += blocks.length;
+    commandEvents.add('mf1-blocks:$startBlock:${blocks.length}');
   }
 
   @override

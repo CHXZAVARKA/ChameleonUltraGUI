@@ -104,11 +104,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
             (communicator) =>
                 communicator.setDefaultDataToSlot(gridPosition, card.tag),
           );
-          var cardData = CardData(
-              uid: hexToBytes(card.uid),
-              atqa: card.atqa,
-              sak: card.sak,
-              ats: card.ats);
+          final cardData = mifareClassicAntiCollisionForCard(card);
           await mutation.run(
             (communicator) => communicator.setMf1AntiCollision(cardData),
           );
