@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/connector/serial_abstract.dart';
@@ -6,6 +7,8 @@ import 'package:chameleonultragui/helpers/github.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -176,31 +179,17 @@ void main() {
       );
     });
 
-    test('selects one latest release for both commit and archive', () {
+    test('selects the newest eligible release by publication time', () {
       final release = selectLatestFirmwareRelease(
         [
-          {
-            'author': {'login': 'github-actions[bot]'},
-            'prerelease': true,
-            'target_commitish': 'new-commit',
-            'assets': [
-              {
-                'name': 'ultra-dfu-app.zip',
-                'browser_download_url': 'https://example.test/new-ultra.zip',
-              },
-            ],
-          },
-          {
-            'author': {'login': 'github-actions[bot]'},
-            'prerelease': true,
-            'target_commitish': 'old-commit',
-            'assets': [
-              {
-                'name': 'ultra-dfu-app.zip',
-                'browser_download_url': 'https://example.test/old-ultra.zip',
-              },
-            ],
-          },
+          _release('old-commit', '2026-08-01', assets: [_ultraAsset('old')]),
+          _release(
+            'manual-commit',
+            '2026-08-03',
+            author: 'release-maintainer',
+            assets: [_ultraAsset('manual')],
+          ),
+          _release('new-commit', '2026-08-02', assets: [_ultraAsset('new')]),
         ],
         ChameleonDevice.ultra,
       );
@@ -210,6 +199,129 @@ void main() {
         release?.applicationArchiveFor(ChameleonDevice.ultra),
         Uri.parse('https://example.test/new-ultra.zip'),
       );
+    });
+
+    test('metadata and download share eligibility and exact-model assets',
+        () async {
+      final releasePayload = jsonEncode([
+        _release(
+          'manual-commit',
+          '2026-08-04',
+          author: 'release-maintainer',
+          assets: [_ultraAsset('manual')],
+        ),
+        _release(
+          'selected-commit',
+          '2026-08-03',
+          assets: [
+            _liteAsset('selected'),
+            _asset('unrelated.zip', 'unrelated.zip'),
+            _ultraAsset('selected'),
+          ],
+        ),
+        _release(
+          'stable-commit',
+          '2026-08-02',
+          prerelease: false,
+          assets: [_ultraAsset('stable')],
+        ),
+        _release('old-commit', '2026-08-01', assets: [_ultraAsset('old')]),
+      ]);
+      final requestedAssets = <Uri>[];
+      final client = MockClient((request) async {
+        if (request.url.host == 'api.github.com') {
+          return http.Response(releasePayload, 200);
+        }
+        requestedAssets.add(request.url);
+        return switch (request.url.path) {
+          '/selected-ultra.zip' => http.Response.bytes([1, 2, 3], 200),
+          '/selected-lite.zip' => http.Response.bytes([4, 5, 6], 200),
+          _ => http.Response('not found', 404),
+        };
+      });
+
+      await http.runWithClient(() async {
+        expect(
+          await latestAvailableCommit(
+            ChameleonDevice.ultra,
+            FirmwareChannel.custom,
+          ),
+          'selected-commit',
+        );
+        expect(
+          await fetchFirmwareFromReleases(
+            ChameleonDevice.ultra,
+            FirmwareChannel.custom,
+          ),
+          Uint8List.fromList([1, 2, 3]),
+        );
+        expect(
+          await fetchFirmwareFromReleases(
+            ChameleonDevice.lite,
+            FirmwareChannel.custom,
+          ),
+          Uint8List.fromList([4, 5, 6]),
+        );
+      }, () => client);
+
+      expect(
+        requestedAssets,
+        [
+          Uri.parse('https://example.test/selected-ultra.zip'),
+          Uri.parse('https://example.test/selected-lite.zip'),
+        ],
+      );
+    });
+
+    test('release API errors stay visible while download failures stay empty',
+        () async {
+      final apiErrorClient = MockClient(
+        (_) async =>
+            http.Response(jsonEncode({'message': 'rate limited'}), 403),
+      );
+
+      await http.runWithClient(() async {
+        await expectLater(
+          latestAvailableCommit(
+            ChameleonDevice.ultra,
+            FirmwareChannel.custom,
+          ),
+          throwsA('rate limited'),
+        );
+        await expectLater(
+          fetchFirmwareFromReleases(
+            ChameleonDevice.ultra,
+            FirmwareChannel.custom,
+          ),
+          throwsA('rate limited'),
+        );
+      }, () => apiErrorClient);
+
+      final downloadFailureClient = MockClient((request) async {
+        if (request.url.host == 'api.github.com') {
+          return http.Response(
+            jsonEncode([
+              _release(
+                'selected-commit',
+                '2026-08-03',
+                assets: [_ultraAsset('selected')],
+              ),
+            ]),
+            200,
+          );
+        }
+        throw StateError('download failed');
+      });
+
+      await http.runWithClient(() async {
+        expect(
+          await fetchFirmwareFromReleases(
+            ChameleonDevice.ultra,
+            FirmwareChannel.custom,
+          ),
+          isEmpty,
+        );
+      }, () => downloadFailureClient);
     });
 
     test('Custom downloads the model-specific release without Actions',
@@ -243,3 +355,29 @@ void main() {
     });
   });
 }
+
+Map<String, Object?> _release(
+  String commit,
+  String date, {
+  String author = 'github-actions[bot]',
+  bool prerelease = true,
+  List<Map<String, String>> assets = const [],
+}) =>
+    {
+      'author': {'login': author},
+      'prerelease': prerelease,
+      'published_at': '${date}T12:00:00Z',
+      'target_commitish': commit,
+      'assets': assets,
+    };
+
+Map<String, String> _asset(String name, String path) => {
+      'name': name,
+      'browser_download_url': 'https://example.test/$path',
+    };
+
+Map<String, String> _ultraAsset(String release) =>
+    _asset('ultra-dfu-app.zip', '$release-ultra.zip');
+
+Map<String, String> _liteAsset(String release) =>
+    _asset('lite-dfu-app.zip', '$release-lite.zip');

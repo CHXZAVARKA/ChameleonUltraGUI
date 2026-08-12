@@ -63,46 +63,106 @@ class GitHubFirmwareRelease {
       applicationArchives[device];
 }
 
-GitHubFirmwareRelease? selectLatestFirmwareRelease(
-  Object? payload,
-  ChameleonDevice device,
-) {
-  if (payload is! List) {
-    return null;
+final class _FirmwareReleaseSelection {
+  const _FirmwareReleaseSelection({
+    required this.commit,
+    required this.applicationArchive,
+    required this.publishedAt,
+  });
+
+  final String commit;
+  final Uri applicationArchive;
+  final DateTime? publishedAt;
+
+  bool isNewerThan(_FirmwareReleaseSelection other) {
+    final publishedAt = this.publishedAt;
+    final otherPublishedAt = other.publishedAt;
+    return publishedAt != null &&
+        otherPublishedAt != null &&
+        publishedAt.isAfter(otherPublishedAt);
   }
 
-  final archiveName =
-      '${device == ChameleonDevice.ultra ? "ultra" : "lite"}-dfu-app.zip';
-  for (final candidate in payload) {
-    if (candidate is! Map || candidate['prerelease'] != true) {
-      continue;
+  GitHubFirmwareRelease asPublicRelease(ChameleonDevice device) =>
+      GitHubFirmwareRelease(
+        commit: commit,
+        applicationArchives: {device: applicationArchive},
+      );
+}
+
+final class _FirmwareReleaseSelectionPolicy {
+  const _FirmwareReleaseSelectionPolicy();
+
+  _FirmwareReleaseSelection? select(
+    Object? payload,
+    ChameleonDevice device,
+  ) {
+    if (payload is! List) {
+      return null;
+    }
+
+    _FirmwareReleaseSelection? latest;
+    for (final candidate in payload) {
+      final selection = _parseCandidate(candidate, device);
+      if (selection == null ||
+          (latest != null && !selection.isNewerThan(latest))) {
+        continue;
+      }
+      latest = selection;
+    }
+    return latest;
+  }
+
+  _FirmwareReleaseSelection? _parseCandidate(
+    Object? candidate,
+    ChameleonDevice device,
+  ) {
+    if (candidate is! Map ||
+        candidate['prerelease'] != true ||
+        candidate['draft'] == true) {
+      return null;
     }
     final author = candidate['author'];
     if (author is! Map || author['login'] != 'github-actions[bot]') {
-      continue;
+      return null;
     }
     final commit = candidate['target_commitish'];
     final assets = candidate['assets'];
     if (commit is! String || commit.isEmpty || assets is! List) {
-      continue;
+      return null;
     }
 
+    final archiveName =
+        '${device == ChameleonDevice.ultra ? "ultra" : "lite"}-dfu-app.zip';
     for (final asset in assets) {
       if (asset is! Map || asset['name'] != archiveName) {
         continue;
       }
       final downloadUrl = asset['browser_download_url'];
-      final uri = downloadUrl is String ? Uri.tryParse(downloadUrl) : null;
-      if (uri == null || !uri.hasScheme) {
+      final archive = downloadUrl is String ? Uri.tryParse(downloadUrl) : null;
+      if (archive == null || !archive.hasScheme) {
         continue;
       }
-      return GitHubFirmwareRelease(
+      final publishedAt = candidate['published_at'];
+      return _FirmwareReleaseSelection(
         commit: commit,
-        applicationArchives: {device: uri},
+        applicationArchive: archive,
+        publishedAt:
+            publishedAt is String ? DateTime.tryParse(publishedAt) : null,
       );
     }
+    return null;
   }
-  return null;
+}
+
+const _firmwareReleaseSelectionPolicy = _FirmwareReleaseSelectionPolicy();
+
+GitHubFirmwareRelease? selectLatestFirmwareRelease(
+  Object? payload,
+  ChameleonDevice device,
+) {
+  return _firmwareReleaseSelectionPolicy
+      .select(payload, device)
+      ?.asPublicRelease(device);
 }
 
 List<String> excludedAccounts = ["github-actions[bot]", "ChameleonHelper"];
@@ -156,8 +216,8 @@ Future<Uint8List> fetchFirmwareFromReleases(
       throw error;
     }
 
-    final release = selectLatestFirmwareRelease(releases, device);
-    final archive = release?.applicationArchiveFor(device);
+    final release = _firmwareReleaseSelectionPolicy.select(releases, device);
+    final archive = release?.applicationArchive;
     if (archive != null) {
       content = await http.readBytes(archive);
     }
@@ -250,7 +310,8 @@ Future<String> latestAvailableCommit(
       throw error;
     }
 
-    return selectLatestFirmwareRelease(releases, device)?.commit ?? '';
+    return _firmwareReleaseSelectionPolicy.select(releases, device)?.commit ??
+        '';
   } catch (_) {}
 
   if (error.isNotEmpty) {
