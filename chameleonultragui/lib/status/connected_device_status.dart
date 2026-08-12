@@ -10,6 +10,9 @@ import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/widgets.dart';
 
+part 'connected_device/battery_status_machine.dart';
+part 'connected_device/mode_status_machine.dart';
+
 enum StatusSurface { home, slotManager }
 
 enum BatteryAvailability { loading, available, unavailable }
@@ -99,8 +102,7 @@ class FirmwareStatus {
 
   const FirmwareStatus.checking({
     FirmwareChannel channel = FirmwareChannel.official,
-  })
-      : this(
+  }) : this(
           channel: channel,
           state: FirmwareState.checking,
           protocol: FirmwareProtocol.loading,
@@ -110,8 +112,7 @@ class FirmwareStatus {
 
   const FirmwareStatus.demo({
     FirmwareChannel channel = FirmwareChannel.official,
-  })
-      : this(
+  }) : this(
           channel: channel,
           state: FirmwareState.demo,
           protocol: FirmwareProtocol.unknown,
@@ -715,8 +716,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Timer? _batteryTimer;
   Timer? _activeSlotTimer;
-  Future<void>? _batteryRefresh;
-  Future<void>? _modeRefresh;
   Future<void>? _slotsRefresh;
   Future<void>? _activeSlotRefresh;
   Future<SlotReorderCapability>? _slotReorderCapabilityRefresh;
@@ -730,6 +729,28 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
   bool _disposed = false;
+
+  late final _BatteryStatusMachine _batteryStatusMachine =
+      _BatteryStatusMachine(
+    session: _session,
+    rfOperations: _rfOperations,
+    operationGroup: _backgroundOperationGroup,
+    canPublish: () => _canPublish,
+    publish: (battery) {
+      _publish(_snapshot.copyWith(battery: battery));
+    },
+  );
+
+  late final _ModeStatusMachine _modeStatusMachine = _ModeStatusMachine(
+    session: _session,
+    rfOperations: _rfOperations,
+    operationGroup: _backgroundOperationGroup,
+    canPublish: () => _canPublish,
+    currentStatus: () => _snapshot.mode,
+    publish: (mode) {
+      _publish(_snapshot.copyWith(mode: mode));
+    },
+  );
 
   Future<SlotReorderCapability> refreshSlotReorderCapability() {
     final current = _snapshot.slots.reorderCapability;
@@ -1190,166 +1211,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refreshMode() {
-    if (_session.connector.device == ChameleonDevice.lite) {
-      return Future.value();
-    }
-    final currentRefresh = _modeRefresh;
-    if (currentRefresh != null) {
-      return currentRefresh;
-    }
+  Future<void> refreshMode() => _modeStatusMachine.refresh();
 
-    final refresh = _refreshMode();
-    _modeRefresh = refresh;
-    return refresh.whenComplete(() {
-      if (identical(_modeRefresh, refresh)) {
-        _modeRefresh = null;
-      }
-    });
-  }
-
-  Future<void> _refreshMode() async {
-    try {
-      while (_canPublish) {
-        final result = await _rfOperations.tryRunBackground<bool>(
-          _session.communicator.isReaderDeviceMode,
-          group: _backgroundOperationGroup,
-        );
-        if (result.acquired) {
-          if (_canPublish) {
-            final confirmed = result.value!
-                ? ConnectedDeviceMode.reader
-                : ConnectedDeviceMode.emulator;
-            final pending = _snapshot.mode.pendingMode;
-            _publish(
-              _snapshot.copyWith(
-                mode: pending == null
-                    ? ModeStatus.available(confirmed)
-                    : ModeStatus.pending(
-                        confirmedMode: confirmed,
-                        pendingMode: pending,
-                      ),
-              ),
-            );
-          }
-          return;
-        }
-        await _rfOperations.waitUntilIdle();
-      }
-    } catch (error, stackTrace) {
-      _session.appState.log?.w(
-        'Unable to read connected-device mode',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (_canPublish && _snapshot.mode.confirmedMode == null) {
-        _publish(_snapshot.copyWith(mode: const ModeStatus.unavailable()));
-      }
-    }
-  }
-
-  Future<ModeActionOutcome> switchMode(ConnectedDeviceMode target) async {
-    if (!_canPublish) {
-      return ModeActionOutcome.connectionChanged;
-    }
-    if (_session.connector.device == ChameleonDevice.lite) {
-      return target == ConnectedDeviceMode.emulator
-          ? ModeActionOutcome.confirmed
-          : ModeActionOutcome.unsupported;
-    }
-
-    final previous = _snapshot.mode;
-    if (previous.pendingMode != null) {
-      return ModeActionOutcome.busy;
-    }
-    if (previous.availability != ModeAvailability.available ||
-        previous.confirmedMode == null) {
-      return ModeActionOutcome.failed;
-    }
-    if (previous.confirmedMode == target) {
-      return ModeActionOutcome.confirmed;
-    }
-
-    _publish(
-      _snapshot.copyWith(
-        mode: ModeStatus.pending(
-          confirmedMode: previous.confirmedMode!,
-          pendingMode: target,
-        ),
-      ),
-    );
-    return _rfOperations.runForeground(() async {
-      if (!_canPublish) {
-        return ModeActionOutcome.connectionChanged;
-      }
-
-      Object? commandError;
-      StackTrace? commandStackTrace;
-      try {
-        await _session.communicator.setReaderDeviceMode(
-          target == ConnectedDeviceMode.reader,
-        );
-      } catch (error, stackTrace) {
-        commandError = error;
-        commandStackTrace = stackTrace;
-      }
-      if (!_canPublish) {
-        return ModeActionOutcome.connectionChanged;
-      }
-
-      bool? isReader;
-      Object? readError;
-      StackTrace? readStackTrace;
-      try {
-        isReader = await _session.communicator.isReaderDeviceMode();
-      } catch (error, stackTrace) {
-        readError = error;
-        readStackTrace = stackTrace;
-      }
-
-      if (!_canPublish) {
-        return ModeActionOutcome.connectionChanged;
-      }
-      if (commandError != null) {
-        _session.appState.log?.w(
-          'Unable to change connected-device mode',
-          error: commandError,
-          stackTrace: commandStackTrace,
-        );
-      }
-      if (readError != null) {
-        _session.appState.log?.w(
-          'Unable to confirm connected-device mode',
-          error: readError,
-          stackTrace: readStackTrace,
-        );
-      }
-
-      final confirmed = isReader == null
-          ? null
-          : isReader
-              ? ConnectedDeviceMode.reader
-              : ConnectedDeviceMode.emulator;
-      if (readError == null && confirmed != null) {
-        _publish(_snapshot.copyWith(mode: ModeStatus.available(confirmed)));
-        if (confirmed == target) {
-          return ModeActionOutcome.confirmed;
-        }
-        if (commandError == null) {
-          _session.appState.log?.w(
-            'Connected-device mode did not match the requested mode',
-          );
-        }
-        return ModeActionOutcome.failed;
-      }
-      final latestConfirmed =
-          _snapshot.mode.confirmedMode ?? previous.confirmedMode!;
-      _publish(
-        _snapshot.copyWith(mode: ModeStatus.available(latestConfirmed)),
-      );
-      return ModeActionOutcome.failed;
-    });
-  }
+  Future<ModeActionOutcome> switchMode(ConnectedDeviceMode target) =>
+      _modeStatusMachine.switchTo(target);
 
   Future<void> refreshSlots() {
     final currentRefresh = _slotsRefresh;
@@ -1392,7 +1257,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           final slots = await _readSlots(_snapshot.slots);
           ModeStatus? mode;
           if (reconcileMode && _canPublish) {
-            mode = await _readModeAfterSlotMutation();
+            mode = await _modeStatusMachine.readAfterSlotMutation();
           }
           if (_canPublish && slots != null) {
             _publish(
@@ -1400,7 +1265,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
                 slots: _withSemanticReorderAmbiguity(
                   _mergePendingSlotActivation(slots),
                 ),
-                mode: _mergePendingModeAction(mode),
+                mode: _modeStatusMachine.mergePendingAction(mode),
               ),
             );
           }
@@ -1830,44 +1695,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     return reconciled.copyWith(
       pendingActivation: _snapshot.slots.pendingActivation,
     );
-  }
-
-  ModeStatus? _mergePendingModeAction(ModeStatus? reconciled) {
-    if (reconciled == null) {
-      return null;
-    }
-    final current = _snapshot.mode;
-    return current.pendingMode == null
-        ? reconciled
-        : ModeStatus._(
-            availability: reconciled.availability,
-            confirmedMode: reconciled.confirmedMode,
-            pendingMode: current.pendingMode,
-          );
-  }
-
-  Future<ModeStatus?> _readModeAfterSlotMutation() async {
-    try {
-      final isReader = await _session.communicator.isReaderDeviceMode();
-      if (!_canPublish) {
-        return null;
-      }
-      return ModeStatus.available(
-        isReader ? ConnectedDeviceMode.reader : ConnectedDeviceMode.emulator,
-      );
-    } catch (error, stackTrace) {
-      _session.appState.log?.w(
-        'Unable to reconcile connected-device mode after slot mutation',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (!_canPublish) {
-        return null;
-      }
-      return ModeStatus.unavailable(
-        confirmedMode: _snapshot.mode.confirmedMode,
-      );
-    }
   }
 
   Future<void> _refreshSlots() async {
@@ -2345,53 +2172,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> refreshBattery() {
-    final currentRefresh = _batteryRefresh;
-    if (currentRefresh != null) {
-      return currentRefresh;
-    }
-
-    final refresh = _refreshBattery();
-    _batteryRefresh = refresh;
-    return refresh.whenComplete(() {
-      if (identical(_batteryRefresh, refresh)) {
-        _batteryRefresh = null;
-      }
-    });
-  }
-
-  Future<void> _refreshBattery() async {
-    try {
-      final result = await _rfOperations.tryRunBackground<BatteryCharge>(
-        _session.communicator.getBatteryCharge,
-        group: _backgroundOperationGroup,
-      );
-      if (!result.acquired || !_canPublish) {
-        return;
-      }
-
-      final charge = result.value!;
-      _publish(
-        _snapshot.copyWith(
-          battery: BatteryStatus.available(
-            percent: charge.percent,
-            voltageMillivolts: charge.voltage,
-          ),
-        ),
-      );
-    } catch (error, stackTrace) {
-      _session.appState.log?.w(
-        'Unable to read connected-device battery status',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (_canPublish) {
-        _publish(
-          _snapshot.copyWith(battery: const BatteryStatus.unavailable()),
-        );
-      }
-    }
-  }
+  Future<void> refreshBattery() => _batteryStatusMachine.refresh();
 
   bool get _canPublish => !_disposed && _session.isCurrent;
 
