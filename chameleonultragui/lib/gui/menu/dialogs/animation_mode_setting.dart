@@ -194,14 +194,22 @@ class _AnimationModeSettingState extends State<AnimationModeSetting> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
-    final isAvailable = _availability == _AnimationModeAvailability.available;
+    final sessionIsCurrent = _session?.isCurrent ?? true;
+    final effectiveAvailability = sessionIsCurrent
+        ? _availability
+        : _AnimationModeAvailability.unavailable;
+    final isAvailable =
+        effectiveAvailability == _AnimationModeAvailability.available;
     final isLoading =
-        _availability == _AnimationModeAvailability.loading || _pending;
+        effectiveAvailability == _AnimationModeAvailability.loading ||
+            (_pending && sessionIsCurrent);
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
 
     final String? helperText;
     final String? errorText;
-    switch (_availability) {
+    switch (effectiveAvailability) {
       case _AnimationModeAvailability.unsupported:
         helperText = localizations.animation_mode_unsupported;
         errorText = null;
@@ -225,12 +233,17 @@ class _AnimationModeSettingState extends State<AnimationModeSetting> {
             helperText: helperText,
             errorText: errorText,
             suffixIcon: isLoading
-                ? const Padding(
+                ? Padding(
                     padding: EdgeInsets.all(12),
                     child: SizedBox.square(
-                      key: Key('animation-mode-progress'),
+                      key: const Key('animation-mode-progress'),
                       dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: reducedMotion
+                          ? const Icon(
+                              Icons.hourglass_top,
+                              key: Key('animation-mode-static-progress'),
+                            )
+                          : const CircularProgressIndicator(strokeWidth: 2),
                     ),
                   )
                 : null,
@@ -239,9 +252,9 @@ class _AnimationModeSettingState extends State<AnimationModeSetting> {
             child: DropdownButton<AnimationSetting>(
               key: const Key('animation-mode-dropdown'),
               isExpanded: true,
-              value: _confirmedMode,
+              value: sessionIsCurrent ? _confirmedMode : null,
               hint: Text(
-                _availability == _AnimationModeAvailability.loading
+                effectiveAvailability == _AnimationModeAvailability.loading
                     ? localizations.loading
                     : localizations.unavailable,
               ),
@@ -273,7 +286,8 @@ class _AnimationModeSettingState extends State<AnimationModeSetting> {
             ),
           ),
         ),
-        if (_availability == _AnimationModeAvailability.unavailable) ...[
+        if (effectiveAvailability ==
+            _AnimationModeAvailability.unavailable) ...[
           const SizedBox(height: 8),
           Align(
             alignment: AlignmentDirectional.centerEnd,

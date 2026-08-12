@@ -145,6 +145,48 @@ void main() {
     expect(fixture.serial.disconnects, 0);
   });
 
+  testWidgets('idle connection replacement immediately invalidates old mode',
+      (tester) async {
+    final fixture = await _pumpSettings(tester);
+    expect(_dropdown(tester).value, AnimationSetting.full);
+
+    fixture.appState.communicator = _AnimationCommunicator()
+      ..currentMode = AnimationSetting.none;
+    fixture.appState.changesMade();
+    await tester.pump();
+
+    expect(_dropdown(tester).value, isNull);
+    expect(_dropdown(tester).onChanged, isNull);
+    expect(find.byKey(const Key('animation-mode-retry')), findsOneWidget);
+    expect(
+      find.text('The LED animation mode could not be read.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('reduced motion uses a static loading indicator', (tester) async {
+    final communicator = _AnimationCommunicator();
+    communicator.nextCapabilitiesGate = Completer<void>();
+
+    await _pumpSettings(
+      tester,
+      communicator: communicator,
+      disableAnimations: true,
+      settle: false,
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('animation-mode-progress')), findsOneWidget);
+    expect(
+      find.byKey(const Key('animation-mode-static-progress')),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    communicator.nextCapabilitiesGate!.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('failed write reconciles through a mandatory device read',
       (tester) async {
     final fixture = await _pumpSettings(tester);
@@ -187,6 +229,8 @@ Future<
   WidgetTester tester, {
   _AnimationCommunicator? communicator,
   ChameleonDevice device = ChameleonDevice.ultra,
+  bool disableAnimations = false,
+  bool settle = true,
 }) async {
   final logger = Logger(output: MemoryOutput());
   addTearDown(logger.close);
@@ -209,11 +253,16 @@ Future<
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: const Scaffold(body: ChameleonSettings()),
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: disableAnimations),
+          child: const Scaffold(body: ChameleonSettings()),
+        ),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  }
 
   return (
     appState: appState,
@@ -237,6 +286,7 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   int animationReads = 0;
   int saves = 0;
   Completer<void>? nextSetGate;
+  Completer<void>? nextCapabilitiesGate;
   Object? nextSetError;
   bool ignoreSets = false;
 
@@ -247,6 +297,8 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   @override
   Future<List<int>> getDeviceCapabilities() async {
     events.add('capabilities');
+    final gate = nextCapabilitiesGate;
+    await gate?.future;
     return capabilities;
   }
 
