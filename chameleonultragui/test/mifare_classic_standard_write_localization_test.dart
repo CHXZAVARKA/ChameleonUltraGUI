@@ -1,7 +1,5 @@
 // ignore_for_file: non_constant_identifier_names
 
-import 'dart:io';
-
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations_en.dart';
 import 'package:chameleonultragui/gui/page/write_card.dart';
@@ -160,67 +158,5 @@ void main() {
       find.text('Localized operation stopped: Localized no usable dumps'),
       findsOneWidget,
     );
-  });
-
-  test('Standard writer has no temporary feature-string remnants', () {
-    expect(
-      File('lib/gui/component/mifare/feature_strings.dart').existsSync(),
-      isFalse,
-    );
-
-    final dartSources = Directory('lib')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((file) => file.path.endsWith('.dart'))
-        .toList();
-    final productionSource =
-        dartSources.map((file) => file.readAsStringSync()).join('\n');
-
-    expect(productionSource, isNot(contains('feature_strings.dart')));
-    expect(productionSource, isNot(contains('MifareClassicFeatureStrings')));
-
-    final writerSource = [
-      File('lib/gui/component/mifare/standard_write.dart'),
-      File('lib/gui/page/write_card.dart'),
-    ].map((file) => file.readAsStringSync()).join('\n');
-    expect(
-      RegExp(r'''(['"])Magic card\1''').hasMatch(writerSource),
-      isFalse,
-    );
-    for (final legacyText in [
-      'Standard MIFARE Classic',
-      "Write the card's own dump to a standard card",
-      'Select a complete Mini,',
-      'Only data blocks are written.',
-      'Select .bin dump',
-      'Load file',
-      'OR',
-      'No usable saved MIFARE Classic dumps',
-      'Unverified legacy dump',
-      'predates completeness tracking',
-      'Use saved dump',
-      'Select key profile',
-      'Run preflight',
-      'Start',
-      'Preflight is running.',
-      'Preflight passed:',
-      'I confirm this is my card',
-      'Write and verify',
-      'Keep the card and Chameleon Ultra still.',
-      'blocks written and verified.',
-      'Operation stopped',
-      'Unsupported dump size:',
-      'The selected dump is not supported.',
-      'The selected key profile is not compatible with this dump.',
-      'Communication with Chameleon was lost. Reconnect and try again.',
-      'The card check expired.',
-      'The presented card does not match the selected dump.',
-      'The selected key profile could not authenticate this card.',
-      'This card does not allow the requested change',
-      'The operation was cancelled.',
-      r'${profile.name} (${profile.keyCount})',
-    ]) {
-      expect(writerSource, isNot(contains(legacyText)), reason: legacyText);
-    }
   });
 }

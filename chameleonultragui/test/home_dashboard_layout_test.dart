@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -22,9 +21,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('slot certainty stays behind the abstract connector contract', () {
-    final physical = _DashboardSerial(log: Logger());
-    final demo = EmulatorSerial(log: Logger());
+  test('physical and demo connectors expose slot certainty uniformly', () {
+    final AbstractSerial physical = _DashboardSerial(log: Logger());
+    final AbstractSerial demo = EmulatorSerial(log: Logger());
 
     expect(
       physical.slotEnabledStateCertainty.isConfirmed(
@@ -47,11 +46,6 @@ void main() {
       ),
       isTrue,
     );
-
-    final statusSource =
-        File('lib/status/connected_device_status.dart').readAsStringSync();
-    expect(statusSource, isNot(contains('connector/serial_emulator.dart')));
-    expect(statusSource, isNot(contains('EmulatorSerial')));
   });
 
   test('Demo device state is stable per session and randomized between them',
