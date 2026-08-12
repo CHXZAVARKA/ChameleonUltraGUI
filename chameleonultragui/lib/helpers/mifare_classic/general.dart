@@ -5,6 +5,7 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/anti_collision.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/recovery.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/types.dart';
@@ -495,32 +496,12 @@ CardData mifareClassicAntiCollisionForCard(CardSave card) {
   }
 
   final uid = hexToBytes(card.uid);
-  final validUidLengths = switch (card.tag) {
-    TagType.mifare1K || TagType.mifare4K => const [4, 7],
-    TagType.mifareMini || TagType.mifare2K => const [4],
-    _ => const <int>[],
-  };
-  if (!validUidLengths.contains(uid.length)) {
-    throw FormatException(
-      'Invalid ${card.tag.name} UID length: ${uid.length}',
-    );
-  }
-
-  final (sak, atqaLow) = switch (card.tag) {
-    TagType.mifareMini => (0x09, 0x04),
-    TagType.mifare1K => (0x08, 0x04),
-    TagType.mifare2K => (0x19, 0x02),
-    TagType.mifare4K => (0x18, 0x02),
-    _ => throw StateError('Unsupported MIFARE Classic type'),
-  };
+  final profile = mifareClassicAntiCollisionProfile(card.tag, uid.length);
 
   return CardData(
     uid: uid,
-    sak: sak,
-    atqa: Uint8List.fromList([
-      0x00,
-      uid.length == 7 ? atqaLow | 0x40 : atqaLow,
-    ]),
+    sak: profile.sak,
+    atqa: profile.atqa,
     ats: card.ats,
   );
 }

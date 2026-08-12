@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/helpers/card_profile.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/anti_collision.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 
@@ -73,21 +74,12 @@ class CardProfileGenerator {
         (uidLength == 7 || (uidLength == null && _random.nextBool()));
     final uid = useSevenByteUid ? _nxpSevenByteUid() : _fixedNonUniqueUid();
 
-    final (sak, atqaLow) = switch (type) {
-      TagType.mifareMini => (0x09, 0x04),
-      TagType.mifare1K => (0x08, 0x04),
-      TagType.mifare2K => (0x19, 0x02),
-      TagType.mifare4K => (0x18, 0x02),
-      _ => throw ArgumentError.value(type, 'type', 'Not MIFARE Classic'),
-    };
+    final antiCollision = mifareClassicAntiCollisionProfile(type, uid.length);
 
     return GeneratedCardProfile(
       uid: uid,
-      sak: sak,
-      atqa: Uint8List.fromList([
-        0x00,
-        useSevenByteUid ? atqaLow | 0x40 : atqaLow,
-      ]),
+      sak: antiCollision.sak,
+      atqa: antiCollision.atqa,
     );
   }
 
