@@ -18,6 +18,7 @@ class NativeSerial extends AbstractSerial {
   }) : _discoveryCallback = discoveryCallback ?? _discoverNativeChameleons;
 
   final NativeDiscoveryCallback _discoveryCallback;
+  static const int _flowControl = SerialPortFlowControl.none;
 
   @override
   bool isManualConnectionSupported() {
@@ -101,8 +102,11 @@ class NativeSerial extends AbstractSerial {
       ..cts = SerialPortCts.flowControl
       ..dsr = SerialPortDsr.flowControl
       ..dtr = SerialPortDtr.flowControl
-      ..setFlowControl(SerialPortFlowControl.rtsCts);
+      ..setFlowControl(_flowControl);
   }
+
+  @visibleForTesting
+  static int get flowControlForTesting => _flowControl;
 
   static List<Chameleon> _discoverNativeChameleons(bool onlyDFU) {
     final output = <Chameleon>[];

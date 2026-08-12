@@ -13,6 +13,7 @@ import 'package:chameleonultragui/gui/page/pending_connection.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
@@ -238,6 +239,13 @@ void main() {
     );
 
     expect(await serial.availableChameleons(false), isEmpty);
+  });
+
+  test('native USB uses stock firmware serial flow control', () {
+    expect(
+      NativeSerial.flowControlForTesting,
+      SerialPortFlowControl.none,
+    );
   });
 }
 
