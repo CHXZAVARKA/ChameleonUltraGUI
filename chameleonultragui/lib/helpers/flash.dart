@@ -63,12 +63,6 @@ Future<(Uint8List, Uint8List)> unpackFirmware(Uint8List content) async {
   return (applicationDat, applicationBin);
 }
 
-Future<File> createTempFile() async {
-  final tempDir = await Directory.systemTemp.createTemp('firmware');
-  final tempFile = File('${tempDir.path}/flash.zip');
-  return tempFile;
-}
-
 void validateFiles(Uint8List dat, Uint8List bin) {
   if (dat.isEmpty || bin.isEmpty) {
     throw ("Empty firmware file");

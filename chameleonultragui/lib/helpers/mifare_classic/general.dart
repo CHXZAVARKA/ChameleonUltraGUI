@@ -337,21 +337,6 @@ List<Uint8List> mfClassicConvertKeys(List<int> keys) {
   return out;
 }
 
-String mfClassicGetName(
-    MifareClassicType type, AppLocalizations localizations) {
-  if (type == MifareClassicType.m1k) {
-    return "1K";
-  } else if (type == MifareClassicType.m2k) {
-    return "2K";
-  } else if (type == MifareClassicType.m4k) {
-    return "4K";
-  } else if (type == MifareClassicType.mini) {
-    return "Mini";
-  } else {
-    return localizations.unknown;
-  }
-}
-
 int mfClassicGetSectorCount(MifareClassicType type, {bool isEV1 = false}) {
   if (type == MifareClassicType.m1k) {
     return (isEV1) ? 18 : 16;
