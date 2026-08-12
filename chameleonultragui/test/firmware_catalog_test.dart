@@ -182,6 +182,16 @@ void main() {
     test('selects the newest eligible release by publication time', () {
       final release = selectLatestFirmwareRelease(
         [
+          _release(
+            'missing-date-commit',
+            null,
+            assets: [_ultraAsset('missing-date')],
+          ),
+          _release(
+            'malformed-date-commit',
+            'not-a-date',
+            assets: [_ultraAsset('malformed-date')],
+          ),
           _release('old-commit', '2026-08-01', assets: [_ultraAsset('old')]),
           _release(
             'manual-commit',
@@ -199,11 +209,25 @@ void main() {
         release?.applicationArchiveFor(ChameleonDevice.ultra),
         Uri.parse('https://example.test/new-ultra.zip'),
       );
+
+      final undatedRelease = selectLatestFirmwareRelease(
+        [
+          _release('first-commit', null, assets: [_ultraAsset('first')]),
+          _release('second-commit', null, assets: [_ultraAsset('second')]),
+        ],
+        ChameleonDevice.ultra,
+      );
+      expect(undatedRelease?.commit, 'first-commit');
     });
 
     test('metadata and download share eligibility and exact-model assets',
         () async {
       final releasePayload = jsonEncode([
+        _release(
+          'unrelated-commit',
+          '2026-08-05',
+          assets: [_asset('debug-symbols.zip', 'debug-symbols.zip')],
+        ),
         _release(
           'manual-commit',
           '2026-08-04',
@@ -228,8 +252,10 @@ void main() {
         _release('old-commit', '2026-08-01', assets: [_ultraAsset('old')]),
       ]);
       final requestedAssets = <Uri>[];
+      final requestedApiUrls = <Uri>[];
       final client = MockClient((request) async {
         if (request.url.host == 'api.github.com') {
+          requestedApiUrls.add(request.url);
           return http.Response(releasePayload, 200);
         }
         requestedAssets.add(request.url);
@@ -265,10 +291,87 @@ void main() {
       }, () => client);
 
       expect(
+        requestedApiUrls,
+        List.filled(
+          3,
+          Uri.parse(
+            'https://api.github.com/repos/CHXZAVARKA/ChameleonUltra/releases',
+          ),
+        ),
+      );
+      expect(
         requestedAssets,
         [
           Uri.parse('https://example.test/selected-ultra.zip'),
           Uri.parse('https://example.test/selected-lite.zip'),
+        ],
+      );
+    });
+
+    test('Official metadata prefers Actions and falls back to releases',
+        () async {
+      var actionsRequests = 0;
+      final requestedUrls = <Uri>[];
+      final client = MockClient((request) async {
+        requestedUrls.add(request.url);
+        if (request.url.path.endsWith('/actions/artifacts')) {
+          actionsRequests++;
+          return http.Response(
+            jsonEncode({
+              'artifacts': actionsRequests == 1
+                  ? [
+                      {
+                        'name': 'ultra-dfu-app',
+                        'workflow_run': {
+                          'head_branch': 'main',
+                          'head_repository_id': 581338100,
+                          'head_sha': 'actions-commit',
+                        },
+                      },
+                    ]
+                  : [],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/releases')) {
+          return http.Response(
+            jsonEncode([
+              _release(
+                'release-commit',
+                '2026-08-03',
+                assets: [_ultraAsset('release')],
+              ),
+            ]),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      await http.runWithClient(() async {
+        expect(
+          await latestAvailableCommit(ChameleonDevice.ultra),
+          'actions-commit',
+        );
+        expect(
+          await latestAvailableCommit(ChameleonDevice.ultra),
+          'release-commit',
+        );
+      }, () => client);
+
+      expect(
+        requestedUrls,
+        [
+          Uri.parse(
+            'https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100',
+          ),
+          Uri.parse(
+            'https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100',
+          ),
+          Uri.parse(
+            'https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/releases',
+          ),
         ],
       );
     });
@@ -353,12 +456,33 @@ void main() {
       expect(requestedDevice, ChameleonDevice.lite);
       expect(requestedChannel, FirmwareChannel.custom);
     });
+
+    test('Official downloads Actions without querying releases', () async {
+      var actionCalls = 0;
+      var releaseCalls = 0;
+
+      final result = await fetchFirmware(
+        ChameleonDevice.ultra,
+        actionsLoader: (_, __) async {
+          actionCalls++;
+          return Uint8List.fromList([1, 2, 3]);
+        },
+        releasesLoader: (_, __) async {
+          releaseCalls++;
+          return Uint8List.fromList([4, 5, 6]);
+        },
+      );
+
+      expect(result, Uint8List.fromList([1, 2, 3]));
+      expect(actionCalls, 1);
+      expect(releaseCalls, 0);
+    });
   });
 }
 
 Map<String, Object?> _release(
   String commit,
-  String date, {
+  String? date, {
   String author = 'github-actions[bot]',
   bool prerelease = true,
   List<Map<String, String>> assets = const [],
@@ -366,7 +490,8 @@ Map<String, Object?> _release(
     {
       'author': {'login': author},
       'prerelease': prerelease,
-      'published_at': '${date}T12:00:00Z',
+      if (date != null)
+        'published_at': date.contains('T') ? date : '${date}T12:00:00Z',
       'target_commitish': commit,
       'assets': assets,
     };

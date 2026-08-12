@@ -74,12 +74,13 @@ final class _FirmwareReleaseSelection {
   final Uri applicationArchive;
   final DateTime? publishedAt;
 
-  bool isNewerThan(_FirmwareReleaseSelection other) {
+  bool hasHigherPriorityThan(_FirmwareReleaseSelection other) {
     final publishedAt = this.publishedAt;
     final otherPublishedAt = other.publishedAt;
-    return publishedAt != null &&
-        otherPublishedAt != null &&
-        publishedAt.isAfter(otherPublishedAt);
+    if (publishedAt != null && otherPublishedAt != null) {
+      return publishedAt.isAfter(otherPublishedAt);
+    }
+    return publishedAt != null && otherPublishedAt == null;
   }
 
   GitHubFirmwareRelease asPublicRelease(ChameleonDevice device) =>
@@ -104,7 +105,7 @@ final class _FirmwareReleaseSelectionPolicy {
     for (final candidate in payload) {
       final selection = _parseCandidate(candidate, device);
       if (selection == null ||
-          (latest != null && !selection.isNewerThan(latest))) {
+          (latest != null && !selection.hasHigherPriorityThan(latest))) {
         continue;
       }
       latest = selection;
