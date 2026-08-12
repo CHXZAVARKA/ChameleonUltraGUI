@@ -112,13 +112,10 @@ class NativeSerial extends AbstractSerial {
     final output = <Chameleon>[];
     for (final address in SerialPort.availablePorts) {
       final candidate = SerialPort(address);
-      var opened = false;
       try {
-        opened = candidate.openReadWrite();
-        if (!opened) {
-          continue;
-        }
-        candidate.config = _serialConfig();
+        // USB identity metadata is available from enumeration. Opening every
+        // candidate here can stall the macOS CDC driver and races the later
+        // user-selected connection.
         final detectedDevice = _detectedDevice(
           manufacturer: candidate.manufacturer,
           description: candidate.description,
@@ -140,11 +137,8 @@ class NativeSerial extends AbstractSerial {
           );
         }
       } on SerialPortError {
-        // Ports can disappear or become busy between enumeration and probing.
+        // Ports can disappear between enumeration and metadata inspection.
       } finally {
-        if (opened) {
-          candidate.close();
-        }
         candidate.dispose();
       }
     }
