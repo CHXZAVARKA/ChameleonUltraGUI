@@ -493,7 +493,7 @@ class _FirmwareDetailsDialog extends StatelessWidget {
                         ),
                       ),
                     ],
-                    selected: {status.firmwareChannel},
+                    selected: {firmware.channel},
                     onSelectionChanged: firmware.installing ||
                             firmware.state == FirmwareState.demo
                         ? null
@@ -507,7 +507,7 @@ class _FirmwareDetailsDialog extends StatelessWidget {
                           },
                   ),
                 ),
-                if (status.firmwareChannel == FirmwareChannel.custom)
+                if (firmware.channel == FirmwareChannel.custom)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(

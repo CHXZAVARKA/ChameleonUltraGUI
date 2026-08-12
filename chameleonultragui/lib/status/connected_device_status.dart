@@ -84,6 +84,7 @@ typedef FirmwareInstaller = Future<void> Function(FirmwareChannel channel);
 @immutable
 class FirmwareStatus {
   const FirmwareStatus({
+    required this.channel,
     required this.state,
     required this.protocol,
     required this.compatibility,
@@ -96,22 +97,29 @@ class FirmwareStatus {
     this.installationFailed = false,
   });
 
-  const FirmwareStatus.checking()
+  const FirmwareStatus.checking({
+    FirmwareChannel channel = FirmwareChannel.official,
+  })
       : this(
+          channel: channel,
           state: FirmwareState.checking,
           protocol: FirmwareProtocol.loading,
           compatibility: FirmwareCompatibility.loading,
           checkResult: FirmwareCheckResult.checking,
         );
 
-  const FirmwareStatus.demo()
+  const FirmwareStatus.demo({
+    FirmwareChannel channel = FirmwareChannel.official,
+  })
       : this(
+          channel: channel,
           state: FirmwareState.demo,
           protocol: FirmwareProtocol.unknown,
           compatibility: FirmwareCompatibility.unknown,
           checkResult: FirmwareCheckResult.demo,
         );
 
+  final FirmwareChannel channel;
   final FirmwareState state;
   final String? installedVersion;
   final String? installedCommit;
@@ -124,6 +132,7 @@ class FirmwareStatus {
   final bool installationFailed;
 
   FirmwareStatus copyWith({
+    FirmwareChannel? channel,
     FirmwareState? state,
     String? installedVersion,
     String? installedCommit,
@@ -136,6 +145,7 @@ class FirmwareStatus {
     bool? installationFailed,
   }) =>
       FirmwareStatus(
+        channel: channel ?? this.channel,
         state: state ?? this.state,
         installedVersion: installedVersion ?? this.installedVersion,
         installedCommit: installedCommit ?? this.installedCommit,
@@ -155,6 +165,7 @@ class FirmwareStatus {
   @override
   bool operator ==(Object other) =>
       other is FirmwareStatus &&
+      other.channel == channel &&
       other.state == state &&
       other.installedVersion == installedVersion &&
       other.installedCommit == installedCommit &&
@@ -168,6 +179,7 @@ class FirmwareStatus {
 
   @override
   int get hashCode => Object.hash(
+        channel,
         state,
         installedVersion,
         installedCommit,
@@ -667,7 +679,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
                   session.appState,
                   channel: channel,
                 )),
-        _firmwareChannel = firmwareChannel,
         _snapshot = DeviceStatusSnapshot(
           identity: DeviceIdentityStatus(
             device: session.connector.device,
@@ -684,8 +695,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
                 : SlotReorderCapability.unknown,
           ),
           firmware: session.connector.portName == 'Demo'
-              ? const FirmwareStatus.demo()
-              : const FirmwareStatus.checking(),
+              ? FirmwareStatus.demo(channel: firmwareChannel)
+              : FirmwareStatus.checking(channel: firmwareChannel),
         ) {
     WidgetsBinding.instance.addObserver(this);
   }
@@ -696,8 +707,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final FirmwareInstaller _firmwareInstaller;
   final Duration batteryPollInterval;
 
-  FirmwareChannel _firmwareChannel;
-  FirmwareChannel get firmwareChannel => _firmwareChannel;
   int _firmwareChannelRevision = 0;
 
   DeviceStatusSnapshot _snapshot;
@@ -846,12 +855,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setFirmwareChannel(FirmwareChannel channel) async {
     if (!_canPublish ||
         _snapshot.firmware.state == FirmwareState.demo ||
-        channel == _firmwareChannel ||
+        channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
       return;
     }
 
-    _firmwareChannel = channel;
     _firmwareChannelRevision++;
     _firmwareLookupAttempted = true;
     final revision = _firmwareChannelRevision;
@@ -859,6 +867,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _publish(
       _snapshot.copyWith(
         firmware: FirmwareStatus(
+          channel: channel,
           state: current.compatibility == FirmwareCompatibility.incompatible
               ? FirmwareState.updateRequired
               : FirmwareState.checking,
@@ -889,7 +898,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
     final refresh = _refreshFirmware(
       readFacts: readFacts,
-      channel: _firmwareChannel,
+      channel: _snapshot.firmware.channel,
       channelRevision: _firmwareChannelRevision,
     );
     _firmwareRefresh = refresh;
@@ -908,7 +917,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     bool canPublishChannel() =>
         _canPublish &&
         channelRevision == _firmwareChannelRevision &&
-        channel == _firmwareChannel;
+        channel == _snapshot.firmware.channel;
 
     if (!canPublishChannel() ||
         _snapshot.firmware.state == FirmwareState.demo) {
@@ -940,6 +949,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
+            channel: channel,
             state: facts.compatibility == FirmwareCompatibility.incompatible
                 ? FirmwareState.updateRequired
                 : FirmwareState.checking,
@@ -974,6 +984,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
+            channel: channel,
             state: state,
             installedVersion: facts.installedVersion,
             installedCommit: facts.installedCommit,
@@ -999,6 +1010,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
+            channel: channel,
             state: facts.compatibility == FirmwareCompatibility.incompatible
                 ? FirmwareState.updateRequired
                 : FirmwareState.checkUnavailable,
@@ -1124,7 +1136,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return FirmwareInstallOutcome.connectionChanged;
     }
     final firmware = _snapshot.firmware;
-    final channel = _firmwareChannel;
+    final channel = firmware.channel;
     if (!firmware.canInstall) {
       return FirmwareInstallOutcome.notAvailable;
     }
@@ -1142,11 +1154,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
     try {
       final installationStarted = await _rfOperations.runForeground(() async {
-        if (!_canPublish || channel != _firmwareChannel) {
+        if (!_canPublish || channel != _snapshot.firmware.channel) {
           return false;
         }
         await _firmwareInstaller(channel);
-        return _canPublish && channel == _firmwareChannel;
+        return _canPublish && channel == _snapshot.firmware.channel;
       });
       if (!installationStarted || !_canPublish) {
         return FirmwareInstallOutcome.connectionChanged;

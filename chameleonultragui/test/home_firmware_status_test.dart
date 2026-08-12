@@ -296,7 +296,7 @@ void main() {
     _replaceConnection(appState, _FirmwareCommunicator.current());
     appState.changesMade();
     await tester.pumpAndSettle();
-    expect(appState.connectedDeviceStatus!.firmwareChannel,
+    expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
         FirmwareChannel.custom);
     expect(catalog.channels, [
       FirmwareChannel.official,
@@ -329,7 +329,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('firmware-channel-custom')));
     await tester.pump();
-    expect(appState.connectedDeviceStatus!.firmwareChannel,
+    expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
         FirmwareChannel.custom);
 
     officialLookup.complete(
