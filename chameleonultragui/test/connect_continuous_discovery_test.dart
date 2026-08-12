@@ -226,6 +226,53 @@ void main() {
     },
   );
 
+  testWidgets('DFU recovery offers a local firmware ZIP', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'auto_connect_first_found': false,
+    });
+    final logger = Logger(output: MemoryOutput());
+    final serial = _DiscoverySerial(
+      log: logger,
+      scans: const [
+        [
+          Chameleon(
+            port: '/dev/dfu-device-a',
+            device: ChameleonDevice.ultra,
+            type: ConnectionType.usb,
+            dfu: true,
+          ),
+        ],
+      ],
+    );
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final appState = ChameleonGUIState(preferences)
+      ..connector = serial
+      ..log = logger;
+    addTearDown(logger.close);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: ConnectPage(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Chameleon Ultra'));
+    await tester.pump();
+
+    expect(find.text('Flash .zip FW via DFU'), findsOneWidget);
+
+    appState.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test('native discovery does not block loader frames', () async {
     final serial = NativeSerial(
       log: Logger(output: MemoryOutput()),
