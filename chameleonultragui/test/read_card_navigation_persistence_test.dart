@@ -20,6 +20,8 @@ import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/test_viewport.dart';
+
 const _mifareUltralightGetVersionCommand = 0x60;
 const _mifareUltralightReadSignatureCommand = 0x3C;
 
@@ -1109,10 +1111,7 @@ class _ReadCardFixture {
       ..connector = connector
       ..communicator = communicator;
 
-    tester.view.physicalSize = physicalSize;
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: physicalSize);
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
         value: appState,
@@ -1205,10 +1204,7 @@ class _ReplaceableReadCardFixture {
     final replacementAppState = createAppState(replacementCommunicatorFactory);
     final hostKey = GlobalKey<_ReplaceableReadCardHostState>();
 
-    tester.view.physicalSize = const Size(3000, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(3000, 1600));
     await tester.pumpWidget(
       _ReplaceableReadCardHost(
         key: hostKey,

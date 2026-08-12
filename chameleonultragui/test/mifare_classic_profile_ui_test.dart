@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/test_viewport.dart';
+
 void main() {
   testWidgets('mifare_classic_assigned_profile_visual_smoke', (tester) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -63,10 +65,7 @@ void main() {
       state: MifareClassicState.checkKeys,
     )..recovery = recovery;
 
-    tester.view.physicalSize = const Size(1200, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1000));
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(

@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/test_viewport.dart';
+
 void main() {
   for (final uidLength in [4, 7]) {
     testWidgets(
@@ -61,10 +63,7 @@ void main() {
     await preferences.load();
     final appState = ChameleonGUIState(preferences);
 
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
@@ -136,10 +135,7 @@ Future<void> _verifyOversizedImport(
   await preferences.load();
   final appState = ChameleonGUIState(preferences);
 
-  tester.view.physicalSize = const Size(1200, 1400);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
+  setTestViewport(tester, size: const Size(1200, 1400));
 
   Widget page(Widget child) {
     return ChangeNotifierProvider<ChameleonGUIState>.value(

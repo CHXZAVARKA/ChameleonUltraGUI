@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/mifare_classic_localizations.dart';
+import 'support/test_viewport.dart';
 
 class _SavedProfilesLocalizations extends AppLocalizationsEn {
   @override
@@ -87,10 +88,7 @@ void main() {
       ],
     );
     final appState = ChameleonGUIState(preferences);
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
         value: appState,
@@ -192,10 +190,7 @@ void main() {
     ]);
     final appState = ChameleonGUIState(preferences);
 
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(

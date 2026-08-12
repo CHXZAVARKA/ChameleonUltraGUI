@@ -12,6 +12,7 @@ import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/connected_device_test_harness.dart';
+import 'support/test_viewport.dart';
 
 void main() {
   setUp(() async {
@@ -380,10 +381,7 @@ void main() {
 
   testWidgets('firmware channel remains reachable at 360px and 2.5x text',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 800));
     final catalog = _FakeFirmwareCatalog([
       const FirmwareCatalogRelease(
         latestCommit: 'abc1234',

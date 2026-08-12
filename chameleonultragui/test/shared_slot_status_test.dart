@@ -23,6 +23,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/firmware_catalog_stub.dart';
+import 'support/test_viewport.dart';
 
 void main() {
   setUp(() async {
@@ -115,10 +116,7 @@ void main() {
 
   testWidgets('two-by-four keeps row-major slots tappable at 360px',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 900));
     final semantics = tester.ensureSemantics();
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -228,10 +226,7 @@ void main() {
   testWidgets(
       'eight-across restores scroll and focus after a two-by-four roundtrip',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 900));
     final preferences = SharedPreferencesProvider();
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -322,10 +317,7 @@ void main() {
 
   testWidgets('Home shows eight numbered HF and LF slot columns',
       (tester) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 900));
 
     final appState = _connectedState(_SlotCommunicator());
     await _pumpPage(tester, appState, const HomePage());
@@ -658,10 +650,7 @@ void main() {
 
   testWidgets('narrow Home slots have distinct 48px pointer targets',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 900));
     final semantics = tester.ensureSemantics();
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -1285,10 +1274,7 @@ void main() {
 
   testWidgets('Home and Slot Manager share one confirmed slot snapshot',
       (tester) async {
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
 
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -1324,10 +1310,7 @@ void main() {
 
   testWidgets('name failure keeps confirmed types and enabled state visible',
       (tester) async {
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
 
     final communicator = _SlotCommunicator()..failNames = true;
     final appState = _connectedState(communicator);
@@ -1725,10 +1708,7 @@ void main() {
   testWidgets(
       'slot mutation reconciles one shared snapshot across Home and Slot Manager',
       (tester) async {
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1400));
 
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -2359,10 +2339,7 @@ void main() {
   testWidgets(
       'Slot Settings keeps unavailable fields inert and retries shared status',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 640));
     final semantics = tester.ensureSemantics();
     final communicator = _SlotCommunicator()..failAll = true;
     final appState = _connectedState(communicator);
@@ -2829,10 +2806,7 @@ void main() {
   testWidgets(
       'open Slot Edit blocks stale save and quick settings after replacement',
       (tester) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(800, 1200));
     final oldCommunicator = _SlotCommunicator()
       ..slotTypes = List.generate(
         8,

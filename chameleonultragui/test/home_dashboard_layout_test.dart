@@ -20,6 +20,8 @@ import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/test_viewport.dart';
+
 void main() {
   test('physical and demo connectors expose slot certainty uniformly', () {
     final AbstractSerial physical = _DashboardSerial(log: Logger());
@@ -733,10 +735,7 @@ Future<void> _pumpHome(
     );
 
 Future<void> _setViewport(WidgetTester tester, Size size) async {
-  tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
+  setTestViewport(tester, size: size);
 }
 
 class _DashboardFirmwareCatalog implements FirmwareCatalog {

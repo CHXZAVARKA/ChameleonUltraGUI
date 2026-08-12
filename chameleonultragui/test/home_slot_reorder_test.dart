@@ -17,6 +17,7 @@ import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/firmware_catalog_stub.dart';
+import 'support/test_viewport.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -527,10 +528,7 @@ void main() {
 
   testWidgets('narrow auto-scroll reveals a destination and drops exact swap',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 800));
     final fixture = _fixture();
     addTearDown(fixture.dispose);
     await _prepareGrid(tester, fixture);
@@ -562,10 +560,7 @@ void main() {
   testWidgets(
       'RTL narrow auto-scroll reveals a destination and drops exact swap',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 800));
     final fixture = _fixture();
     addTearDown(fixture.dispose);
     await _prepareGrid(

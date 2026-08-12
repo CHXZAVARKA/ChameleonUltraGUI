@@ -33,6 +33,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 // ignore: depend_on_referenced_packages
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
+import 'support/test_viewport.dart';
+
 bool _sourceControlTestFontLoaded = false;
 
 void main() {
@@ -200,10 +202,7 @@ void main() {
     ]);
     final appState = ChameleonGUIState(preferences);
 
-    tester.view.physicalSize = const Size(1200, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1200, 1000));
 
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
@@ -395,10 +394,7 @@ void main() {
         ..connector = (_TestSerial(log: logger)..connected = true)
         ..communicator = _FailingPreflightCommunicator(logger, diagnostics);
 
-      tester.view.physicalSize = const Size(1200, 1000);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+      setTestViewport(tester, size: const Size(1200, 1000));
 
       await tester.pumpWidget(
         ChangeNotifierProvider<ChameleonGUIState>.value(
@@ -991,10 +987,7 @@ void main() {
       ..connector = connector
       ..communicator = communicator;
 
-    tester.view.physicalSize = const Size(1400, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(1400, 1000));
     await tester.pumpWidget(
       ChangeNotifierProvider<ChameleonGUIState>.value(
         value: appState,

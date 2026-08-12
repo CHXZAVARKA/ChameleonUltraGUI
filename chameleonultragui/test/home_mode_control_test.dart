@@ -3,6 +3,7 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'support/connected_device_test_harness.dart';
 import 'support/firmware_catalog_stub.dart';
+import 'support/test_viewport.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -33,10 +34,7 @@ void main() {
 
   testWidgets('narrow Home preserves the established mode control presentation',
       (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    setTestViewport(tester, size: const Size(360, 900));
     final appState = _connectedState(
       _ModeCommunicator(initialReaderMode: false),
     );
