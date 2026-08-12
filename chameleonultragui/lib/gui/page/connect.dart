@@ -296,39 +296,6 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(dialogContext, localizations.flash_zip_dfu);
-              appState.changesMade();
-
-              try {
-                await flashFirmwareZip(
-                  appState,
-                  scaffoldMessenger: scaffoldMessenger,
-                  enterDFU: false,
-                );
-              } catch (error) {
-                scaffoldMessenger.hideCurrentSnackBar();
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '${localizations.update_error}: $error',
-                    ),
-                    action: SnackBarAction(
-                      label: localizations.close,
-                      onPressed: scaffoldMessenger.hideCurrentSnackBar,
-                    ),
-                  ),
-                );
-              }
-
-              appState.changesMade();
-              if (mounted) {
-                _scanNow();
-              }
-            },
-            child: Text(localizations.flash_zip_dfu),
-          ),
-          TextButton(
-            onPressed: () async {
               Navigator.pop(dialogContext, localizations.flash);
               appState.changesMade();
 
