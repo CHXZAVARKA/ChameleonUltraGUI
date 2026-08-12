@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
+import 'package:chameleonultragui/gui/component/home_slot_grid_navigation.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -119,28 +120,25 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
       _activateFromKeyboard(numberedSlot);
       return KeyEventResult.handled;
     }
-    final direction = switch (event.logicalKey) {
-      LogicalKeyboardKey.arrowLeft => -1,
-      LogicalKeyboardKey.arrowRight => 1,
-      LogicalKeyboardKey.arrowUp =>
-        widget.layout == SlotLayout.twoByFour ? -4 : -1,
-      LogicalKeyboardKey.arrowDown =>
-        widget.layout == SlotLayout.twoByFour ? 4 : 1,
-      _ => null,
-    };
-    if (direction != null) {
-      if (HardwareKeyboard.instance.isShiftPressed) {
-        final target = _SlotReorderNeighbors.forSlot(
-          index: _focusedSlot,
-          layout: widget.layout,
-          textDirection: Directionality.of(context),
-        ).targetForKey(event.logicalKey);
+    final reordering = HardwareKeyboard.instance.isShiftPressed;
+    final navigationAction = _navigationActionFor(
+      event.logicalKey,
+      reordering: reordering,
+    );
+    if (navigationAction != null) {
+      final target = HomeSlotGridNavigation.target(
+        index: _focusedSlot,
+        layout: widget.layout,
+        textDirection: Directionality.of(context),
+        action: navigationAction,
+      );
+      if (reordering) {
         if (target != null && _canStartReorder) {
           unawaited(_reorder(_focusedSlot, target));
         }
         return KeyEventResult.handled;
       }
-      _activateFromKeyboard((_focusedSlot + direction + 8) % 8);
+      _activateFromKeyboard(target!);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -150,6 +148,30 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
     }
     return KeyEventResult.ignored;
   }
+
+  HomeSlotGridNavigationAction? _navigationActionFor(
+    LogicalKeyboardKey key, {
+    required bool reordering,
+  }) =>
+      switch ((key, reordering)) {
+        (LogicalKeyboardKey.arrowLeft, false) =>
+          HomeSlotGridNavigationAction.activateLeft,
+        (LogicalKeyboardKey.arrowRight, false) =>
+          HomeSlotGridNavigationAction.activateRight,
+        (LogicalKeyboardKey.arrowUp, false) =>
+          HomeSlotGridNavigationAction.activateUp,
+        (LogicalKeyboardKey.arrowDown, false) =>
+          HomeSlotGridNavigationAction.activateDown,
+        (LogicalKeyboardKey.arrowLeft, true) =>
+          HomeSlotGridNavigationAction.reorderLeft,
+        (LogicalKeyboardKey.arrowRight, true) =>
+          HomeSlotGridNavigationAction.reorderRight,
+        (LogicalKeyboardKey.arrowUp, true) =>
+          HomeSlotGridNavigationAction.reorderUp,
+        (LogicalKeyboardKey.arrowDown, true) =>
+          HomeSlotGridNavigationAction.reorderDown,
+        _ => null,
+      };
 
   int? _numberedSlot(LogicalKeyboardKey key) => switch (key) {
         LogicalKeyboardKey.digit1 || LogicalKeyboardKey.numpad1 => 0,
@@ -271,11 +293,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
         action: SnackBarAction(
           label: localizations.retry,
           onPressed: () => unawaited(
-            _reorder(
-              source,
-              target,
-              originatingStatus: invokedStatus,
-            ),
+            _reorder(source, target, originatingStatus: invokedStatus),
           ),
         ),
       ),
@@ -475,10 +493,14 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                           return size;
                         }
 
-                        final hfLabelSize =
-                            measureText(localizations.hf, frequencyStyle);
-                        final lfLabelSize =
-                            measureText(localizations.lf, frequencyStyle);
+                        final hfLabelSize = measureText(
+                          localizations.hf,
+                          frequencyStyle,
+                        );
+                        final lfLabelSize = measureText(
+                          localizations.lf,
+                          frequencyStyle,
+                        );
                         final labelWidth = math.max(
                           28.0,
                           math.max(hfLabelSize.width, lfLabelSize.width) + 4,
@@ -510,33 +532,38 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                         slotNumberPainter.dispose();
                         final gridHeight =
                             markRowHeight * 2 + 29 + slotNumberHeight;
-                        final reducedMotion =
-                            MediaQuery.disableAnimationsOf(context);
-                        Widget slotColumn(
-                          int index, {
-                          bool preview = false,
-                        }) {
-                          final neighbors = _SlotReorderNeighbors.forSlot(
+                        final reducedMotion = MediaQuery.disableAnimationsOf(
+                          context,
+                        );
+                        Widget slotColumn(int index, {bool preview = false}) {
+                          final beforeTarget = HomeSlotGridNavigation.target(
                             index: index,
                             layout: widget.layout,
                             textDirection: textDirection,
+                            action: HomeSlotGridNavigationAction.moveBefore,
+                          );
+                          final afterTarget = HomeSlotGridNavigation.target(
+                            index: index,
+                            layout: widget.layout,
+                            textDirection: textDirection,
+                            action: HomeSlotGridNavigationAction.moveAfter,
                           );
                           final actions = _canStartReorder
                               ? _SlotReorderActions(
-                                  before: neighbors.before == null
+                                  before: beforeTarget == null
                                       ? null
                                       : _SlotReorderAction(
-                                          target: neighbors.before!,
+                                          target: beforeTarget,
                                           invoke: () => unawaited(
-                                            _reorder(index, neighbors.before!),
+                                            _reorder(index, beforeTarget),
                                           ),
                                         ),
-                                  after: neighbors.after == null
+                                  after: afterTarget == null
                                       ? null
                                       : _SlotReorderAction(
-                                          target: neighbors.after!,
+                                          target: afterTarget,
                                           invoke: () => unawaited(
-                                            _reorder(index, neighbors.after!),
+                                            _reorder(index, afterTarget),
                                           ),
                                         ),
                                 )
@@ -641,9 +668,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                             width: slotWidth,
                             height: gridHeight,
                             child: DragTarget<int>(
-                              key: Key(
-                                'home-slot-${index + 1}-reorder-target',
-                              ),
+                              key: Key('home-slot-${index + 1}-reorder-target'),
                               onWillAcceptWithDetails: (details) =>
                                   _canStartReorder && details.data != index,
                               onMove: (details) =>
@@ -791,58 +816,7 @@ enum _SlotMarkState {
   empty,
   enabledUnknown,
   unavailable,
-  loading
-}
-
-class _SlotReorderNeighbors {
-  const _SlotReorderNeighbors._({
-    required this.before,
-    required this.after,
-    required this.left,
-    required this.right,
-    required this.up,
-    required this.down,
-  });
-
-  factory _SlotReorderNeighbors.forSlot({
-    required int index,
-    required SlotLayout layout,
-    required TextDirection textDirection,
-  }) {
-    final columns = layout == SlotLayout.twoByFour ? 4 : 8;
-    final column = index % columns;
-    final before = column > 0 ? index - 1 : null;
-    final after = column < columns - 1 ? index + 1 : null;
-    final left = textDirection == TextDirection.ltr ? before : after;
-    final right = textDirection == TextDirection.ltr ? after : before;
-    return _SlotReorderNeighbors._(
-      before: before,
-      after: after,
-      left: left,
-      right: right,
-      up: layout == SlotLayout.twoByFour
-          ? (index >= 4 ? index - 4 : null)
-          : before,
-      down: layout == SlotLayout.twoByFour
-          ? (index < 4 ? index + 4 : null)
-          : after,
-    );
-  }
-
-  final int? before;
-  final int? after;
-  final int? left;
-  final int? right;
-  final int? up;
-  final int? down;
-
-  int? targetForKey(LogicalKeyboardKey key) => switch (key) {
-        LogicalKeyboardKey.arrowLeft => left,
-        LogicalKeyboardKey.arrowRight => right,
-        LogicalKeyboardKey.arrowUp => up,
-        LogicalKeyboardKey.arrowDown => down,
-        _ => null,
-      };
+  loading,
 }
 
 class _SlotReorderAction {
@@ -1154,9 +1128,7 @@ class _SlotColumn extends StatelessWidget {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(2),
                         child: LinearProgressIndicator(
-                          key: Key(
-                            'home-slot-${index + 1}-reorder-progress',
-                          ),
+                          key: Key('home-slot-${index + 1}-reorder-progress'),
                           value: MediaQuery.disableAnimationsOf(context)
                               ? 1
                               : null,
@@ -1296,10 +1268,7 @@ class _SoftPulseCircleState extends State<_SoftPulseCircle>
     return FadeTransition(
       opacity: _controller,
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: widget.color,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
       ),
     );
   }
