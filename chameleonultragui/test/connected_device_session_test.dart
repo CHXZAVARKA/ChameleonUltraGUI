@@ -1,8 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:chameleonultragui/bridge/chameleon.dart';
-import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
@@ -12,6 +9,8 @@ import 'package:logger/logger.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 // ignore: depend_on_referenced_packages
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
+
+import 'support/connected_device_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -48,8 +47,7 @@ void main() {
       fixture.appState.changesMade();
     },
     'connector replacement': (fixture) {
-      fixture.appState.connector = _TestSerial(log: fixture.logger)
-        ..connected = true;
+      fixture.appState.connector = TestSerial(log: fixture.logger);
     },
     'communicator replacement': (fixture) {
       fixture.appState.communicator = ChameleonCommunicator(
@@ -167,8 +165,7 @@ void main() {
     final outcome = await _runQueuedSessionBound(
       fixture,
       beforeLease: () {
-        fixture.appState.connector = _TestSerial(log: fixture.logger)
-          ..connected = true;
+        fixture.appState.connector = TestSerial(log: fixture.logger);
       },
     );
 
@@ -307,24 +304,18 @@ void main() {
 
 typedef _Fixture = ({
   ChameleonGUIState appState,
-  _TestSerial connector,
+  TestSerial connector,
   ChameleonCommunicator communicator,
   Logger logger,
 });
 
 _Fixture _connectedAppState() {
-  final logger = Logger(output: MemoryOutput());
-  final connector = _TestSerial(log: logger)..connected = true;
-  final communicator = ChameleonCommunicator(logger, port: connector);
-  final appState = ChameleonGUIState(SharedPreferencesProvider())
-    ..log = logger
-    ..connector = connector
-    ..communicator = communicator;
+  final harness = connectedDeviceSessionHarness();
   return (
-    appState: appState,
-    connector: connector,
-    communicator: communicator,
-    logger: logger,
+    appState: harness.appState,
+    connector: harness.serial,
+    communicator: harness.communicator,
+    logger: harness.logger,
   );
 }
 
@@ -344,7 +335,7 @@ Future<({SessionBoundRfResult<int> result, bool callbackRan})>
     _runQueuedSessionBound(
   ({
     ChameleonGUIState appState,
-    _TestSerial connector,
+    TestSerial connector,
     ChameleonCommunicator communicator,
     Logger logger,
   }) fixture, {
@@ -365,22 +356,4 @@ Future<({SessionBoundRfResult<int> result, bool callbackRan})>
   await blockingOperation;
 
   return (result: await queued, callbackRan: callbackRan);
-}
-
-class _TestSerial extends AbstractSerial {
-  _TestSerial({required super.log}) {
-    connectionType = ConnectionType.usb;
-  }
-
-  @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => [];
-
-  @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
-
-  @override
-  bool isManualConnectionSupported() => false;
-
-  @override
-  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }

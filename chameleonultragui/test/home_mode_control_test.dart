@@ -1,12 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
-import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-
+import 'support/connected_device_test_harness.dart';
 import 'support/firmware_catalog_stub.dart';
-import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -14,8 +10,6 @@ import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('Home shows the confirmed device mode in a segmented control',
@@ -23,7 +17,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(
@@ -47,7 +41,7 @@ void main() {
       _ModeCommunicator(initialReaderMode: false),
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     var control = _modeControl(tester);
@@ -85,7 +79,7 @@ void main() {
       ..nextModeSetGate = switchGate;
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator.events.clear();
 
@@ -125,7 +119,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator
       ..events.clear()
@@ -175,7 +169,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator
       ..events.clear()
@@ -218,7 +212,7 @@ void main() {
       ]);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, isEmpty);
@@ -242,14 +236,14 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
@@ -263,7 +257,7 @@ void main() {
       ..nextModeSetError = StateError('command failed');
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator.events.clear();
 
@@ -284,7 +278,7 @@ void main() {
       ..nextModeSetError = StateError('transport lost the response');
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator.events.clear();
 
@@ -302,7 +296,7 @@ void main() {
       ..ignoreModeSets = true;
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator.events.clear();
 
@@ -319,7 +313,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator
       ..events.clear()
@@ -341,7 +335,7 @@ void main() {
       device: ChameleonDevice.lite,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     final control = _modeControl(tester);
@@ -370,7 +364,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(communicator.modeReads, 1);
 
@@ -396,7 +390,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     tester.binding.drawFrame();
     await tester.pump();
     tester.binding.drawFrame();
@@ -420,7 +414,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -432,7 +426,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     final foregroundGate = Completer<void>();
     final foregroundStarted = Completer<void>();
@@ -466,7 +460,7 @@ void main() {
     });
     await foregroundStarted.future;
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     expect(communicator.modeReads, 0);
     expect(_modeControl(tester).selected, isEmpty);
@@ -492,7 +486,7 @@ void main() {
       ..nextModeSetGate = modeWriteGate;
     final appState = _connectedState(oldCommunicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     oldCommunicator.events.clear();
 
@@ -528,7 +522,7 @@ void main() {
     final oldCommunicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(oldCommunicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     final oldReadGate = Completer<void>();
     oldCommunicator.nextModeReadGate = oldReadGate;
@@ -558,7 +552,7 @@ void main() {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     communicator.events.clear();
 
@@ -583,42 +577,18 @@ SegmentedButton<ConnectedDeviceMode> _modeControl(WidgetTester tester) =>
       ),
     );
 
-Future<void> _pumpHome(
-  WidgetTester tester,
-  ChameleonGUIState appState,
-) async {
-  SharedPreferences.setMockInitialValues({});
-  await appState.sharedPreferencesProvider.load();
-  await tester.pumpWidget(
-    ChangeNotifierProvider<ChameleonGUIState>.value(
-      value: appState,
-      child: MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: const HomePage(),
-      ),
-    ),
-  );
-}
-
 ChameleonGUIState _connectedState(
   _ModeCommunicator communicator, {
   ChameleonDevice device = ChameleonDevice.ultra,
 }) {
-  final serial = _TestSerial(log: Logger())
-    ..connected = true
-    ..device = device
-    ..connectionType = ConnectionType.usb
-    ..portName = 'mode-test-device'
-    ..activeDevicePort = 'mode-test-port';
-  return ChameleonGUIState(
-    SharedPreferencesProvider(),
+  return ConnectedDeviceTestHarness(
+    communicator: communicator,
     firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    device: device,
+    portName: 'mode-test-device',
+    activeDevicePort: 'mode-test-port',
   )
-    ..connector = serial
-    ..communicator = communicator
-    ..log = Logger();
+      .appState;
 }
 
 void _replaceConnection(
@@ -626,12 +596,11 @@ void _replaceConnection(
   _ModeCommunicator communicator,
 ) {
   appState
-    ..connector = (_TestSerial(log: Logger())
-      ..connected = true
-      ..device = ChameleonDevice.ultra
-      ..connectionType = ConnectionType.usb
-      ..portName = 'replacement-mode-device'
-      ..activeDevicePort = 'replacement-mode-port')
+    ..connector = TestSerial(
+      log: Logger(),
+      portName: 'replacement-mode-device',
+      activeDevicePort: 'replacement-mode-port',
+    )
     ..communicator = communicator;
 }
 
@@ -727,20 +696,4 @@ class _ModeCommunicator extends ChameleonCommunicator {
   @override
   Future<List<int>> getDeviceCapabilities() async =>
       [ChameleonCommand.setIdteckEmulatorID.value];
-}
-
-class _TestSerial extends AbstractSerial {
-  _TestSerial({required super.log});
-
-  @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [];
-
-  @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
-
-  @override
-  bool isManualConnectionSupported() => false;
-
-  @override
-  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }

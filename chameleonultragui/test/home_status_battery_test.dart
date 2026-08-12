@@ -1,20 +1,12 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:chameleonultragui/bridge/chameleon.dart';
-import 'package:chameleonultragui/connector/serial_abstract.dart';
-import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
-import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-
+import 'support/connected_device_test_harness.dart';
 import 'support/firmware_catalog_stub.dart';
 
 void main() {
@@ -23,7 +15,7 @@ void main() {
     final communicator = _BatteryCommunicator.pending();
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(find.text('Chameleon Ultra'), findsOneWidget);
@@ -38,7 +30,7 @@ void main() {
     final communicator = _BatteryCommunicator.pending();
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -55,9 +47,9 @@ void main() {
       (tester) async {
     final communicator = _BatteryCommunicator.failingLegacyStatus();
     final appState = _connectedState(communicator);
-    final serial = appState.connector! as _TestSerial;
+    final serial = appState.connector! as TestSerial;
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(find.text('Chameleon Ultra'), findsOneWidget);
@@ -81,7 +73,7 @@ void main() {
     ]);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(find.text('61%'), findsOneWidget);
@@ -119,7 +111,7 @@ void main() {
       ..nextSlotTypesGate = slotGate;
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(communicator.slotTypeReads, 1);
@@ -143,7 +135,7 @@ void main() {
     );
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump();
 
@@ -163,7 +155,7 @@ void main() {
       );
       final appState = _connectedState(communicator);
 
-      await _pumpHome(tester, appState, locale: const Locale('es'));
+      await pumpHome(tester, appState, locale: const Locale('es'));
       await tester.pump();
 
       expect(
@@ -192,9 +184,9 @@ void main() {
       (tester) async {
     final communicator = _BatteryCommunicator.failing();
     final appState = _connectedState(communicator);
-    final serial = appState.connector! as _TestSerial;
+    final serial = appState.connector! as TestSerial;
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(find.text('--%'), findsOneWidget);
@@ -213,7 +205,7 @@ void main() {
     ]);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     expect(communicator.batteryReads, 1);
 
@@ -239,7 +231,7 @@ void main() {
     final oldCommunicator = _BatteryCommunicator.pending();
     final appState = _connectedState(oldCommunicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     final newCommunicator = _BatteryCommunicator.withValues([
@@ -266,11 +258,11 @@ void main() {
       (tester) async {
     final communicator = _BatteryCommunicator.pending();
     final appState = _connectedState(communicator);
-    final serial = appState.connector! as _TestSerial;
+    final serial = appState.connector! as TestSerial;
     final disconnectGate = Completer<void>();
     serial.disconnectGate = disconnectGate;
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     final disposedStatus = appState.connectedDeviceStatus!;
 
@@ -292,9 +284,9 @@ void main() {
       (tester) async {
     final communicator = _BatteryCommunicator.pending();
     final appState = _connectedState(communicator);
-    final serial = appState.connector! as _TestSerial;
+    final serial = appState.connector! as TestSerial;
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     final disposedStatus = appState.connectedDeviceStatus!;
     expect(communicator.batteryReads, 1);
@@ -320,7 +312,7 @@ void main() {
     ]);
     final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     expect(communicator.batteryReads, 1);
 
@@ -347,7 +339,7 @@ void main() {
           BatteryCharge(percent: percent, voltage: 3800),
         ]),
       );
-      await _pumpHome(tester, appState, theme: theme);
+      await pumpHome(tester, appState, theme: theme);
       await tester.pump();
 
       final label = tester.widget<Text>(find.text('$percent%'));
@@ -356,56 +348,27 @@ void main() {
   });
 }
 
-Future<void> _pumpHome(
-  WidgetTester tester,
-  ChameleonGUIState appState, {
-  ThemeData? theme,
-  Locale locale = const Locale('en'),
-}) async {
-  SharedPreferences.setMockInitialValues({});
-  await appState.sharedPreferencesProvider.load();
-  await tester.pumpWidget(
-    ChangeNotifierProvider<ChameleonGUIState>.value(
-      value: appState,
-      child: MaterialApp(
-        theme: theme,
-        locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: const HomePage(),
-      ),
-    ),
-  );
-}
-
 void _replaceConnection(
   ChameleonGUIState appState,
   ChameleonCommunicator communicator,
 ) {
   appState
-    ..connector = (_TestSerial(log: Logger())
-      ..connected = true
-      ..device = ChameleonDevice.ultra
-      ..connectionType = ConnectionType.usb
-      ..portName = 'replacement-port'
-      ..activeDevicePort = 'replacement')
+    ..connector = TestSerial(
+      log: Logger(),
+      portName: 'replacement-port',
+      activeDevicePort: 'replacement',
+    )
     ..communicator = communicator;
 }
 
 ChameleonGUIState _connectedState(ChameleonCommunicator communicator) {
-  final serial = _TestSerial(log: Logger())
-    ..connected = true
-    ..device = ChameleonDevice.ultra
-    ..connectionType = ConnectionType.usb
-    ..portName = 'USB device with a very long port name'
-    ..activeDevicePort = 'test-port';
-  return ChameleonGUIState(
-    SharedPreferencesProvider(),
+  return ConnectedDeviceTestHarness(
+    communicator: communicator,
     firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    portName: 'USB device with a very long port name',
+    activeDevicePort: 'test-port',
   )
-    ..connector = serial
-    ..communicator = communicator
-    ..log = Logger();
+      .appState;
 }
 
 class _BatteryCommunicator extends ChameleonCommunicator {
@@ -516,31 +479,4 @@ class _BatteryCommunicator extends ChameleonCommunicator {
 
   @override
   Future<int> getActiveSlot() async => 0;
-}
-
-class _TestSerial extends AbstractSerial {
-  _TestSerial({required super.log});
-
-  int disconnects = 0;
-  Completer<void>? disconnectGate;
-
-  @override
-  Future<bool> performDisconnect() async {
-    disconnects++;
-    await disconnectGate?.future;
-    resetConnectionState();
-    return true;
-  }
-
-  @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [];
-
-  @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
-
-  @override
-  bool isManualConnectionSupported() => false;
-
-  @override
-  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }

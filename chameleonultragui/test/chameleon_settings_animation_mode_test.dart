@@ -1,17 +1,16 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
-import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
+
+import 'support/connected_device_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -224,7 +223,7 @@ Future<
     ({
       ChameleonGUIState appState,
       _AnimationCommunicator communicator,
-      _TestSerial serial,
+      TestSerial serial,
     })> _pumpSettings(
   WidgetTester tester, {
   _AnimationCommunicator? communicator,
@@ -235,16 +234,15 @@ Future<
   final logger = Logger(output: MemoryOutput());
   addTearDown(logger.close);
   final resolvedCommunicator = communicator ?? _AnimationCommunicator();
-  final serial = _TestSerial(log: logger)
-    ..connected = true
-    ..device = device
-    ..connectionType = ConnectionType.usb
-    ..portName = 'animation-mode-test'
-    ..activeDevicePort = 'animation-mode-test';
-  final appState = ChameleonGUIState(SharedPreferencesProvider())
-    ..log = logger
-    ..connector = serial
-    ..communicator = resolvedCommunicator;
+  final harness = ConnectedDeviceTestHarness(
+    communicator: resolvedCommunicator,
+    logger: logger,
+    device: device,
+    portName: 'animation-mode-test',
+    activeDevicePort: 'animation-mode-test',
+  );
+  final appState = harness.appState;
+  final serial = harness.serial;
   addTearDown(appState.dispose);
 
   await tester.pumpWidget(
@@ -339,29 +337,4 @@ class _AnimationCommunicator extends ChameleonCommunicator {
     saves++;
     events.add('save');
   }
-}
-
-class _TestSerial extends AbstractSerial {
-  _TestSerial({required super.log});
-
-  int disconnects = 0;
-
-  @override
-  Future<bool> performDisconnect() async {
-    disconnects++;
-    resetConnectionState();
-    return true;
-  }
-
-  @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [];
-
-  @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
-
-  @override
-  bool isManualConnectionSupported() => false;
-
-  @override
-  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }

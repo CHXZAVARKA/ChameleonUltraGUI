@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
-import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -13,8 +9,9 @@ import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/connected_device_test_harness.dart';
 
 void main() {
   setUp(() async {
@@ -28,7 +25,7 @@ void main() {
     final catalog = _FakeFirmwareCatalog.current();
     final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
 
     expect(find.byKey(const Key('home-firmware-pill')), findsOneWidget);
@@ -56,7 +53,7 @@ void main() {
       connectionType: ConnectionType.ble,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(communicator.capabilityReads, 0);
@@ -100,7 +97,7 @@ void main() {
 
     for (final (label, communicator, catalog, color) in cases) {
       final appState = _connectedState(communicator, catalog: catalog);
-      await _pumpHome(tester, appState, theme: theme);
+      await pumpHome(tester, appState, theme: theme);
       await tester.pumpAndSettle();
 
       final text = tester.widget<Text>(
@@ -123,7 +120,7 @@ void main() {
         catalog: _FakeFirmwareCatalog.current(),
       );
 
-      await _pumpHome(tester, appState);
+      await pumpHome(tester, appState);
       await tester.pumpAndSettle();
 
       final pill = find.byKey(const Key('home-firmware-pill'));
@@ -153,7 +150,7 @@ void main() {
       catalog: _FakeFirmwareCatalog.current(),
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     final pillRect = tester.getRect(
@@ -197,7 +194,7 @@ void main() {
     ]);
     final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-firmware-pill')));
     await tester.pumpAndSettle();
@@ -261,7 +258,7 @@ void main() {
       },
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(catalog.channels, [FirmwareChannel.official]);
 
@@ -322,7 +319,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump();
     expect(catalog.channels, [FirmwareChannel.official]);
@@ -362,7 +359,7 @@ void main() {
     ]);
     final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump();
     expect(communicator.firmwareReads, 1);
@@ -402,7 +399,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(
+    await pumpHome(
       tester,
       appState,
       textScaler: const TextScaler.linear(2.5),
@@ -429,13 +426,13 @@ void main() {
     final communicator = _FirmwareCommunicator.current();
     final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(catalog.lookups, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(catalog.lookups, 1);
@@ -456,7 +453,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(find.text('Check unavailable'), findsOneWidget);
     expect(catalog.lookups, 1);
@@ -481,7 +478,7 @@ void main() {
       portName: 'Demo',
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(
@@ -515,7 +512,7 @@ void main() {
         _FirmwareCommunicator.current(),
         catalog: catalog,
       );
-      await _pumpHome(tester, appState);
+      await pumpHome(tester, appState);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('home-firmware-pill')));
       await tester.pumpAndSettle();
@@ -535,7 +532,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('firmware-compatibility-warning')),
@@ -566,7 +563,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     expect(
         find.byKey(const Key('firmware-compatibility-warning')), findsNothing);
@@ -589,7 +586,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('firmware-warning-skip')));
     await tester.pumpAndSettle();
@@ -619,7 +616,7 @@ void main() {
       },
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-firmware-pill')));
     await tester.pumpAndSettle();
@@ -651,7 +648,7 @@ void main() {
       installer: (_) async => installs++,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     final oldStatus = appState.connectedDeviceStatus!;
 
@@ -706,7 +703,7 @@ void main() {
       },
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-firmware-pill')));
     await tester.pumpAndSettle();
@@ -745,7 +742,7 @@ void main() {
       },
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pumpAndSettle();
     final oldStatus = appState.connectedDeviceStatus!;
     await tester.tap(find.byKey(const Key('home-firmware-pill')));
@@ -775,7 +772,7 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump();
     final oldStatus = appState.connectedDeviceStatus!;
@@ -814,7 +811,7 @@ void main() {
     ]);
     final appState = _connectedState(oldCommunicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
+    await pumpHome(tester, appState);
     await tester.pump();
     await tester.pump();
     expect(oldCommunicator.firmwareReads, 1);
@@ -843,32 +840,6 @@ void main() {
   });
 }
 
-Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
-    {ThemeData? theme, TextScaler? textScaler}) async {
-  SharedPreferences.setMockInitialValues({});
-  await appState.sharedPreferencesProvider.load();
-  await tester.pumpWidget(
-    ChangeNotifierProvider<ChameleonGUIState>.value(
-      value: appState,
-      child: MaterialApp(
-        theme: theme,
-        builder: textScaler == null
-            ? null
-            : (context, child) => MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    textScaler: textScaler,
-                  ),
-                  child: child!,
-                ),
-        locale: const Locale('en'),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: const HomePage(),
-      ),
-    ),
-  );
-}
-
 ChameleonGUIState _connectedState(
   ChameleonCommunicator communicator, {
   required FirmwareCatalog catalog,
@@ -880,26 +851,16 @@ ChameleonGUIState _connectedState(
     FirmwareChannel channel,
   )? channelInstaller,
 }) {
-  final serial = _TestSerial(log: Logger())
-    ..connected = true
-    ..device = ChameleonDevice.ultra
-    ..connectionType = connectionType
-    ..portName = portName
-    ..activeDevicePort = 'firmware-test-port';
-  late ChameleonGUIState appState;
-  appState = ChameleonGUIState(
-    SharedPreferencesProvider(),
+  return ConnectedDeviceTestHarness(
+    communicator: communicator,
     firmwareCatalog: catalog,
-    firmwareInstaller: channelInstaller != null
-        ? (channel) => channelInstaller(appState, channel)
-        : installer == null
-            ? null
-            : (_) => installer(appState),
+    connectionType: connectionType,
+    portName: portName,
+    activeDevicePort: 'firmware-test-port',
+    installFirmware: channelInstaller ??
+        (installer == null ? null : (appState, _) => installer(appState)),
   )
-    ..connector = serial
-    ..communicator = communicator
-    ..log = Logger();
-  return appState;
+      .appState;
 }
 
 class _FirmwareCommunicator extends ChameleonCommunicator {
@@ -1038,27 +999,10 @@ void _replaceConnection(
   ChameleonCommunicator communicator,
 ) {
   appState
-    ..connector = (_TestSerial(log: Logger())
-      ..connected = true
-      ..device = ChameleonDevice.ultra
-      ..connectionType = ConnectionType.usb
-      ..portName = 'replacement-firmware-device'
-      ..activeDevicePort = 'replacement-firmware-port')
+    ..connector = TestSerial(
+      log: Logger(),
+      portName: 'replacement-firmware-device',
+      activeDevicePort: 'replacement-firmware-port',
+    )
     ..communicator = communicator;
-}
-
-class _TestSerial extends AbstractSerial {
-  _TestSerial({required super.log});
-
-  @override
-  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [];
-
-  @override
-  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
-
-  @override
-  bool isManualConnectionSupported() => false;
-
-  @override
-  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }
