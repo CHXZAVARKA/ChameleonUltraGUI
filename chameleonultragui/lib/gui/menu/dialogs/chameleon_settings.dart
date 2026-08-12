@@ -2,6 +2,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/animation_mode_setting.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -167,26 +168,7 @@ class ChameleonSettingsState extends State<ChameleonSettings> {
                               ],
                             ))),
                     const SizedBox(height: 10),
-                    Text("${localizations.animations}:"),
-                    const SizedBox(height: 10),
-                    ToggleButtonsWrapper(
-                        items: [
-                          localizations.full,
-                          localizations.mini,
-                          localizations.none,
-                          localizations.symmetric
-                        ],
-                        selectedValue: settings.animation.value,
-                        onChange: (int index) async {
-                          var animation = getAnimationModeType(index);
-
-                          await appState.communicator!
-                              .setAnimationMode(animation);
-                          await appState.communicator!.saveSettings();
-                          settings.animation = animation;
-                          setState(() {});
-                          appState.changesMade();
-                        }),
+                    const AnimationModeSetting(),
                     ...(settings.wakeTimeSeconds != null)
                         ? [
                             const SizedBox(height: 10),

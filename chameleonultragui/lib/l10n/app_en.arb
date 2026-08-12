@@ -1069,5 +1069,21 @@
   "slot_reorder_failed": "The slot swap failed. The confirmed slot order was kept.",
   "@slot_reorder_failed": {
     "description": "Actionable error after a rejected or failed whole-slot swap"
+  },
+  "animation_mode_minimal": "Minimal",
+  "@animation_mode_minimal": {
+    "description": "Device Settings option for a reduced Chameleon LED animation mode"
+  },
+  "animation_mode_unsupported": "LED animation modes are not supported by this device firmware.",
+  "@animation_mode_unsupported": {
+    "description": "Device Settings explanation shown when the connected Chameleon firmware does not expose the commands needed to read and change LED animation modes"
+  },
+  "animation_mode_unavailable": "The LED animation mode could not be read.",
+  "@animation_mode_unavailable": {
+    "description": "Device Settings error shown when the LED animation mode cannot be read from the current Chameleon connection"
+  },
+  "animation_mode_update_failed": "The LED animation mode could not be saved or confirmed.",
+  "@animation_mode_update_failed": {
+    "description": "Device Settings error shown when changing the LED animation mode fails or the required device read-back does not confirm the requested mode"
   }
 }
