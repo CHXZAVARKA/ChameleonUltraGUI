@@ -411,6 +411,23 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
   });
 
+  testWidgets('Home mounted while inactive initializes status immediately',
+      (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final communicator = _ModeCommunicator(initialReaderMode: true);
+    final appState = _connectedState(communicator);
+
+    await _pumpHome(tester, appState);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(communicator.modeReads, 1);
+    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+  });
+
   testWidgets('mode switch waits for foreground RF ownership', (tester) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);

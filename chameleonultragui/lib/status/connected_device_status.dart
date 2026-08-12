@@ -2385,7 +2385,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get _isAppActive {
     final state = WidgetsBinding.instance.lifecycleState;
-    return state == null || state == AppLifecycleState.resumed;
+    return state == null ||
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
   }
 
   void _publish(DeviceStatusSnapshot next) {
