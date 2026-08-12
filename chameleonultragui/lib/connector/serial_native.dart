@@ -1,5 +1,3 @@
-import 'dart:isolate';
-
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
@@ -64,10 +62,11 @@ class NativeSerial extends AbstractSerial {
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async {
-    final discoveryCallback = _discoveryCallback;
-    final output = await Isolate.run(
-      () => discoveryCallback(onlyDFU),
-    );
+    // flutter_libserialport owns native FFI state that is not safe to probe
+    // from a temporary background isolate on macOS. Yield once so the loader
+    // can paint, then keep the short metadata probe on the caller isolate.
+    await Future<void>.delayed(Duration.zero);
+    final output = _discoveryCallback(onlyDFU);
     for (final chameleon in output) {
       log.d("Found Chameleon ${chameleonDeviceName(chameleon.device)}!");
     }
