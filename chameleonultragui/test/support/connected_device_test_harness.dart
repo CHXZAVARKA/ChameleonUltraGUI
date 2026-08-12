@@ -75,6 +75,7 @@ final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
       portName: portName,
       activeDevicePort: activeDevicePort,
     );
+    communicator.open(serial);
     late ChameleonGUIState state;
     state = ChameleonGUIState(
       SharedPreferencesProvider(),
@@ -98,8 +99,7 @@ final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
 ConnectedDeviceTestHarness<ChameleonCommunicator> connectedDeviceSessionHarness(
     {FirmwareCatalog firmwareCatalog = const CurrentFirmwareCatalogStub()}) {
   final logger = Logger(output: MemoryOutput());
-  final serial = TestSerial(log: logger);
-  final communicator = ChameleonCommunicator(logger, port: serial);
+  final communicator = ChameleonCommunicator(logger);
   return ConnectedDeviceTestHarness(
     communicator: communicator,
     firmwareCatalog: firmwareCatalog,
