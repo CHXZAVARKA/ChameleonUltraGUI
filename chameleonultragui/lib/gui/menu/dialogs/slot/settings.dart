@@ -259,12 +259,28 @@ class SlotSettingsState extends State<SlotSettings> {
     return Text(
       localizations.slot_backup_frequency_summary(
         frequencyName,
-        frequency.state.name,
+        _backupStateLabel(frequency.state, localizations),
         typeLabel,
         enabledLabel,
       ),
     );
   }
+
+  String _backupStateLabel(
+    SlotBackupCompleteness state,
+    AppLocalizations localizations,
+  ) =>
+      switch (state) {
+        SlotBackupCompleteness.empty => localizations.slot_backup_state_empty,
+        SlotBackupCompleteness.complete =>
+          localizations.slot_backup_state_complete,
+        SlotBackupCompleteness.partial =>
+          localizations.slot_backup_state_partial,
+        SlotBackupCompleteness.unavailable =>
+          localizations.slot_backup_state_unavailable,
+        SlotBackupCompleteness.unsupported =>
+          localizations.slot_backup_state_unsupported,
+      };
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(

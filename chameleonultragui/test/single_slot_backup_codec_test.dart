@@ -9,6 +9,56 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('single-slot backup codec', () {
+    test('validates one frequency record without a dummy backup envelope', () {
+      final valid = SlotFrequencyBackup.complete(
+        frequency: TagFrequency.hf,
+        type: TagType.mifareMini,
+        enabled: true,
+        name: 'Office',
+        payload: SlotCardPayload(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 9,
+          atqa: Uint8List.fromList([0, 4]),
+          data: List.generate(20, (_) => Uint8List(16)),
+          emulator: const SlotEmulatorMetadata(
+            detectionEnabled: true,
+            gen1aEnabled: false,
+            gen2OrMagicEnabled: true,
+            useFirstBlockCollision: true,
+            writeMode: MifareWriteMode.shadow,
+            prngType: Mf1PrngType.weak,
+          ),
+        ),
+      );
+      final invalid = SlotFrequencyBackup.complete(
+        frequency: TagFrequency.hf,
+        type: TagType.mifareMini,
+        enabled: true,
+        name: 'Office',
+        payload: SlotCardPayload(
+          uid: Uint8List.fromList([1, 2, 3, 4]),
+          sak: 9,
+          atqa: Uint8List.fromList([0, 4]),
+          data: List.generate(19, (_) => Uint8List(16)),
+          emulator: const SlotEmulatorMetadata(
+            detectionEnabled: true,
+            gen1aEnabled: false,
+            gen2OrMagicEnabled: true,
+            useFirstBlockCollision: true,
+            writeMode: MifareWriteMode.shadow,
+            prngType: Mf1PrngType.weak,
+          ),
+        ),
+      );
+
+      expect(() => SingleSlotBackupCodec.validateFrequency(valid),
+          returnsNormally);
+      expect(
+        () => SingleSlotBackupCodec.validateFrequency(invalid),
+        throwsFormatException,
+      );
+    });
+
     test('round-trips a complete HF and LF bundle deterministically', () {
       final backup = SingleSlotBackup(
         sourceDevice: ChameleonDevice.ultra,

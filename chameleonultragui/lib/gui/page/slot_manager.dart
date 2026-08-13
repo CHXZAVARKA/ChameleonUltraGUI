@@ -2,8 +2,6 @@ import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/helpers/slot_payload.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -64,14 +62,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     if (status == null) {
       return;
     }
-    final supported = isMifareClassic(card.tag) ||
-        isEM410X(card.tag) ||
-        card.tag == TagType.hidProx ||
-        card.tag == TagType.viking ||
-        card.tag == TagType.pac ||
-        card.tag == TagType.ioProx ||
-        card.tag == TagType.idteck ||
-        isMifareUltralight(card.tag);
+    final supported = SlotPayloadWriter.supports(card.tag);
     close(context, card.name);
     if (!supported) {
       appState.log!.e("Can't write this card type yet.");

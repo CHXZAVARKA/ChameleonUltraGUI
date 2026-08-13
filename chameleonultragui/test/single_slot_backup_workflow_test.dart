@@ -98,6 +98,16 @@ void main() {
         find.textContaining('Restore source slot 1 into slot 4?'),
         findsOneWidget,
       );
+      expect(
+        find.textContaining('HF: Empty, Empty, Disabled'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('LF: Complete, EM410X, Enabled'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('HF: empty'), findsNothing);
+      expect(find.textContaining('LF: complete'), findsNothing);
       expect(communicator.events, isEmpty);
 
       await tester.tap(find.byKey(const Key('slot-backup-confirm-restore')));
@@ -162,6 +172,12 @@ void main() {
             'classic:0:128',
             'classic:8:128',
             'classic:16:64',
+            'classic-detection:true',
+            'classic-gen1a:false',
+            'classic-gen2:true',
+            'classic-block0-collision:true',
+            'classic-write-mode:shadow',
+            'classic-prng:weak',
             'name:5:hf:Office',
             'enable:5:lf:false',
             'type:5:em410X',
@@ -213,6 +229,14 @@ void main() {
       expect(communicator.ultralightPagesWritten, 20);
       expect(communicator.events, contains('ultralight-version:010203'));
       expect(communicator.events, contains('ultralight-signature:040506'));
+      expect(
+        communicator.events,
+        containsAllInOrder([
+          'ultralight-magic:true',
+          'ultralight-detection:true',
+          'ultralight-write-mode:deceive',
+        ]),
+      );
     });
 
     test('short Classic payload is never labeled complete', () async {
@@ -321,6 +345,14 @@ void main() {
           'ultralight-counter:0:1:true',
           'ultralight-counter:1:2:true',
           'ultralight-counter:2:3:true',
+        ]),
+      );
+      expect(
+        communicator.events,
+        containsAllInOrder([
+          'ultralight-magic:true',
+          'ultralight-detection:true',
+          'ultralight-write-mode:deceive',
         ]),
       );
     });

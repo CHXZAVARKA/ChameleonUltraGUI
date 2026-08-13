@@ -183,6 +183,10 @@ class SingleSlotBackup {
 }
 
 abstract final class SingleSlotBackupCodec {
+  static void validateFrequency(SlotFrequencyBackup frequency) {
+    _validateFrequency(frequency);
+  }
+
   static String encode(SingleSlotBackup backup) {
     _validateEnvelope(backup);
     return jsonEncode({

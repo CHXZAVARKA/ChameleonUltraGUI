@@ -1143,6 +1143,26 @@
       "target": {"type": "int", "example": "3"}
     }
   },
+  "slot_backup_state_empty": "Empty",
+  "@slot_backup_state_empty": {
+    "description": "Completeness state for an empty frequency in a slot backup"
+  },
+  "slot_backup_state_complete": "Complete",
+  "@slot_backup_state_complete": {
+    "description": "Completeness state for a complete frequency in a slot backup"
+  },
+  "slot_backup_state_partial": "Partial",
+  "@slot_backup_state_partial": {
+    "description": "Completeness state for a partially captured frequency in a slot backup"
+  },
+  "slot_backup_state_unavailable": "Unavailable",
+  "@slot_backup_state_unavailable": {
+    "description": "Completeness state for an unavailable frequency in a slot backup"
+  },
+  "slot_backup_state_unsupported": "Unsupported",
+  "@slot_backup_state_unsupported": {
+    "description": "Completeness state for an unsupported frequency in a slot backup"
+  },
   "slot_backup_frequency_summary": "{frequency}: {state}, {type}, {enabled}",
   "@slot_backup_frequency_summary": {
     "description": "Frequency summary in the single-slot restore preview",

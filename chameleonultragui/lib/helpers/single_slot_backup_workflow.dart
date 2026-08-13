@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -400,37 +399,13 @@ class SingleSlotBackupWorkflow {
   bool _payloadIsComplete(TagType type, SlotCardPayload payload) {
     try {
       final frequency = chameleonTagToFrequency(type);
-      SingleSlotBackupCodec.encode(
-        SingleSlotBackup(
-          sourceDevice: ChameleonDevice.ultra,
-          sourcePosition: 0,
-          createdAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-          hf: frequency == TagFrequency.hf
-              ? SlotFrequencyBackup.complete(
-                  frequency: frequency,
-                  type: type,
-                  enabled: true,
-                  name: '',
-                  payload: payload,
-                )
-              : SlotFrequencyBackup.empty(
-                  frequency: TagFrequency.hf,
-                  enabled: false,
-                  name: '',
-                ),
-          lf: frequency == TagFrequency.lf
-              ? SlotFrequencyBackup.complete(
-                  frequency: frequency,
-                  type: type,
-                  enabled: true,
-                  name: '',
-                  payload: payload,
-                )
-              : SlotFrequencyBackup.empty(
-                  frequency: TagFrequency.lf,
-                  enabled: false,
-                  name: '',
-                ),
+      SingleSlotBackupCodec.validateFrequency(
+        SlotFrequencyBackup.complete(
+          frequency: frequency,
+          type: type,
+          enabled: true,
+          name: '',
+          payload: payload,
         ),
       );
       return true;
