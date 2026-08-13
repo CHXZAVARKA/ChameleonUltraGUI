@@ -505,27 +505,32 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                 LinearProgressIndicator(value: backupProgress.fraction),
               if (backupProgress.positions.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: backupProgress.positions
-                      .map(
-                        (position) => Chip(
-                          key: Key(
-                            'device-backup-progress-position-${position.slot.sourcePosition}',
-                          ),
-                          label: Text(
-                            localizations.device_backup_progress_position(
-                              position.slot.sourcePosition + 1,
-                              _captureStateLabel(
-                                position.state,
-                                localizations,
+                SingleChildScrollView(
+                  key: const Key('device-backup-progress-results'),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: backupProgress.positions
+                        .map(
+                          (position) => Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 8),
+                            child: Chip(
+                              key: Key(
+                                'device-backup-progress-position-${position.slot.sourcePosition}',
+                              ),
+                              label: Text(
+                                localizations.device_backup_progress_position(
+                                  position.slot.sourcePosition + 1,
+                                  _captureStateLabel(
+                                    position.state,
+                                    localizations,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      )
-                      .toList(),
+                        )
+                        .toList(),
+                  ),
                 ),
               ],
             ],

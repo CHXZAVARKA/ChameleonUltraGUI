@@ -156,7 +156,7 @@ void main() {
     });
 
     testWidgets(
-        'narrow large-text screen-reader reduced-motion progress is static and reachable',
+        'slot 8 progress remains reachable on a narrow large-text reduced-motion screen',
         (tester) async {
       tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1;
@@ -169,7 +169,7 @@ void main() {
         }
       });
       final communicator = _UiBackupCommunicator(
-        holdActivationAt: 1,
+        holdActivationAt: 7,
         activationGate: release,
       );
       final fixture = ConnectedDeviceTestHarness(
@@ -196,9 +196,42 @@ void main() {
       );
       expect(
         find.bySemanticsLabel(
-          'Backing up slot 2 of 8; 1 processed; 1 confirmed',
+          'Backing up slot 8 of 8; 7 processed; 7 confirmed',
         ),
         findsOneWidget,
+      );
+      for (var position = 0; position < 7; position++) {
+        expect(
+          find.byKey(Key('device-backup-progress-position-$position')),
+          findsOneWidget,
+        );
+      }
+      final resultViewport = tester.getRect(
+        find.byKey(const Key('device-backup-progress-results')),
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('device-backup-progress-position-6')),
+      );
+      await tester.pump();
+      expect(
+        resultViewport.overlaps(
+          tester.getRect(
+            find.byKey(const Key('device-backup-progress-position-6')),
+          ),
+        ),
+        isTrue,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('device-backup-progress-position-0')),
+      );
+      await tester.pump();
+      expect(
+        resultViewport.overlaps(
+          tester.getRect(
+            find.byKey(const Key('device-backup-progress-position-0')),
+          ),
+        ),
+        isTrue,
       );
       expect(
         tester.getSize(find.byKey(const Key('device-backup-progress'))).width,
