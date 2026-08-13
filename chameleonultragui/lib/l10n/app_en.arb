@@ -1193,25 +1193,43 @@
   "@backup_all_slots": {
     "description": "Slot Manager action that creates one portable backup of the complete device"
   },
-  "device_backup_progress": "Backing up slot {position} of 8. {completed} positions confirmed.",
+  "device_backup_progress": "Backing up slot {position} of 8. {processed} processed, {confirmed} confirmed.",
   "@device_backup_progress": {
     "description": "Visible progress while a complete device backup is captured",
     "placeholders": {
       "position": {"type": "int", "example": "3"},
-      "completed": {"type": "int", "example": "2"}
+      "processed": {"type": "int", "example": "2"},
+      "confirmed": {"type": "int", "example": "1"}
     }
   },
-  "device_backup_progress_semantics": "Backing up slot {position} of 8; {completed} positions confirmed",
+  "device_backup_progress_semantics": "Backing up slot {position} of 8; {processed} processed; {confirmed} confirmed",
   "@device_backup_progress_semantics": {
     "description": "Screen-reader announcement for complete device backup progress",
     "placeholders": {
       "position": {"type": "int", "example": "3"},
-      "completed": {"type": "int", "example": "2"}
+      "processed": {"type": "int", "example": "2"},
+      "confirmed": {"type": "int", "example": "1"}
+    }
+  },
+  "device_backup_progress_complete": "Capture complete. {processed} processed, {confirmed} confirmed.",
+  "@device_backup_progress_complete": {
+    "description": "Visible completed capture summary before the full-device backup report opens",
+    "placeholders": {
+      "processed": {"type": "int", "example": "8"},
+      "confirmed": {"type": "int", "example": "7"}
+    }
+  },
+  "device_backup_progress_complete_semantics": "Capture complete; {processed} processed; {confirmed} confirmed",
+  "@device_backup_progress_complete_semantics": {
+    "description": "Screen-reader announcement after all full-device backup positions were processed",
+    "placeholders": {
+      "processed": {"type": "int", "example": "8"},
+      "confirmed": {"type": "int", "example": "7"}
     }
   },
   "device_backup_progress_position": "Slot {position}: {state}",
   "@device_backup_progress_position": {
-    "description": "Previously confirmed position shown while device backup continues",
+    "description": "Previously processed position shown while device backup continues",
     "placeholders": {
       "position": {"type": "int", "example": "2"},
       "state": {"type": "String", "example": "Complete"}

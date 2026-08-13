@@ -89,6 +89,28 @@ void main() {
       expect(files.saved, isNull);
     });
 
+    testWidgets('reports positions skipped because capture metadata was absent',
+        (tester) async {
+      final fixture = ConnectedDeviceTestHarness(
+        communicator: _UiBackupCommunicator(metadataPositionCount: 7),
+        slotBackupFiles: _UiBackupFiles(),
+      );
+      addTearDown(fixture.appState.dispose);
+      await _pumpSlotManager(tester, fixture.appState);
+
+      await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Slot 8: Skipped'), findsOneWidget);
+      expect(find.text('HF: Skipped; LF: Skipped'), findsOneWidget);
+      expect(
+        find.byKey(const Key('device-backup-partial-warning')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('device-backup-cancel-save')));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets(
         'progress keeps the grid and earlier position result visible and semantic',
         (tester) async {
@@ -117,7 +139,7 @@ void main() {
       expect(find.text('Slot 1'), findsWidgets);
       expect(
         find.bySemanticsLabel(
-          'Backing up slot 2 of 8; 1 positions confirmed',
+          'Backing up slot 2 of 8; 1 processed; 1 confirmed',
         ),
         findsOneWidget,
       );
@@ -134,17 +156,28 @@ void main() {
     });
 
     testWidgets(
-        'narrow large-text reduced-motion layout keeps actions reachable',
+        'narrow large-text screen-reader reduced-motion progress is static and reachable',
         (tester) async {
       tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      final release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) {
+          release.complete();
+        }
+      });
+      final communicator = _UiBackupCommunicator(
+        holdActivationAt: 1,
+        activationGate: release,
+      );
       final fixture = ConnectedDeviceTestHarness(
-        communicator: _UiBackupCommunicator(),
+        communicator: communicator,
         slotBackupFiles: _UiBackupFiles(),
       );
       addTearDown(fixture.appState.dispose);
+      final semantics = tester.ensureSemantics();
       await _pumpSlotManager(
         tester,
         fixture.appState,
@@ -153,9 +186,29 @@ void main() {
       );
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
+      await communicator.heldActivationStarted.future;
+      await tester.pump();
+
+      expect(find.byKey(const Key('device-backup-progress')), findsOneWidget);
+      expect(
+        find.byKey(const Key('device-backup-static-progress')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          'Backing up slot 2 of 8; 1 processed; 1 confirmed',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSize(find.byKey(const Key('device-backup-progress'))).width,
+        lessThanOrEqualTo(320),
+      );
+      expect(tester.takeException(), isNull);
+
+      release.complete();
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
       expect(
           find.byKey(const Key('device-backup-confirm-save')), findsOneWidget);
       await tester.ensureVisible(
@@ -164,6 +217,7 @@ void main() {
       await tester.tap(find.byKey(const Key('device-backup-cancel-save')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      semantics.dispose();
     });
 
     testWidgets('picker cancellation returns without any new device command',
@@ -269,16 +323,20 @@ final class _UiBackupTarget implements SlotBackupSaveTarget {
   }
 }
 
+// This UI fake exposes pump-safe activation gates. The workflow fake instead
+// records the wider command contract and would couple unrelated scenarios.
 final class _UiBackupCommunicator extends ChameleonCommunicator {
   _UiBackupCommunicator({
     this.failActivationAt,
     this.holdActivationAt,
     this.activationGate,
+    this.metadataPositionCount = 8,
   }) : super(Logger(output: MemoryOutput()));
 
   final int? failActivationAt;
   final int? holdActivationAt;
   final Completer<void>? activationGate;
+  final int metadataPositionCount;
   final Completer<void> heldActivationStarted = Completer<void>();
   final List<String> events = [];
 
@@ -326,20 +384,20 @@ final class _UiBackupCommunicator extends ChameleonCommunicator {
   @override
   Future<List<SlotTypes>> getSlotTagTypes() async {
     events.add('types');
-    return List.generate(8, (_) => SlotTypes());
+    return List.generate(metadataPositionCount, (_) => SlotTypes());
   }
 
   @override
   Future<List<EnabledSlotInfo>> getEnabledSlots() async {
     events.add('enabled');
-    return List.generate(8, (_) => EnabledSlotInfo());
+    return List.generate(metadataPositionCount, (_) => EnabledSlotInfo());
   }
 
   @override
   Future<List<SlotNames>> getSlotTagNames() async {
     events.add('names');
-    return List.generate(
-        8, (index) => SlotNames(hf: 'HF $index', lf: 'LF $index'));
+    return List.generate(metadataPositionCount,
+        (index) => SlotNames(hf: 'HF $index', lf: 'LF $index'));
   }
 
   @override

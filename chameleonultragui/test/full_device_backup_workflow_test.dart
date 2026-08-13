@@ -53,7 +53,7 @@ void main() {
           backup.preferences.buttonBLongPress.value, ButtonConfig.chargeStatus);
       expect(backup.preferences.sleepTimeoutSeconds.value, 45);
       expect(backup.hasLimitations, isFalse);
-      expect(progress.last.completedPositions, 8);
+      expect(progress.last.processedPositions, 8);
       expect(progress.last.fraction, 1);
       expect(
         communicator.events.where((event) => event == 'types'),
@@ -104,6 +104,47 @@ void main() {
           BackupFactState.unsupported);
       expect(communicator.events, isNot(contains('sleep')));
       expect(backup.hasLimitations, isTrue);
+    });
+
+    test('marks positions skipped when no metadata exists to capture them',
+        () async {
+      final communicator = _FullBackupCommunicator(metadataPositionCount: 7);
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+
+      final result = await fixture.appState.fullDeviceBackupWorkflow.capture(
+        status: fixture.appState.connectedDeviceStatus!,
+      );
+
+      final skipped = result.backup!.positions[7];
+      expect(skipped.state, FullDeviceCaptureState.skipped);
+      expect(skipped.hfState, FullDeviceCaptureState.skipped);
+      expect(skipped.lfState, FullDeviceCaptureState.skipped);
+      expect(communicator.events, isNot(contains('activate:7')));
+      expect(result.backup!.hasLimitations, isTrue);
+    });
+
+    test('progress separates processed and confirmed positions', () async {
+      final communicator = _FullBackupCommunicator(failActivationAt: 1);
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+      final progress = <FullDeviceBackupProgress>[];
+
+      await fixture.appState.fullDeviceBackupWorkflow.capture(
+        status: fixture.appState.connectedDeviceStatus!,
+        onProgress: progress.add,
+      );
+
+      final afterFailure = progress.firstWhere(
+        (snapshot) => snapshot.processedPositions == 2,
+      );
+      expect(afterFailure.currentPosition, 2);
+      expect(afterFailure.confirmedPositions, 1);
+      expect(afterFailure.fraction, 0.25);
+      expect(progress.last.currentPosition, isNull);
+      expect(progress.last.processedPositions, 8);
+      expect(progress.last.confirmedPositions, 7);
+      expect(progress.last.fraction, 1);
     });
 
     test('records Lite emulator mode without an unsupported mode command',
@@ -265,11 +306,14 @@ final class _MemoryDeviceBackupTarget implements SlotBackupSaveTarget {
   }
 }
 
+// This workflow fake exposes command ordering and failure injection. It stays
+// separate from the mounted-UI fake, whose synchronization points serve pumps.
 final class _FullBackupCommunicator extends ChameleonCommunicator {
   _FullBackupCommunicator({
     this.failActivationAt,
     this.metadataGate,
     this.failModeRead = false,
+    this.metadataPositionCount = 8,
     List<int>? supportedCommands,
   })  : supportedCommands = supportedCommands ??
             [
@@ -283,6 +327,7 @@ final class _FullBackupCommunicator extends ChameleonCommunicator {
   final int? failActivationAt;
   final Completer<void>? metadataGate;
   final bool failModeRead;
+  final int metadataPositionCount;
   final List<int> supportedCommands;
   final Completer<void> metadataStarted = Completer<void>();
   final List<String> events = [];
@@ -355,20 +400,20 @@ final class _FullBackupCommunicator extends ChameleonCommunicator {
       await metadataGate?.future;
     }
     events.add('types');
-    return List.generate(8, (_) => SlotTypes());
+    return List.generate(metadataPositionCount, (_) => SlotTypes());
   }
 
   @override
   Future<List<EnabledSlotInfo>> getEnabledSlots() async {
     events.add('enabled');
-    return List.generate(8, (_) => EnabledSlotInfo());
+    return List.generate(metadataPositionCount, (_) => EnabledSlotInfo());
   }
 
   @override
   Future<List<SlotNames>> getSlotTagNames() async {
     events.add('names');
-    return List.generate(
-        8, (index) => SlotNames(hf: 'HF $index', lf: 'LF $index'));
+    return List.generate(metadataPositionCount,
+        (index) => SlotNames(hf: 'HF $index', lf: 'LF $index'));
   }
 
   @override

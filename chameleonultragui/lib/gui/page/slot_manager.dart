@@ -446,13 +446,31 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     FullDeviceBackupProgress backupProgress,
   ) {
     final localizations = AppLocalizations.of(context)!;
+    final currentPosition = backupProgress.currentPosition;
+    final progressLabel = currentPosition == null
+        ? localizations.device_backup_progress_complete(
+            backupProgress.processedPositions,
+            backupProgress.confirmedPositions,
+          )
+        : localizations.device_backup_progress(
+            currentPosition + 1,
+            backupProgress.processedPositions,
+            backupProgress.confirmedPositions,
+          );
+    final progressSemantics = currentPosition == null
+        ? localizations.device_backup_progress_complete_semantics(
+            backupProgress.processedPositions,
+            backupProgress.confirmedPositions,
+          )
+        : localizations.device_backup_progress_semantics(
+            currentPosition + 1,
+            backupProgress.processedPositions,
+            backupProgress.confirmedPositions,
+          );
     return Semantics(
       key: const Key('device-backup-progress'),
       liveRegion: true,
-      label: localizations.device_backup_progress_semantics(
-        backupProgress.currentPosition + 1,
-        backupProgress.completedPositions,
-      ),
+      label: progressSemantics,
       child: Card(
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Padding(
@@ -461,14 +479,30 @@ class SlotManagerPageState extends State<SlotManagerPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                localizations.device_backup_progress(
-                  backupProgress.currentPosition + 1,
-                  backupProgress.completedPositions,
-                ),
-              ),
+              Text(progressLabel),
               const SizedBox(height: 8),
-              LinearProgressIndicator(value: backupProgress.fraction),
+              if (MediaQuery.disableAnimationsOf(context))
+                Container(
+                  key: const Key('device-backup-static-progress'),
+                  height: 4,
+                  alignment: Alignment.centerLeft,
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: FractionallySizedBox(
+                    widthFactor: backupProgress.fraction,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                LinearProgressIndicator(value: backupProgress.fraction),
               if (backupProgress.positions.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Wrap(

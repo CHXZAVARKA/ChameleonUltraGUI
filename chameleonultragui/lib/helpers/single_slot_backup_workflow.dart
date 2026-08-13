@@ -17,6 +17,49 @@ abstract interface class SlotBackupSaveTarget {
   Future<void> write(Uint8List bytes);
 }
 
+typedef AtomicSlotBackupTemporaryWrite = Future<void> Function(
+  File file,
+  Uint8List bytes,
+);
+
+final class AtomicSlotBackupFileWriter {
+  const AtomicSlotBackupFileWriter({
+    AtomicSlotBackupTemporaryWrite? writeTemporaryFile,
+  }) : _writeTemporaryFile = writeTemporaryFile;
+
+  final AtomicSlotBackupTemporaryWrite? _writeTemporaryFile;
+
+  Future<void> write(String destinationPath, Uint8List bytes) async {
+    final destination = File(destinationPath);
+    final temporary = File(
+      path.join(
+        destination.parent.path,
+        '.${path.basename(destination.path)}.'
+        '${DateTime.now().microsecondsSinceEpoch}.tmp',
+      ),
+    );
+    try {
+      await (_writeTemporaryFile ?? _writeAndFlush)(temporary, bytes);
+      await temporary.rename(destination.path);
+    } finally {
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
+  }
+
+  static Future<void> _writeAndFlush(File file, Uint8List bytes) async {
+    await file.create(exclusive: true);
+    final handle = await file.open(mode: FileMode.writeOnly);
+    try {
+      await handle.writeFrom(bytes);
+      await handle.flush();
+    } finally {
+      await handle.close();
+    }
+  }
+}
+
 abstract interface class SlotBackupFileAdapter {
   Future<SlotBackupSaveTarget?> chooseSaveTarget(String suggestedName);
 
@@ -50,7 +93,8 @@ final class _NativeSlotBackupSaveTarget implements SlotBackupSaveTarget {
   final String path;
 
   @override
-  Future<void> write(Uint8List bytes) => File(path).writeAsBytes(bytes);
+  Future<void> write(Uint8List bytes) =>
+      const AtomicSlotBackupFileWriter().write(path, bytes);
 }
 
 enum SlotBackupExportOutcome {

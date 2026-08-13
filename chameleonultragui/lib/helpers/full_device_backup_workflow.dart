@@ -31,11 +31,13 @@ class FullDeviceBackupProgress {
     required this.positions,
   });
 
-  final int currentPosition;
+  final int? currentPosition;
   final List<FullDevicePositionBackup> positions;
 
-  int get completedPositions => positions.length;
-  double get fraction => completedPositions / 8;
+  int get processedPositions => positions.length;
+  int get confirmedPositions =>
+      positions.where((position) => position.isConfirmed).length;
+  double get fraction => processedPositions / 8;
 }
 
 class FullDeviceBackupCaptureResult {
@@ -190,7 +192,7 @@ class FullDeviceBackupWorkflow {
         }
         onProgress?.call(
           FullDeviceBackupProgress(
-            currentPosition: 7,
+            currentPosition: null,
             positions: List.unmodifiable(positions),
           ),
         );
@@ -249,7 +251,7 @@ class FullDeviceBackupWorkflow {
       final value = await mutation.run(
         (communicator) => communicator.getGitCommitHash(),
       );
-      if (_isSafeCommit(value)) {
+      if (FullDeviceBackupCodec.isSafeFirmwareCommit(value)) {
         commit = BackupFact<String>.confirmed(value);
       }
     } on SlotMutationConnectionChanged {
@@ -333,9 +335,4 @@ class FullDeviceBackupWorkflow {
       return BackupFact<T>.failed();
     }
   }
-
-  bool _isSafeCommit(String value) =>
-      value.isNotEmpty &&
-      value.length <= 96 &&
-      RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(value);
 }

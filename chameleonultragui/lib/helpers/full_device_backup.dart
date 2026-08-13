@@ -90,6 +90,8 @@ class FullDevicePositionBackup {
   final FullDeviceCaptureState hfState;
   final FullDeviceCaptureState lfState;
 
+  bool get isConfirmed => state == FullDeviceCaptureState.complete;
+
   FullDeviceCaptureState get state {
     final states = {hfState, lfState};
     if (states.contains(FullDeviceCaptureState.failed)) {
@@ -124,7 +126,7 @@ class FullDevicePositionBackup {
         SlotBackupCompleteness.partial => FullDeviceCaptureState.partial,
         SlotBackupCompleteness.unsupported =>
           FullDeviceCaptureState.unsupported,
-        SlotBackupCompleteness.unavailable => FullDeviceCaptureState.failed,
+        SlotBackupCompleteness.unavailable => FullDeviceCaptureState.skipped,
       };
 }
 
@@ -156,6 +158,12 @@ class FullDeviceBackup {
 }
 
 abstract final class FullDeviceBackupCodec {
+  static bool isSafeFirmwareCommit(Object? value) =>
+      value is String &&
+      value.isNotEmpty &&
+      value.length <= 96 &&
+      RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(value);
+
   static String encode(FullDeviceBackup backup) {
     _validate(backup);
     return jsonEncode({
@@ -438,13 +446,10 @@ abstract final class FullDeviceBackupCodec {
   }
 
   static String _safeCommit(Object? value) {
-    if (value is! String ||
-        value.isEmpty ||
-        value.length > 96 ||
-        !RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(value)) {
+    if (!isSafeFirmwareCommit(value)) {
       throw const FormatException('Invalid firmware commit');
     }
-    return value;
+    return value as String;
   }
 
   static T _enumValue<T extends Enum>(
