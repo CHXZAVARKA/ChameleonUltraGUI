@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/connector/serial_native.dart';
@@ -10,6 +11,7 @@ import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/gui/page/connect.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/pending_connection.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connection_readiness.dart';
@@ -318,6 +320,69 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a late connect error cannot disconnect a same-connector replacement session',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auto_connect_first_found': false,
+      });
+      final connectGate = Completer<void>();
+      final logger = Logger(output: MemoryOutput());
+      final selectedDevice = Chameleon(
+        port: 'ble-device-a',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+      final serial = _DelayedConnectSerial(
+        log: logger,
+        gate: connectGate,
+        selectedDevice: selectedDevice,
+      );
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      final appState = ChameleonGUIState(
+        preferences,
+        firmwareCatalog: const CurrentFirmwareCatalogStub(),
+      )
+        ..connector = serial
+        ..log = logger;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: MainPage(sharedPreferencesProvider: preferences),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Chameleon Ultra'));
+      await tester.pump();
+
+      serial
+        ..connected = true
+        ..pendingConnection = false
+        ..connectionType = ConnectionType.ble
+        ..device = ChameleonDevice.ultra
+        ..portName = 'ble-device-a'
+        ..activeDevicePort = 'ble-device-a';
+      final replacementCommunicator = _PendingProtocolCommunicator(logger);
+      appState.communicator = replacementCommunicator;
+      connectGate.completeError(StateError('late connect failure'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(serial.disconnectCalls, 0);
+      expect(serial.connected, isTrue);
+      expect(appState.communicator, same(replacementCommunicator));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      appState.dispose();
+      logger.close();
+    },
+  );
+
   test(
     'native discovery keeps FFI-bound probing on the caller isolate',
     () async {
@@ -353,6 +418,14 @@ class _DelayedConnectSerial extends EmulatorSerial {
   final Completer<bool> statusWriteGate = Completer<bool>();
   dynamic receivedSelection;
   int connectCalls = 0;
+  int disconnectCalls = 0;
+
+  @override
+  Future<bool> performDisconnect() async {
+    disconnectCalls++;
+    resetConnectionState();
+    return true;
+  }
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => [
@@ -389,6 +462,15 @@ class _DelayedConnectSerial extends EmulatorSerial {
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) =>
       statusWriteGate.future;
+}
+
+class _PendingProtocolCommunicator extends ChameleonCommunicator {
+  _PendingProtocolCommunicator(super.log);
+
+  final Completer<FirmwareVersion> protocol = Completer<FirmwareVersion>();
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() => protocol.future;
 }
 
 class _DiscoverySerial extends AbstractSerial {

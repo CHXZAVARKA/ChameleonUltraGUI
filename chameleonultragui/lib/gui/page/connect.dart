@@ -270,6 +270,7 @@ class _ConnectPageState extends State<ConnectPage> {
 
     _scanTimer?.cancel();
     final connector = appState.connector!;
+    final communicator = appState.communicator;
     final readiness = appState.connectionReadiness;
     final readinessAttempt = readiness.beginTransport(chameleonDevice.type);
     if (mounted) {
@@ -286,6 +287,7 @@ class _ConnectPageState extends State<ConnectPage> {
           .connectDiscoveredDevice(chameleonDevice)
           .timeout(readiness.timeouts.transport);
       if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
           !readiness.isCurrent(readinessAttempt)) {
         return;
       }
@@ -304,13 +306,15 @@ class _ConnectPageState extends State<ConnectPage> {
 
       appState.changesMade();
     } catch (error) {
-      connector.pendingConnection = false;
       if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
           !readiness.isCurrent(readinessAttempt)) {
         return;
       }
+      connector.pendingConnection = false;
       await connector.performDisconnect();
       if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
           !readiness.isCurrent(readinessAttempt)) {
         return;
       }

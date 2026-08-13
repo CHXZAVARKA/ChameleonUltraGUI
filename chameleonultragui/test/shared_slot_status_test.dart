@@ -1272,7 +1272,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Home and Slot Manager share one confirmed slot snapshot',
+  testWidgets('Slot Manager refreshes the confirmed Home slot snapshot',
       (tester) async {
     setTestViewport(tester, size: const Size(1200, 1400));
 
@@ -1297,10 +1297,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(communicator.slotTypeReads, 1);
-    expect(communicator.enabledSlotReads, 1);
-    expect(communicator.slotNameReads, 1);
-    expect(communicator.activeSlotReads, 1);
+    expect(communicator.slotTypeReads, 2);
+    expect(communicator.enabledSlotReads, 2);
+    expect(communicator.slotNameReads, 2);
+    expect(communicator.activeSlotReads, 2);
     final emptyHf = appState.connectedDeviceStatus!.snapshot.slots.slots[1].hf;
     expect(emptyHf.type.isConfirmed, isTrue);
     expect(emptyHf.type.value, TagType.unknown);

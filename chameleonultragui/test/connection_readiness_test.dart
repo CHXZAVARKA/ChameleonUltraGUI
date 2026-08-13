@@ -13,6 +13,7 @@ import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:chameleonultragui/status/connection_readiness.dart';
+import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
@@ -158,7 +159,7 @@ void main() {
   );
 
   testWidgets(
-    'each serialized optional facet receives its own timeout budget',
+    'a serialized timeout holds the queue until the blocker settles',
     (tester) async {
       final batteryGate = Completer<void>();
       final communicator = _SerializedReadinessCommunicator(batteryGate);
@@ -178,12 +179,17 @@ void main() {
         waitingSnapshot.battery.availability,
         BatteryAvailability.unavailable,
       );
-      expect(waitingSnapshot.mode.availability, ModeAvailability.loading);
-      expect(waitingSnapshot.slots.availability, SlotsAvailability.loading);
+      expect(waitingSnapshot.mode.availability, ModeAvailability.available);
+      expect(waitingSnapshot.slots.availability, SlotsAvailability.available);
+      expect(
+        waitingSnapshot.firmware.checkResult,
+        FirmwareCheckResult.unavailable,
+      );
       expect(
         fixture.appState.connectionReadiness.snapshot.stage,
-        ConnectionReadinessStage.loadingStatus,
+        ConnectionReadinessStage.degraded,
       );
+      expect(communicator.gitCommitCalls, 0);
 
       batteryGate.completeError(StateError('battery unavailable'));
       await _pumpFrames(tester, 16);
@@ -191,6 +197,7 @@ void main() {
       final settledSnapshot = fixture.appState.connectedDeviceStatus!.snapshot;
       expect(settledSnapshot.mode.availability, ModeAvailability.available);
       expect(settledSnapshot.slots.availability, SlotsAvailability.available);
+      expect(communicator.gitCommitCalls, 1);
       expect(
         fixture.appState.connectionReadiness.snapshot.stage,
         ConnectionReadinessStage.degraded,
@@ -200,6 +207,118 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets(
+    'a permanently hung serialized facet cannot cascade readiness timeouts',
+    (tester) async {
+      final batteryGate = Completer<void>();
+      final communicator = _SerializedReadinessCommunicator(batteryGate);
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 25));
+      await _pumpFrames(tester, 4);
+
+      final status = fixture.appState.connectedDeviceStatus!.snapshot;
+      expect(status.mode.availability, ModeAvailability.available);
+      expect(status.slots.availability, SlotsAvailability.available);
+      expect(status.battery.availability, BatteryAvailability.unavailable);
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+      expect(
+        fixture.appState.connectionReadiness.snapshot.errorCategory,
+        ConnectionReadinessErrorCategory.timeout,
+      );
+
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'foreground RF beyond the initial budget degrades without loading forever',
+    (tester) async {
+      final protocol = Completer<FirmwareVersion>();
+      final communicator = _ReadinessCommunicator(protocol: protocol.future);
+      final fixture = await _mountConnectedShell(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      final foregroundGate = Completer<void>();
+      final foregroundStarted = Completer<void>();
+      final foreground = fixture.appState.rfOperations.runForeground(() async {
+        foregroundStarted.complete();
+        await foregroundGate.future;
+      });
+      await foregroundStarted.future;
+
+      protocol.complete(_currentFirmware);
+      await tester.pump(const Duration(milliseconds: 25));
+      await _pumpFrames(tester, 3);
+
+      var status = fixture.appState.connectedDeviceStatus!.snapshot;
+      expect(status.battery.availability, BatteryAvailability.unavailable);
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+      expect(
+        fixture.appState.connectionReadiness.snapshot.errorCategory,
+        ConnectionReadinessErrorCategory.timeout,
+      );
+
+      foregroundGate.complete();
+      await foreground;
+      await _pumpFrames(tester, 12);
+
+      status = fixture.appState.connectedDeviceStatus!.snapshot;
+      expect(status.battery.availability, BatteryAvailability.available);
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.ready,
+      );
+
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('firmware channel change waits for the protocol handshake', (
+    tester,
+  ) async {
+    final protocol = Completer<FirmwareVersion>();
+    final communicator = _ReadinessCommunicator(protocol: protocol.future);
+    final fixture = await _mountConnectedShell(tester, communicator);
+    final status = fixture.appState.connectedDeviceStatus!;
+
+    final channelChange = status.setFirmwareChannel(FirmwareChannel.custom);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(status.snapshot.firmware.channel, FirmwareChannel.official);
+    expect(communicator.gitCommitCalls, 0);
+
+    protocol.complete(_currentFirmware);
+    await channelChange;
+    await _pumpFrames(tester, 12);
+
+    expect(status.snapshot.firmware.channel, FirmwareChannel.custom);
+    expect(communicator.gitCommitCalls, 1);
+
+    fixture.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'an unavailable optional facet degrades Home without hiding confirmed data',
