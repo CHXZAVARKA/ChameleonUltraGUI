@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   test('complete temporary write atomically replaces an existing backup',
@@ -11,7 +12,7 @@ void main() {
       'chameleon-atomic-backup-',
     );
     addTearDown(() => directory.delete(recursive: true));
-    final destination = File('${directory.path}/device-backup.json');
+    final destination = File(path.join(directory.path, 'device-backup.json'));
     await destination.writeAsBytes([9, 8, 7, 6], flush: true);
     final replacement = Uint8List.fromList(List.generate(64, (index) => index));
 
@@ -32,7 +33,7 @@ void main() {
       'chameleon-atomic-backup-',
     );
     addTearDown(() => directory.delete(recursive: true));
-    final destination = File('${directory.path}/device-backup.json');
+    final destination = File(path.join(directory.path, 'device-backup.json'));
     final previous = Uint8List.fromList([9, 8, 7, 6]);
     await destination.writeAsBytes(previous, flush: true);
     File? temporaryFile;
