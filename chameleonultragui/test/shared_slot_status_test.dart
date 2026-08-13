@@ -1972,7 +1972,12 @@ void main() {
         ..modeWriteStarted = modeWriteStarted;
       final appState = _connectedState(oldCommunicator);
       final oldStatus = appState.connectedDeviceStatus!;
-      await oldStatus.refreshMode();
+      await tester.pumpAndSettle();
+      expect(
+        oldStatus.snapshot.mode.availability,
+        ModeAvailability.available,
+      );
+      oldCommunicator.commandEvents.clear();
       final initialModeReads = oldCommunicator.modeReads;
       var latePublications = 0;
       oldStatus.addListener(() => latePublications++);
@@ -2004,9 +2009,9 @@ void main() {
         expect(newCommunicator.modeReads, 0);
         expect(newStatus!.snapshot.mode.availability, ModeAvailability.loading);
 
-        await newStatus.refreshMode();
+        await tester.pumpAndSettle();
 
-        expect(newCommunicator.commandEvents, isEmpty);
+        expect(newCommunicator.commandEvents, ['read-active']);
         expect(newCommunicator.modeReads, 1);
         expect(
           newStatus.snapshot.mode.confirmedMode,
@@ -2055,6 +2060,7 @@ void main() {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
+    await tester.pumpAndSettle();
     await status.refreshSlots();
     final confirmed = status.snapshot.slots;
     final mutationError = StateError('primary mutation failure');
@@ -2082,6 +2088,7 @@ void main() {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
+    await tester.pumpAndSettle();
     await status.refreshMode();
     expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
     final initialModeReads = communicator.modeReads;
@@ -2103,6 +2110,7 @@ void main() {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
+    await tester.pumpAndSettle();
     await status.refreshMode();
     await status.refreshSlots();
     expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
@@ -2203,6 +2211,7 @@ void main() {
     await tester.pumpAndSettle();
     final status = appState.connectedDeviceStatus!;
     final initialTypeReads = communicator.slotTypeReads;
+    final initialBatteryReads = communicator.batteryReads;
     final state = tester.state<SlotManagerPageState>(
       find.byType(SlotManagerPage),
     );
@@ -2217,7 +2226,7 @@ void main() {
     );
     await modeStarted.future;
     await status.refreshBattery();
-    expect(communicator.batteryReads, 0);
+    expect(communicator.batteryReads, initialBatteryReads);
 
     modeGate.complete();
     await upload;

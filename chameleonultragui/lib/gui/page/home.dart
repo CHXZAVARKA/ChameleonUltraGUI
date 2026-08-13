@@ -531,13 +531,18 @@ class _FirmwareDetailsDialog extends StatelessWidget {
                     onSelectionChanged: firmware.installing ||
                             firmware.state == FirmwareState.demo
                         ? null
-                        : (selection) {
+                        : (selection) async {
                             final channel = selection.single;
-                            context
-                                .read<ChameleonGUIState>()
-                                .sharedPreferencesProvider
-                                .setFirmwareChannel(channel);
-                            status.setFirmwareChannel(channel);
+                            final outcome =
+                                await status.setFirmwareChannel(channel);
+                            if (outcome ==
+                                    FirmwareChannelChangeOutcome.accepted &&
+                                context.mounted) {
+                              context
+                                  .read<ChameleonGUIState>()
+                                  .sharedPreferencesProvider
+                                  .setFirmwareChannel(channel);
+                            }
                           },
                   ),
                 ),

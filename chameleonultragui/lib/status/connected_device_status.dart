@@ -83,6 +83,18 @@ enum FirmwareInstallOutcome {
   connectionChanged,
 }
 
+enum FirmwareChannelChangeOutcome {
+  accepted,
+  rejected,
+  connectionChanged,
+}
+
+enum _ExternalStatusProbeGate {
+  ready,
+  settledByInitialReadiness,
+  blocked,
+}
+
 typedef FirmwareInstaller = Future<void> Function(FirmwareChannel channel);
 
 @immutable
@@ -762,6 +774,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   bool _hasPresentedHome = false;
   bool _initialStatusFinished = false;
   bool _initialStatusTimedOut = false;
+  bool _initialStatusOwnsQueue = false;
   bool _statusQueueQuarantined = false;
   bool _protocolHandshakeConfirmed = false;
   final Completer<bool> _protocolHandshakeCompletion = Completer<bool>();
@@ -783,19 +796,31 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     rfOperations: _rfOperations,
     operationGroup: _backgroundOperationGroup,
     canPublish: () => _canPublish,
+    canStartAction: () => !_foregroundActionBlocked,
     currentStatus: () => _snapshot.mode,
     publish: (mode) {
       _publish(_snapshot.copyWith(mode: mode));
     },
   );
 
-  Future<SlotReorderCapability> refreshSlotReorderCapability() async {
+  Future<SlotReorderCapability> refreshSlotReorderCapability() =>
+      _refreshSlotReorderCapabilityForStatus(initial: false);
+
+  Future<SlotReorderCapability> _refreshSlotReorderCapabilityForStatus({
+    required bool initial,
+  }) async {
     final current = _snapshot.slots.reorderCapability;
     if (current != SlotReorderCapability.unknown || !_canPublish) {
       return current;
     }
     if (!await _waitForProtocolHandshake()) {
       return _snapshot.slots.reorderCapability;
+    }
+    if (!initial) {
+      final gate = await _gateExternalStatusProbe();
+      if (gate != _ExternalStatusProbeGate.ready) {
+        return _snapshot.slots.reorderCapability;
+      }
     }
     final activeRefresh = _slotReorderCapabilityRefresh;
     if (activeRefresh != null) {
@@ -929,6 +954,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
     }
+    _initialStatusOwnsQueue = true;
     _protocolHandshakeConfirmed = true;
     _completeProtocolHandshake(true);
 
@@ -939,7 +965,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final statusFacets = <_InitialStatusFacet>[
       (
         name: 'mode',
-        load: refreshMode,
+        load: () => _refreshMode(initial: true),
         isSettled: () =>
             _snapshot.mode.availability != ModeAvailability.loading,
         markUnavailable: () => _publish(
@@ -952,7 +978,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
       (
         name: 'slots',
-        load: refreshSlots,
+        load: () => _refreshSlotsForStatus(initial: true),
         isSettled: () =>
             _snapshot.slots.availability != SlotsAvailability.loading,
         markUnavailable: () => _publish(
@@ -962,7 +988,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       (
         name: 'slot reorder capability',
         load: () async {
-          await refreshSlotReorderCapability();
+          await _refreshSlotReorderCapabilityForStatus(initial: true);
         },
         isSettled: () =>
             _snapshot.slots.reorderCapability != SlotReorderCapability.unknown,
@@ -972,7 +998,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
       (
         name: 'battery',
-        load: refreshBattery,
+        load: () => _refreshBattery(initial: true),
         isSettled: () =>
             _snapshot.battery.availability != BatteryAvailability.loading,
         markUnavailable: () => _publish(
@@ -981,7 +1007,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
       (
         name: 'firmware',
-        load: refreshFirmware,
+        load: () => _refreshFirmwareForStatus(initial: true),
         isSettled: () =>
             _snapshot.firmware.checkResult != FirmwareCheckResult.checking,
         markUnavailable: _markFirmwareUnavailable,
@@ -992,6 +1018,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         generation != _readinessInitializationGeneration ||
         !_connectionReadiness.isCurrent(_readinessAttempt)) {
       return;
+    }
+    if (!_statusQueueQuarantined) {
+      _initialStatusOwnsQueue = false;
     }
     _initialStatusFinished = true;
     _publishReadinessForSnapshot();
@@ -1052,8 +1081,16 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isCurrentReadiness(generation)) {
       return;
     }
+    // The timed-out operation may have completed while a second request that
+    // was already queued by the communicator still owns its serialized queue.
+    // Initial sequencing remains the only producer until every remaining
+    // facet has either settled or established a new quarantine.
     _statusQueueQuarantined = false;
     await _loadInitialFacets(remainingFacets, generation);
+    if (_statusQueueQuarantined) {
+      return;
+    }
+    _initialStatusOwnsQueue = false;
     _publishReadinessForSnapshot();
     if (!_statusQueueQuarantined && _homePresenceCount > 0 && _isAppActive) {
       _startHomeTimers();
@@ -1104,6 +1141,27 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _canPublish &&
       generation == _readinessInitializationGeneration &&
       _connectionReadiness.isCurrent(_readinessAttempt);
+
+  bool get _externalStatusProbeBlocked =>
+      _initialStatusOwnsQueue || _statusQueueQuarantined;
+
+  bool get _foregroundActionBlocked => _statusQueueQuarantined;
+
+  Future<_ExternalStatusProbeGate> _gateExternalStatusProbe() async {
+    if (!_canPublish) {
+      return _ExternalStatusProbeGate.blocked;
+    }
+    final waitsForInitialReadiness = _initialStatusOwnsQueue;
+    if (waitsForInitialReadiness) {
+      await (_initialReadiness ?? Future<void>.value());
+    }
+    if (!_canPublish || _externalStatusProbeBlocked) {
+      return _ExternalStatusProbeGate.blocked;
+    }
+    return waitsForInitialReadiness
+        ? _ExternalStatusProbeGate.settledByInitialReadiness
+        : _ExternalStatusProbeGate.ready;
+  }
 
   void _quarantineStatusQueue() {
     _statusQueueQuarantined = true;
@@ -1243,12 +1301,17 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> refreshFirmware() async {
-    if (_statusQueueQuarantined) {
-      return;
-    }
+  Future<void> refreshFirmware() => _refreshFirmwareForStatus(initial: false);
+
+  Future<void> _refreshFirmwareForStatus({required bool initial}) async {
     if (!await _waitForProtocolHandshake()) {
       return;
+    }
+    if (!initial) {
+      final gate = await _gateExternalStatusProbe();
+      if (gate != _ExternalStatusProbeGate.ready) {
+        return;
+      }
     }
     if (_snapshot.firmware.state == FirmwareState.demo ||
         _firmwareLookupAttempted) {
@@ -1270,24 +1333,39 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     return _startFirmwareRefresh(readFacts: _firmwareFacts == null);
   }
 
-  Future<void> setFirmwareChannel(FirmwareChannel channel) async {
+  Future<FirmwareChannelChangeOutcome> setFirmwareChannel(
+    FirmwareChannel channel,
+  ) async {
     if (!_canPublish ||
         _statusQueueQuarantined ||
         _snapshot.firmware.state == FirmwareState.demo ||
         channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
-      return;
+      return !_canPublish
+          ? FirmwareChannelChangeOutcome.connectionChanged
+          : channel == _snapshot.firmware.channel
+              ? FirmwareChannelChangeOutcome.accepted
+              : FirmwareChannelChangeOutcome.rejected;
     }
-    if (!await _waitForProtocolHandshake() ||
-        !_canPublish ||
+    if (!await _waitForProtocolHandshake()) {
+      return _canPublish
+          ? FirmwareChannelChangeOutcome.rejected
+          : FirmwareChannelChangeOutcome.connectionChanged;
+    }
+    if (!_canPublish ||
+        _statusQueueQuarantined ||
         _snapshot.firmware.state == FirmwareState.demo ||
         channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
-      return;
+      return !_canPublish
+          ? FirmwareChannelChangeOutcome.connectionChanged
+          : channel == _snapshot.firmware.channel
+              ? FirmwareChannelChangeOutcome.accepted
+              : FirmwareChannelChangeOutcome.rejected;
     }
 
+    final previousChannel = _snapshot.firmware.channel;
     _firmwareChannelRevision++;
-    _firmwareLookupAttempted = true;
     final revision = _firmwareChannelRevision;
     final current = _snapshot.firmware;
     _publish(
@@ -1306,14 +1384,51 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
 
+    if (_initialStatusOwnsQueue) {
+      await (_initialReadiness ?? Future<void>.value());
+      if (!_canPublish) {
+        return FirmwareChannelChangeOutcome.connectionChanged;
+      }
+      if (_statusQueueQuarantined) {
+        _firmwareChannelRevision++;
+        _publish(
+          _snapshot.copyWith(
+            firmware: _snapshot.firmware.copyWith(channel: previousChannel),
+          ),
+        );
+        return FirmwareChannelChangeOutcome.rejected;
+      }
+      if (_snapshot.firmware.checkResult != FirmwareCheckResult.succeeded &&
+          _snapshot.firmware.checkResult != FirmwareCheckResult.demo) {
+        _firmwareLookupAttempted = true;
+        await _startFirmwareRefresh(readFacts: _firmwareFacts == null);
+      }
+      return channel == _snapshot.firmware.channel
+          ? FirmwareChannelChangeOutcome.accepted
+          : FirmwareChannelChangeOutcome.rejected;
+    }
+
+    _firmwareLookupAttempted = true;
+
     final inFlight = _firmwareRefresh;
     if (inFlight != null) {
       await inFlight;
     }
-    if (!_canPublish || revision != _firmwareChannelRevision) {
-      return;
+    if (!_canPublish ||
+        _statusQueueQuarantined ||
+        revision != _firmwareChannelRevision) {
+      return !_canPublish
+          ? FirmwareChannelChangeOutcome.connectionChanged
+          : FirmwareChannelChangeOutcome.rejected;
     }
     await _startFirmwareRefresh(readFacts: _firmwareFacts == null);
+    return _canPublish &&
+            revision == _firmwareChannelRevision &&
+            channel == _snapshot.firmware.channel
+        ? FirmwareChannelChangeOutcome.accepted
+        : _canPublish
+            ? FirmwareChannelChangeOutcome.rejected
+            : FirmwareChannelChangeOutcome.connectionChanged;
   }
 
   Future<void> _startFirmwareRefresh({required bool readFacts}) {
@@ -1564,6 +1679,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (!_canPublish) {
       return FirmwareInstallOutcome.connectionChanged;
     }
+    if (_foregroundActionBlocked) {
+      return FirmwareInstallOutcome.busy;
+    }
     final firmware = _snapshot.firmware;
     final channel = firmware.channel;
     if (!firmware.canInstall) {
@@ -1619,21 +1737,35 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refreshMode() async {
-    if (!_statusQueueQuarantined && await _waitForProtocolHandshake()) {
-      await _modeStatusMachine.refresh();
+  Future<void> refreshMode() => _refreshMode(initial: false);
+
+  Future<void> _refreshMode({required bool initial}) async {
+    if (!await _waitForProtocolHandshake()) {
+      return;
     }
+    if (!initial) {
+      final gate = await _gateExternalStatusProbe();
+      if (gate != _ExternalStatusProbeGate.ready) {
+        return;
+      }
+    }
+    await _modeStatusMachine.refresh();
   }
 
   Future<ModeActionOutcome> switchMode(ConnectedDeviceMode target) =>
       _modeStatusMachine.switchTo(target);
 
-  Future<void> refreshSlots() async {
-    if (_statusQueueQuarantined) {
-      return;
-    }
+  Future<void> refreshSlots() => _refreshSlotsForStatus(initial: false);
+
+  Future<void> _refreshSlotsForStatus({required bool initial}) async {
     if (!await _waitForProtocolHandshake()) {
       return;
+    }
+    if (!initial) {
+      final gate = await _gateExternalStatusProbe();
+      if (gate != _ExternalStatusProbeGate.ready) {
+        return;
+      }
     }
     final currentRefresh = _slotsRefresh;
     if (currentRefresh != null) {
@@ -1655,6 +1787,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     bool reconcileMode = false,
   }) {
     if (_snapshot.slots.pendingReorder != null) {
+      return Future<T>.error(const SlotMutationBusy());
+    }
+    if (_foregroundActionBlocked) {
       return Future<T>.error(const SlotMutationBusy());
     }
     return _rfOperations.runForeground(() async {
@@ -1723,6 +1858,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (_snapshot.slots.pendingReorder != null) {
       return SlotReorderOutcome.busy;
     }
+    if (_foregroundActionBlocked) {
+      return SlotReorderOutcome.busy;
+    }
 
     _publish(
       _snapshot.copyWith(
@@ -1737,103 +1875,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish) {
           return SlotReorderOutcome.connectionChanged;
         }
-
-        final capability = await _readSlotReorderCapabilityInsideLease();
-        if (!_canPublish) {
-          return SlotReorderOutcome.connectionChanged;
-        }
-        if (capability != SlotReorderCapability.supported) {
-          _clearPendingReorder();
-          return capability == SlotReorderCapability.unsupported
-              ? SlotReorderOutcome.unsupported
-              : SlotReorderOutcome.failed;
-        }
-
-        final previous = _snapshot.slots;
-        var replyWasAmbiguous = false;
-        try {
-          await _session.communicator.swapSlots(source, target);
-        } on SlotReorderRejected catch (error, stackTrace) {
-          _session.appState.log?.w(
-            'Connected device rejected whole-slot reorder',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          if (!_canPublish) {
-            return SlotReorderOutcome.connectionChanged;
-          }
-          _clearPendingReorder();
-          return SlotReorderOutcome.failed;
-        } catch (error, stackTrace) {
-          replyWasAmbiguous = true;
-          _session.appState.log?.w(
-            'Whole-slot reorder reply was unavailable; reconciling slots',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-        if (!_canPublish) {
-          return SlotReorderOutcome.connectionChanged;
-        }
-
-        final readBack = await _readSlots(
-          _withoutSemanticReorderAmbiguity(previous),
-        );
-        if (!_canPublish || readBack == null) {
-          return SlotReorderOutcome.connectionChanged;
-        }
-        var reconciled = _preciseReorderReconciliation(
-          _withoutSemanticReorderAmbiguity(previous),
-          readBack,
-          source,
-          target,
-        ).copyWith(pendingReorder: null);
-
-        if (!replyWasAmbiguous) {
-          _swapSemanticReorderAmbiguity(source, target);
-          final unresolved = _reorderReconciliationUnresolved(reconciled);
-          reconciled = _withSemanticReorderAmbiguity(reconciled);
-          _publish(_snapshot.copyWith(slots: reconciled));
-          return unresolved
-              ? SlotReorderOutcome.reconciliationFailed
-              : SlotReorderOutcome.confirmed;
-        }
-        if (_reorderReconciliationUnresolved(reconciled)) {
-          if (_swapIsVisiblyIndistinguishable(previous, source, target)) {
-            _rememberSemanticReorderAmbiguity(source, target);
-          }
-          _publish(
-            _snapshot.copyWith(
-              slots: _withSemanticReorderAmbiguity(reconciled),
-            ),
-          );
-          return SlotReorderOutcome.ambiguous;
-        }
-
-        final matchesExpected =
-            _matchesExpectedSwap(previous, reconciled, source, target);
-        final matchesPrevious = _matchesConfirmedOrder(previous, reconciled);
-        if (matchesExpected && !matchesPrevious) {
-          _swapSemanticReorderAmbiguity(source, target);
-          reconciled = _withSemanticReorderAmbiguity(reconciled);
-          _publish(_snapshot.copyWith(slots: reconciled));
-          return SlotReorderOutcome.confirmed;
-        }
-        if (!matchesExpected && matchesPrevious) {
-          reconciled = _withSemanticReorderAmbiguity(reconciled);
-          _publish(_snapshot.copyWith(slots: reconciled));
-          return SlotReorderOutcome.failed;
-        }
-
-        _rememberSemanticReorderAmbiguity(source, target);
-        reconciled = _markReorderPositionsStale(
-          reconciled,
-          source,
-          target,
-        );
-        reconciled = _withSemanticReorderAmbiguity(reconciled);
-        _publish(_snapshot.copyWith(slots: reconciled));
-        return SlotReorderOutcome.ambiguous;
+        return _reorderSlotsInsideLease(source, target);
       });
     } catch (error, stackTrace) {
       _session.appState.log?.w(
@@ -1847,6 +1889,108 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _clearPendingReorder();
       return SlotReorderOutcome.failed;
     }
+  }
+
+  Future<SlotReorderOutcome> _reorderSlotsInsideLease(
+    int source,
+    int target,
+  ) async {
+    final capability = await _readSlotReorderCapabilityInsideLease();
+    if (!_canPublish) {
+      return SlotReorderOutcome.connectionChanged;
+    }
+    if (capability != SlotReorderCapability.supported) {
+      _clearPendingReorder();
+      return capability == SlotReorderCapability.unsupported
+          ? SlotReorderOutcome.unsupported
+          : SlotReorderOutcome.failed;
+    }
+
+    final previous = _snapshot.slots;
+    var replyWasAmbiguous = false;
+    try {
+      await _session.communicator.swapSlots(source, target);
+    } on SlotReorderRejected catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Connected device rejected whole-slot reorder',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return SlotReorderOutcome.connectionChanged;
+      }
+      _clearPendingReorder();
+      return SlotReorderOutcome.failed;
+    } catch (error, stackTrace) {
+      replyWasAmbiguous = true;
+      _session.appState.log?.w(
+        'Whole-slot reorder reply was unavailable; reconciling slots',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    if (!_canPublish) {
+      return SlotReorderOutcome.connectionChanged;
+    }
+
+    final readBack = await _readSlots(
+      _withoutSemanticReorderAmbiguity(previous),
+    );
+    if (!_canPublish || readBack == null) {
+      return SlotReorderOutcome.connectionChanged;
+    }
+    var reconciled = _preciseReorderReconciliation(
+      _withoutSemanticReorderAmbiguity(previous),
+      readBack,
+      source,
+      target,
+    ).copyWith(pendingReorder: null);
+
+    if (!replyWasAmbiguous) {
+      _swapSemanticReorderAmbiguity(source, target);
+      final unresolved = _reorderReconciliationUnresolved(reconciled);
+      reconciled = _withSemanticReorderAmbiguity(reconciled);
+      _publish(_snapshot.copyWith(slots: reconciled));
+      return unresolved
+          ? SlotReorderOutcome.reconciliationFailed
+          : SlotReorderOutcome.confirmed;
+    }
+    if (_reorderReconciliationUnresolved(reconciled)) {
+      if (_swapIsVisiblyIndistinguishable(previous, source, target)) {
+        _rememberSemanticReorderAmbiguity(source, target);
+      }
+      _publish(
+        _snapshot.copyWith(
+          slots: _withSemanticReorderAmbiguity(reconciled),
+        ),
+      );
+      return SlotReorderOutcome.ambiguous;
+    }
+
+    final matchesExpected =
+        _matchesExpectedSwap(previous, reconciled, source, target);
+    final matchesPrevious = _matchesConfirmedOrder(previous, reconciled);
+    if (matchesExpected && !matchesPrevious) {
+      _swapSemanticReorderAmbiguity(source, target);
+      reconciled = _withSemanticReorderAmbiguity(reconciled);
+      _publish(_snapshot.copyWith(slots: reconciled));
+      return SlotReorderOutcome.confirmed;
+    }
+    if (!matchesExpected && matchesPrevious) {
+      reconciled = _withSemanticReorderAmbiguity(reconciled);
+      _publish(_snapshot.copyWith(slots: reconciled));
+      return SlotReorderOutcome.failed;
+    }
+
+    _rememberSemanticReorderAmbiguity(source, target);
+    reconciled = _markReorderPositionsStale(
+      reconciled,
+      source,
+      target,
+    );
+    reconciled = _withSemanticReorderAmbiguity(reconciled);
+    _publish(_snapshot.copyWith(slots: reconciled));
+    return SlotReorderOutcome.ambiguous;
   }
 
   Future<SlotReorderCapability> _readSlotReorderCapabilityInsideLease() async {
@@ -2162,6 +2306,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _snapshot.slots.pendingActivation != null) {
       return false;
     }
+    if (_foregroundActionBlocked) {
+      return false;
+    }
     _publish(
       _snapshot.copyWith(
         slots: _snapshot.slots.copyWith(pendingActivation: slot),
@@ -2172,56 +2319,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_session.isCurrent) {
           return false;
         }
-        try {
-          await _session.communicator.activateSlot(slot);
-          if (!_canPublish) {
-            return false;
-          }
-          _publishActiveSlot(slot, stale: false);
-          return true;
-        } on SlotActivationRejected catch (error, stackTrace) {
-          _session.appState.log?.w(
-            'Connected device rejected slot activation',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          if (_canPublish) {
-            _publish(
-              _snapshot.copyWith(
-                slots: _snapshot.slots.copyWith(pendingActivation: null),
-              ),
-            );
-          }
-          return false;
-        } catch (error, stackTrace) {
-          _session.appState.log?.w(
-            'Slot activation reply was unavailable; checking the active slot',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          if (!_canPublish) {
-            return false;
-          }
-          try {
-            final confirmedSlot = await _session.communicator.getActiveSlot();
-            if (!_canPublish) {
-              return false;
-            }
-            if (confirmedSlot < 0 || confirmedSlot >= 8) {
-              throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
-            }
-            _publishActiveSlot(confirmedSlot, stale: false);
-            return confirmedSlot == slot;
-          } catch (confirmationError, confirmationStackTrace) {
-            _session.appState.log?.w(
-              'Unable to resolve ambiguous connected-device slot activation',
-              error: confirmationError,
-              stackTrace: confirmationStackTrace,
-            );
-            _publishActivationFailure();
-            return false;
-          }
-        }
+        return _activateSlotInsideLease(slot);
       });
     } catch (error, stackTrace) {
       _session.appState.log?.w(
@@ -2231,6 +2329,59 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       );
       _publishActivationFailure();
       return false;
+    }
+  }
+
+  Future<bool> _activateSlotInsideLease(int slot) async {
+    try {
+      await _session.communicator.activateSlot(slot);
+      if (!_canPublish) {
+        return false;
+      }
+      _publishActiveSlot(slot, stale: false);
+      return true;
+    } on SlotActivationRejected catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Connected device rejected slot activation',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (_canPublish) {
+        _publish(
+          _snapshot.copyWith(
+            slots: _snapshot.slots.copyWith(pendingActivation: null),
+          ),
+        );
+      }
+      return false;
+    } catch (error, stackTrace) {
+      _session.appState.log?.w(
+        'Slot activation reply was unavailable; checking the active slot',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!_canPublish) {
+        return false;
+      }
+      try {
+        final confirmedSlot = await _session.communicator.getActiveSlot();
+        if (!_canPublish) {
+          return false;
+        }
+        if (confirmedSlot < 0 || confirmedSlot >= 8) {
+          throw RangeError.range(confirmedSlot, 0, 7, 'activeSlot');
+        }
+        _publishActiveSlot(confirmedSlot, stale: false);
+        return confirmedSlot == slot;
+      } catch (confirmationError, confirmationStackTrace) {
+        _session.appState.log?.w(
+          'Unable to resolve ambiguous connected-device slot activation',
+          error: confirmationError,
+          stackTrace: confirmationStackTrace,
+        );
+        _publishActivationFailure();
+        return false;
+      }
     }
   }
 
@@ -2592,10 +2743,19 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> refreshBattery() async {
-    if (!_statusQueueQuarantined && await _waitForProtocolHandshake()) {
-      await _batteryStatusMachine.refresh();
+  Future<void> refreshBattery() => _refreshBattery(initial: false);
+
+  Future<void> _refreshBattery({required bool initial}) async {
+    if (!await _waitForProtocolHandshake()) {
+      return;
     }
+    if (!initial) {
+      final gate = await _gateExternalStatusProbe();
+      if (gate != _ExternalStatusProbeGate.ready) {
+        return;
+      }
+    }
+    await _batteryStatusMachine.refresh();
   }
 
   Future<bool> _waitForProtocolHandshake() async {

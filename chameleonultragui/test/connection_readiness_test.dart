@@ -323,6 +323,133 @@ void main() {
   );
 
   testWidgets(
+    'real Home keeps initial status ownership across consecutive hung facets',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final slotsGate = Completer<void>();
+      final capabilityGate = Completer<void>();
+      final communicator = _InitialQueueOwnershipCommunicator(
+        modeGate: modeGate,
+        slotsBlocker: slotsGate,
+        capabilityGate: capabilityGate,
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        if (!slotsGate.isCompleted) slotsGate.complete();
+        if (!capabilityGate.isCompleted) capabilityGate.complete();
+      });
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(fixture.dispose);
+
+      await tester.pump(const Duration(milliseconds: 25));
+
+      expect(communicator.serializedRequests, 1);
+      expect(communicator.modeCalls, 1);
+      expect(communicator.deviceCapabilitiesCalls, 0);
+
+      modeGate.complete();
+      await tester.pump(const Duration(milliseconds: 5));
+      expect(communicator.serializedRequests, 2);
+      expect(communicator.slotTypeCalls, 1);
+      expect(communicator.deviceCapabilitiesCalls, 0);
+
+      final status = fixture.appState.connectedDeviceStatus!;
+      unawaited(status.refreshSlotReorderCapability());
+      unawaited(status.refreshBattery());
+      await tester.pump(const Duration(milliseconds: 5));
+      expect(communicator.serializedRequests, 2);
+
+      await tester.pump(const Duration(milliseconds: 20));
+      await _pumpFrames(tester, 3);
+      expect(communicator.serializedRequests, 2);
+      expect(communicator.deviceCapabilitiesCalls, 0);
+      expect(communicator.batteryCalls, 0);
+      expect(communicator.gitCommitCalls, 0);
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'foreground status actions do not queue behind a hung background lease',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final communicator = _ForegroundActionCommunicator(modeGate);
+      var installs = 0;
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        firmwareCatalog: const _UpdateAvailableFirmwareCatalog(),
+        firmwareInstaller: (_) async => installs++,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        fixture.dispose();
+      });
+      await tester.pump(const Duration(milliseconds: 25));
+      final status = fixture.appState.connectedDeviceStatus!;
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+
+      ModeActionOutcome? modeOutcome;
+      SlotReorderOutcome? reorderOutcome;
+      bool? activationOutcome;
+      FirmwareInstallOutcome? installOutcome;
+      Object? mutationError;
+      unawaited(status.switchMode(ConnectedDeviceMode.reader).then(
+            (value) => modeOutcome = value,
+          ));
+      unawaited(status.reorderSlots(0, 1).then(
+            (value) => reorderOutcome = value,
+          ));
+      unawaited(status.activateSlot(1).then(
+            (value) => activationOutcome = value,
+          ));
+      unawaited(status.installFirmware().then(
+            (value) => installOutcome = value,
+          ));
+      unawaited(status.mutateSlots<void>((_) async {}).catchError(
+        (Object error) {
+          mutationError = error;
+        },
+      ));
+
+      await tester.pump(const Duration(milliseconds: 10));
+
+      expect(modeOutcome, ModeActionOutcome.busy);
+      expect(reorderOutcome, SlotReorderOutcome.busy);
+      expect(activationOutcome, isFalse);
+      expect(installOutcome, FirmwareInstallOutcome.busy);
+      expect(mutationError, isA<SlotMutationBusy>());
+      expect(status.snapshot.mode.pendingMode, isNull);
+      expect(status.snapshot.slots.pendingReorder, isNull);
+      expect(status.snapshot.slots.pendingActivation, isNull);
+      expect(status.snapshot.firmware.installing, isFalse);
+      expect(communicator.foregroundRequests, 0);
+      expect(installs, 0);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'foreground RF beyond the initial budget degrades without loading forever',
     (tester) async {
       final protocol = Completer<FirmwareVersion>();
@@ -398,6 +525,86 @@ void main() {
     fixture.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'firmware channel requested before handshake is rejected by quarantine',
+    (tester) async {
+      final protocol = Completer<FirmwareVersion>();
+      final modeGate = Completer<void>();
+      final communicator = _InitialQueueOwnershipCommunicator(
+        protocol: protocol.future,
+        modeGate: modeGate,
+        slotsBlocker: Completer<void>(),
+        capabilityGate: Completer<void>(),
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+      });
+      final fixture = await _mountConnectedShell(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final status = fixture.appState.connectedDeviceStatus!;
+
+      var channelChangeCompleted = false;
+      unawaited(status.setFirmwareChannel(FirmwareChannel.custom).then(
+            (_) => channelChangeCompleted = true,
+          ));
+      protocol.complete(_currentFirmware);
+      await tester.pump(const Duration(milliseconds: 25));
+
+      expect(status.snapshot.firmware.channel, FirmwareChannel.official);
+      expect(channelChangeCompleted, isTrue);
+      expect(communicator.gitCommitCalls, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'Home persists a firmware channel only after status accepts it',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final communicator = _InitialQueueOwnershipCommunicator(
+        modeGate: modeGate,
+        slotsBlocker: Completer<void>(),
+        capabilityGate: Completer<void>(),
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+      });
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(fixture.dispose);
+      await tester.pump(const Duration(milliseconds: 25));
+      await _pumpFrames(tester, 3);
+
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+      await tester.pump(const Duration(milliseconds: 10));
+
+      expect(
+        fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
+        FirmwareChannel.official,
+      );
+      expect(
+        fixture.appState.connectedDeviceStatus!.snapshot.firmware.channel,
+        FirmwareChannel.official,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'an unavailable optional facet degrades Home without hiding confirmed data',
@@ -621,6 +828,8 @@ Future<_ReadinessFixture> _mountHome(
   WidgetTester tester,
   _ReadinessCommunicator communicator, {
   ConnectionReadinessTimeouts timeouts = const ConnectionReadinessTimeouts(),
+  FirmwareCatalog firmwareCatalog = const CurrentFirmwareCatalogStub(),
+  FirmwareInstaller? firmwareInstaller,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final preferences = SharedPreferencesProvider();
@@ -632,7 +841,8 @@ Future<_ReadinessFixture> _mountHome(
   );
   final appState = ChameleonGUIState(
     preferences,
-    firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    firmwareCatalog: firmwareCatalog,
+    firmwareInstaller: firmwareInstaller,
     connectionReadinessTimeouts: timeouts,
   )
     ..connector = serial
@@ -657,6 +867,8 @@ Future<_ReadinessFixture> _mountConnectedShell(
   WidgetTester tester,
   _ReadinessCommunicator communicator, {
   ConnectionReadinessTimeouts timeouts = const ConnectionReadinessTimeouts(),
+  FirmwareCatalog firmwareCatalog = const CurrentFirmwareCatalogStub(),
+  FirmwareInstaller? firmwareInstaller,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final preferences = SharedPreferencesProvider();
@@ -668,7 +880,8 @@ Future<_ReadinessFixture> _mountConnectedShell(
   );
   final appState = ChameleonGUIState(
     preferences,
-    firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    firmwareCatalog: firmwareCatalog,
+    firmwareInstaller: firmwareInstaller,
     connectionReadinessTimeouts: timeouts,
   )
     ..connector = serial
@@ -887,4 +1100,123 @@ class _SerializedReadinessCommunicator extends _ReadinessCommunicator {
         deviceCapabilitiesCalls++;
         return [ChameleonCommand.setIdteckEmulatorID.value];
       });
+}
+
+class _InitialQueueOwnershipCommunicator extends _ReadinessCommunicator {
+  _InitialQueueOwnershipCommunicator({
+    super.protocol,
+    required this.modeGate,
+    required this.slotsBlocker,
+    required this.capabilityGate,
+  });
+
+  final Completer<void> modeGate;
+  final Completer<void> slotsBlocker;
+  final Completer<void> capabilityGate;
+  Future<void> _tail = Future.value();
+  int serializedRequests = 0;
+
+  Future<T> _serialize<T>(Future<T> Function() operation) {
+    serializedRequests++;
+    final result = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        result.complete(await operation());
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      }
+    });
+    return result.future;
+  }
+
+  @override
+  Future<bool> isReaderDeviceMode() => _serialize(() async {
+        modeCalls++;
+        await modeGate.future;
+        return false;
+      });
+
+  @override
+  Future<List<SlotTypes>> getSlotTagTypes() => _serialize(() async {
+        slotTypeCalls++;
+        await slotsBlocker.future;
+        return super.getSlotTagTypes();
+      });
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() =>
+      _serialize(super.getEnabledSlots);
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() =>
+      _serialize(super.getSlotTagNames);
+
+  @override
+  Future<int> getActiveSlot() => _serialize(super.getActiveSlot);
+
+  @override
+  Future<List<int>> getDeviceCapabilities() => _serialize(() async {
+        deviceCapabilitiesCalls++;
+        await capabilityGate.future;
+        return [
+          ChameleonCommand.setIdteckEmulatorID.value,
+          ChameleonCommand.swapSlots.value,
+        ];
+      });
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() => _serialize(() async {
+        batteryCalls++;
+        return BatteryCharge(percent: 78, voltage: 3970);
+      });
+
+  @override
+  Future<String> getGitCommitHash() => _serialize(() async {
+        gitCommitCalls++;
+        return 'readiness123';
+      });
+}
+
+class _ForegroundActionCommunicator extends _ReadinessCommunicator {
+  _ForegroundActionCommunicator(this.modeGate);
+
+  final Completer<void> modeGate;
+  int foregroundRequests = 0;
+
+  @override
+  Future<bool> isReaderDeviceMode() async {
+    modeCalls++;
+    await modeGate.future;
+    return false;
+  }
+
+  @override
+  Future<void> setReaderDeviceMode(bool reader) async {
+    foregroundRequests++;
+  }
+
+  @override
+  Future<void> activateSlot(int slot) async {
+    foregroundRequests++;
+  }
+
+  @override
+  Future<void> swapSlots(int source, int target) async {
+    foregroundRequests++;
+  }
+}
+
+class _UpdateAvailableFirmwareCatalog implements FirmwareCatalog {
+  const _UpdateAvailableFirmwareCatalog();
+
+  @override
+  Future<FirmwareCatalogRelease> latestFirmware({
+    required ChameleonDevice device,
+    required String? installedCommit,
+    FirmwareChannel channel = FirmwareChannel.official,
+  }) async =>
+      const FirmwareCatalogRelease(
+        latestCommit: 'newer123',
+        updateAvailable: true,
+      );
 }
