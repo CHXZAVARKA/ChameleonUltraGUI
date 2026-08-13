@@ -1,6 +1,5 @@
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
-import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/full_device_backup.dart';
 import 'package:chameleonultragui/helpers/full_device_backup_workflow.dart';
 import 'package:chameleonultragui/helpers/general.dart';
