@@ -6,6 +6,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/main.dart';
+import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
@@ -67,6 +68,7 @@ final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
     String activeDevicePort = 'test-port',
     Future<void> Function(ChameleonGUIState appState, FirmwareChannel channel)?
         installFirmware,
+    SlotBackupFileAdapter slotBackupFiles = const NativeSlotBackupFileAdapter(),
   }) : logger = logger ?? Logger(output: MemoryOutput()) {
     serial = TestSerial(
       log: this.logger,
@@ -83,6 +85,7 @@ final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
       firmwareInstaller: installFirmware == null
           ? null
           : (channel) => installFirmware(state, channel),
+      slotBackupFiles: slotBackupFiles,
     )
       ..log = this.logger
       ..connector = serial

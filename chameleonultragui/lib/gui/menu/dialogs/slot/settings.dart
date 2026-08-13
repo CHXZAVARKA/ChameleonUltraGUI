@@ -7,6 +7,8 @@ import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/single_slot_backup.dart';
+import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +31,7 @@ class SlotSettings extends StatefulWidget {
 class SlotSettingsState extends State<SlotSettings> {
   ConnectedDeviceStatus? _status;
   bool _ready = false;
+  bool _backupBusy = false;
   Object? _loadError;
 
   @override
@@ -116,6 +119,159 @@ class SlotSettingsState extends State<SlotSettings> {
         ),
       );
 
+  Future<void> _exportBackup(
+    ChameleonGUIState appState,
+    ConnectedDeviceStatus status,
+    AppLocalizations localizations,
+  ) async {
+    if (_backupBusy) {
+      return;
+    }
+    setState(() => _backupBusy = true);
+    final outcome = await appState.singleSlotBackupWorkflow.export(
+      status: status,
+      position: widget.slot,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _backupBusy = false);
+    if (outcome == SlotBackupExportOutcome.saved) {
+      _showMessage(localizations.slot_backup_saved);
+    } else if (outcome != SlotBackupExportOutcome.cancelled) {
+      _showMessage(localizations.slot_backup_failed);
+    }
+  }
+
+  Future<void> _openRestore(
+    ChameleonGUIState appState,
+    ConnectedDeviceStatus status,
+    AppLocalizations localizations,
+  ) async {
+    if (_backupBusy) {
+      return;
+    }
+    setState(() => _backupBusy = true);
+    final opened = await appState.singleSlotBackupWorkflow.open();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _backupBusy = false);
+    if (opened.outcome == SlotBackupOpenOutcome.cancelled) {
+      return;
+    }
+    if (opened.outcome != SlotBackupOpenOutcome.ready) {
+      _showMessage(localizations.slot_backup_invalid);
+      return;
+    }
+    final backup = opened.backup!;
+    final compatible = backup.sourceDevice == status.snapshot.identity.device;
+    final canRestore = backup.isRestorable && compatible;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations.slot_restore_preview),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              localizations.slot_restore_preview_description(
+                backup.sourcePosition + 1,
+                widget.slot + 1,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _backupFrequencySummary(
+              backup.hf,
+              localizations.hf,
+              localizations,
+            ),
+            const SizedBox(height: 8),
+            _backupFrequencySummary(
+              backup.lf,
+              localizations.lf,
+              localizations,
+            ),
+            if (!backup.isRestorable) ...[
+              const SizedBox(height: 16),
+              Text(localizations.slot_restore_incomplete),
+            ] else if (!compatible) ...[
+              const SizedBox(height: 16),
+              Text(localizations.slot_restore_incompatible),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            key: const Key('slot-backup-confirm-restore'),
+            onPressed:
+                canRestore ? () => Navigator.pop(dialogContext, true) : null,
+            child: Text(localizations.restore_slot),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => _backupBusy = true);
+    final outcome = await appState.singleSlotBackupWorkflow.restore(
+      status: status,
+      backup: backup,
+      targetPosition: widget.slot,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _backupBusy = false);
+    _showMessage(switch (outcome) {
+      SlotBackupRestoreOutcome.restored => localizations.slot_restore_completed,
+      SlotBackupRestoreOutcome.incompatibleDevice =>
+        localizations.slot_restore_incompatible,
+      SlotBackupRestoreOutcome.incomplete =>
+        localizations.slot_restore_incomplete,
+      SlotBackupRestoreOutcome.invalid => localizations.slot_backup_invalid,
+      SlotBackupRestoreOutcome.connectionChanged ||
+      SlotBackupRestoreOutcome.failed =>
+        localizations.slot_restore_failed,
+    });
+  }
+
+  Widget _backupFrequencySummary(
+    SlotFrequencyBackup frequency,
+    String frequencyName,
+    AppLocalizations localizations,
+  ) {
+    final type = frequency.type;
+    final typeLabel = type == null || type == TagType.unknown
+        ? localizations.empty
+        : chameleonTagToString(type, localizations);
+    final enabledLabel = frequency.enabled == null
+        ? localizations.unknown
+        : frequency.enabled!
+            ? localizations.enabled
+            : localizations.disabled;
+    return Text(
+      localizations.slot_backup_frequency_summary(
+        frequencyName,
+        frequency.state.name,
+        typeLabel,
+        enabledLabel,
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = context.read<ChameleonGUIState>();
@@ -170,6 +326,30 @@ class SlotSettingsState extends State<SlotSettings> {
                   tooltip: localizations.slot_status,
                   icon: const Icon(Icons.refresh),
                 ),
+              IconButton(
+                key: const Key('slot-settings-backup'),
+                onPressed: _backupBusy
+                    ? null
+                    : () => _exportBackup(
+                          appState,
+                          status,
+                          localizations,
+                        ),
+                tooltip: localizations.backup_slot,
+                icon: const Icon(Icons.backup_outlined),
+              ),
+              IconButton(
+                key: const Key('slot-settings-restore'),
+                onPressed: _backupBusy
+                    ? null
+                    : () => _openRestore(
+                          appState,
+                          status,
+                          localizations,
+                        ),
+                tooltip: localizations.restore_slot,
+                icon: const Icon(Icons.restore_page_outlined),
+              ),
               IconButton(
                 key: const Key('slot-settings-export'),
                 onPressed: canExport

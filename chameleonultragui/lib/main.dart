@@ -13,6 +13,7 @@ import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance_progress.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
+import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
@@ -73,12 +74,17 @@ class ChameleonGUIState extends ChangeNotifier {
   final SharedPreferencesProvider sharedPreferencesProvider;
   final FirmwareCatalog firmwareCatalog;
   final FirmwareInstaller? firmwareInstaller;
+  final SlotBackupFileAdapter slotBackupFiles;
 
   ChameleonGUIState(
     this.sharedPreferencesProvider, {
     this.firmwareCatalog = const GitHubFirmwareCatalog(),
     this.firmwareInstaller,
-  });
+    this.slotBackupFiles = const NativeSlotBackupFileAdapter(),
+  }) : singleSlotBackupWorkflow =
+            SingleSlotBackupWorkflow(files: slotBackupFiles);
+
+  final SingleSlotBackupWorkflow singleSlotBackupWorkflow;
 
   RfOperationCoordinator _rfOperations = RfOperationCoordinator();
   RfOperationCoordinator get rfOperations => _rfOperations;

@@ -1110,5 +1110,63 @@
   "animation_mode_update_failed": "The LED animation mode could not be saved or confirmed.",
   "@animation_mode_update_failed": {
     "description": "Device Settings error shown when changing the LED animation mode fails or the required device read-back does not confirm the requested mode"
+  },
+  "backup_slot": "Back up slot",
+  "@backup_slot": {
+    "description": "Action that saves one complete physical slot to a portable file"
+  },
+  "restore_slot": "Restore slot",
+  "@restore_slot": {
+    "description": "Action that restores a portable single-slot backup"
+  },
+  "slot_backup_saved": "Slot backup saved.",
+  "@slot_backup_saved": {
+    "description": "Confirmation shown after a single-slot backup file is written"
+  },
+  "slot_backup_failed": "The slot backup could not be created from the current device state.",
+  "@slot_backup_failed": {
+    "description": "Error shown when a single-slot backup cannot be created"
+  },
+  "slot_backup_invalid": "This is not a valid Chameleon slot backup.",
+  "@slot_backup_invalid": {
+    "description": "Error shown when an opened slot backup fails preflight validation"
+  },
+  "slot_restore_preview": "Restore slot backup",
+  "@slot_restore_preview": {
+    "description": "Title of the single-slot restore preview"
+  },
+  "slot_restore_preview_description": "Restore source slot {source} into slot {target}? This replaces both HF and LF data in the target slot.",
+  "@slot_restore_preview_description": {
+    "description": "Single-slot restore preview summary",
+    "placeholders": {
+      "source": {"type": "int", "example": "1"},
+      "target": {"type": "int", "example": "3"}
+    }
+  },
+  "slot_backup_frequency_summary": "{frequency}: {state}, {type}, {enabled}",
+  "@slot_backup_frequency_summary": {
+    "description": "Frequency summary in the single-slot restore preview",
+    "placeholders": {
+      "frequency": {"type": "String", "example": "HF"},
+      "state": {"type": "String", "example": "Complete"},
+      "type": {"type": "String", "example": "MIFARE Classic 1K"},
+      "enabled": {"type": "String", "example": "Enabled"}
+    }
+  },
+  "slot_restore_completed": "Slot restored.",
+  "@slot_restore_completed": {
+    "description": "Confirmation shown after a single-slot restore"
+  },
+  "slot_restore_incompatible": "This backup is not compatible with the connected Chameleon model.",
+  "@slot_restore_incompatible": {
+    "description": "Error shown when a slot backup was captured from an incompatible model"
+  },
+  "slot_restore_incomplete": "This backup is incomplete and cannot be restored safely.",
+  "@slot_restore_incomplete": {
+    "description": "Error shown when a partial or unsupported slot backup cannot be restored"
+  },
+  "slot_restore_failed": "The restore stopped before it could be confirmed. Check the slot before trying again.",
+  "@slot_restore_failed": {
+    "description": "Error shown after an unavailable or ambiguous single-slot restore command"
   }
 }

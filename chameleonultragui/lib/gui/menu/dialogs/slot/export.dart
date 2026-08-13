@@ -7,6 +7,7 @@ import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:flutter/material.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -18,59 +19,8 @@ import 'package:file_picker/file_picker.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
-class MifareClassicSlotDump {
-  final List<Uint8List> blocks;
-  final bool complete;
-
-  const MifareClassicSlotDump({
-    required this.blocks,
-    required this.complete,
-  });
-}
-
-Future<MifareClassicSlotDump> readMifareClassicSlotDump({
-  required int blockCount,
-  required Future<Uint8List> Function(int firstBlock, int blockCount)
-      readBlocks,
-  int maxBlocksPerRead = 16,
-}) async {
-  if (blockCount <= 0 || maxBlocksPerRead <= 0) {
-    throw ArgumentError('Block counts must be positive');
-  }
-
-  final binData = Uint8List(blockCount * 16);
-  var complete = true;
-
-  for (var firstBlock = 0;
-      firstBlock < blockCount;
-      firstBlock += maxBlocksPerRead) {
-    final remainingBlocks = blockCount - firstBlock;
-    final requestedBlocks =
-        remainingBlocks < maxBlocksPerRead ? remainingBlocks : maxBlocksPerRead;
-    final result = await readBlocks(firstBlock, requestedBlocks);
-    final expectedLength = requestedBlocks * 16;
-
-    if (result.length != expectedLength) {
-      complete = false;
-    }
-
-    final copyLength =
-        result.length < expectedLength ? result.length : expectedLength;
-    final destinationOffset = firstBlock * 16;
-    binData.setRange(
-      destinationOffset,
-      destinationOffset + copyLength,
-      result,
-    );
-  }
-
-  final blocks = <Uint8List>[];
-  for (var offset = 0; offset < binData.length; offset += 16) {
-    blocks.add(Uint8List.fromList(binData.sublist(offset, offset + 16)));
-  }
-
-  return MifareClassicSlotDump(blocks: blocks, complete: complete);
-}
+export 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart'
+    show MifareClassicSlotDump, readMifareClassicSlotDump;
 
 void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
   target.uid = source.uid;
