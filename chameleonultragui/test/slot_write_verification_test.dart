@@ -239,8 +239,7 @@ void main() {
   });
 
   group('Slot Manager upload workflow', () {
-    testWidgets('publishes a typed result and a localized explanation',
-        (tester) async {
+    testWidgets('shows the localized verification result', (tester) async {
       final communicator = _UploadCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
       addTearDown(fixture.appState.dispose);
@@ -271,10 +270,6 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        state.lastVerification?.outcome,
-        SlotWriteVerificationOutcome.verified,
-      );
       expect(find.text('Slot write verified against the device.'), findsOne);
     });
 

@@ -31,10 +31,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   FullDeviceBackupProgress? _backupProgress;
   ConnectedDeviceStatus? _status;
   StatusPresence? _presence;
-  SlotWriteVerificationResult? _lastVerification;
   bool _verifying = false;
-
-  SlotWriteVerificationResult? get lastVerification => _lastVerification;
 
   @override
   void didChangeDependencies() {
@@ -80,7 +77,6 @@ class SlotManagerPageState extends State<SlotManagerPage> {
 
     if (mounted) {
       setState(() {
-        _lastVerification = null;
         _verifying = false;
       });
     }
@@ -98,7 +94,6 @@ class SlotManagerPageState extends State<SlotManagerPage> {
         },
       );
       if (mounted) {
-        setState(() => _lastVerification = result);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(_verificationMessage(localizations, result))),
         );
