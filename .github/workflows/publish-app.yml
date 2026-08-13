@@ -39,6 +39,7 @@ jobs:
           working-directory: "./chameleonultragui"
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.9"
           channel: "stable"
       - run: flutter pub get
       - run: flutter build appbundle --build-number ${{ github.run_number }}
@@ -79,6 +80,7 @@ jobs:
           fetch-depth: 100
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.9"
           channel: "stable"
       - name: Fix permissions
         run: sudo chown -R $USER . && sudo chmod -R a+rwx .
@@ -170,6 +172,7 @@ jobs:
           xcode-version: latest
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.9"
           channel: "stable"
       - name: Install tools
         run: brew install automake libtool create-dmg
