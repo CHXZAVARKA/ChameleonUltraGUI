@@ -189,21 +189,30 @@ abstract final class SlotWriteVerifier {
     if (!_sameAnticollision(expectedAnticollision, actual.payload)) {
       return _mismatch(SlotWriteVerificationDetail.anticollisionMismatch);
     }
-    final geometry = MifareClassicGeometry.fromType(
+    final sourceGeometry = MifareClassicGeometry.fromSavedCardData(card);
+    final targetGeometry = MifareClassicGeometry.fromType(
       chameleonTagTypeGetMfClassicType(type),
     );
-    if (geometry == null || !geometry.matchesBlockData(card.data)) {
+    if (sourceGeometry == null ||
+        targetGeometry == null ||
+        SlotPayloadWriter.targetTypeForCard(card) != type ||
+        sourceGeometry.blockCount > targetGeometry.blockCount) {
       return _incomplete(
         SlotWriteVerificationDetail.expectedGeometryIncomplete,
       );
     }
     if (!actual.structurallyComplete ||
-        actual.payload.data.length != geometry.blockCount ||
+        actual.payload.data.length != targetGeometry.blockCount ||
         actual.payload.data.any((block) => block.length != 16)) {
       return _incomplete(SlotWriteVerificationDetail.deviceGeometryIncomplete);
     }
-    if (_digest(card.data.take(geometry.blockCount)) !=
-        _digest(actual.payload.data.take(geometry.blockCount))) {
+    final expectedBlocks = List.generate(
+      targetGeometry.blockCount,
+      (block) => block < sourceGeometry.blockCount
+          ? card.data[block]
+          : _classicDefaultBlock(block),
+    );
+    if (_digest(expectedBlocks) != _digest(actual.payload.data)) {
       return _mismatch(SlotWriteVerificationDetail.payloadMismatch);
     }
     return const SlotWriteVerificationResult.verified();
@@ -307,6 +316,31 @@ abstract final class SlotWriteVerifier {
       return null;
     }
   }
+
+  // setDefaultDataToSlot initializes every unwritten Classic target block with
+  // the firmware factory image before the source payload is copied over it.
+  static Uint8List _classicDefaultBlock(int block) => Uint8List.fromList(
+        (block < 128 && block % 4 == 3) || block % 16 == 15
+            ? const [
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0x07,
+                0x80,
+                0x69,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+              ]
+            : List.filled(16, 0),
+      );
 
   static String _digest(Iterable<Uint8List> chunks) =>
       sha256.convert(chunks.expand((chunk) => chunk).toList()).toString();

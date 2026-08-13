@@ -5,6 +5,7 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/slot_command_runner.dart';
 import 'package:chameleonultragui/helpers/slot_write_verification.dart';
@@ -20,6 +21,42 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('post-write comparison', () {
+    test('verifies every supported Classic source and storage geometry',
+        () async {
+      const cases = [
+        (TagType.mifareMini, 20, TagType.mifareMini, 20),
+        (TagType.mifare1K, 64, TagType.mifare1K, 64),
+        (TagType.mifare1K, 72, TagType.mifare2K, 128),
+        (TagType.mifare2K, 128, TagType.mifare2K, 128),
+        (TagType.mifare4K, 256, TagType.mifare4K, 256),
+      ];
+
+      for (final geometryCase in cases) {
+        final card = _classicCardFor(
+          tag: geometryCase.$1,
+          blockCount: geometryCase.$2,
+        );
+        final communicator = _VerificationCommunicator.fromClassic(
+          card,
+          targetType: geometryCase.$3,
+        );
+
+        final result = await SlotWriteVerifier.verify(
+          runner: _Runner(communicator),
+          position: 0,
+          card: card,
+          targetType: geometryCase.$3,
+        );
+
+        expect(
+          result.outcome,
+          SlotWriteVerificationOutcome.verified,
+          reason: '${geometryCase.$1.name}:${geometryCase.$2}',
+        );
+        expect(communicator.classicBlocks, hasLength(geometryCase.$4));
+      }
+    });
+
     test('verifies exact Classic metadata, geometry, and payload digest',
         () async {
       final card = _classicCard();
@@ -79,6 +116,96 @@ void main() {
       );
       expect(type.outcome, SlotWriteVerificationOutcome.mismatch);
       expect(type.detail, SlotWriteVerificationDetail.typeMismatch);
+    });
+
+    test('checks each Classic anticollision field independently', () async {
+      final card = _classicCardFor(
+        tag: TagType.mifare1K,
+        blockCount: 64,
+      );
+      for (final field in ['uid', 'sak', 'atqa']) {
+        final communicator = _VerificationCommunicator.fromClassic(card);
+        final expected = communicator.antiCollision;
+        communicator.antiCollision = CardData(
+          uid: Uint8List.fromList(expected.uid),
+          sak: expected.sak,
+          atqa: Uint8List.fromList(expected.atqa),
+          ats: Uint8List.fromList(expected.ats),
+        );
+        switch (field) {
+          case 'uid':
+            communicator.antiCollision.uid[0] ^= 0xff;
+          case 'sak':
+            communicator.antiCollision.sak ^= 0xff;
+          case 'atqa':
+            communicator.antiCollision.atqa[0] ^= 0xff;
+        }
+
+        final result = await SlotWriteVerifier.verify(
+          runner: _Runner(communicator),
+          position: 0,
+          card: card,
+          targetType: TagType.mifare1K,
+        );
+
+        expect(
+          result.outcome,
+          SlotWriteVerificationOutcome.mismatch,
+          reason: field,
+        );
+        expect(
+          result.detail,
+          SlotWriteVerificationDetail.anticollisionMismatch,
+          reason: field,
+        );
+      }
+    });
+
+    test('EV1 target padding participates in the payload digest', () async {
+      final card = _classicCardFor(
+        tag: TagType.mifare1K,
+        blockCount: 72,
+      );
+      final communicator = _VerificationCommunicator.fromClassic(
+        card,
+        targetType: TagType.mifare2K,
+      );
+      communicator.classicBlocks[90][0] ^= 0xff;
+
+      final result = await SlotWriteVerifier.verify(
+        runner: _Runner(communicator),
+        position: 0,
+        card: card,
+        targetType: TagType.mifare2K,
+      );
+
+      expect(result.outcome, SlotWriteVerificationOutcome.mismatch);
+      expect(result.detail, SlotWriteVerificationDetail.payloadMismatch);
+    });
+
+    test('complete target storage cannot mask invalid source geometry',
+        () async {
+      final card = _classicCardFor(
+        tag: TagType.mifare1K,
+        blockCount: 71,
+      );
+      final communicator = _VerificationCommunicator.fromClassic(
+        card,
+        targetType: TagType.mifare2K,
+      );
+
+      final result = await SlotWriteVerifier.verify(
+        runner: _Runner(communicator),
+        position: 0,
+        card: card,
+        targetType: TagType.mifare2K,
+      );
+
+      expect(result.outcome, SlotWriteVerificationOutcome.incomplete);
+      expect(
+        result.detail,
+        SlotWriteVerificationDetail.expectedGeometryIncomplete,
+      );
     });
 
     test('short and oversized Classic chunks are incomplete, not mismatches',
@@ -239,6 +366,47 @@ void main() {
   });
 
   group('Slot Manager upload workflow', () {
+    test('verifies a 72-block EV1 source in 128-block target storage',
+        () async {
+      final card = _classicCardFor(
+        tag: TagType.mifare1K,
+        blockCount: 72,
+      );
+      final communicator = _UploadCommunicator();
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+
+      final result = await const SlotWriteWorkflow().upload(
+        status: fixture.appState.connectedDeviceStatus!,
+        position: 2,
+        card: card,
+        name: card.name,
+      );
+
+      expect(result.outcome, SlotWriteVerificationOutcome.verified);
+      expect(communicator.types[2].hf, TagType.mifare2K);
+      expect(communicator.classicBlocks, hasLength(128));
+      expect(
+        communicator.classicBlocks
+            .take(72)
+            .map((block) => block.toList())
+            .toList(),
+        equals(card.data.map((block) => block.toList()).toList()),
+      );
+      expect(
+        communicator.classicBlocks
+            .skip(72)
+            .map((block) => block.toList())
+            .toList(),
+        equals(
+          List.generate(
+            56,
+            (offset) => _defaultClassicBlock(offset + 72).toList(),
+          ),
+        ),
+      );
+    });
+
     testWidgets('shows the localized verification result', (tester) async {
       final communicator = _UploadCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
@@ -387,13 +555,21 @@ void main() {
   });
 }
 
-CardSave _classicCard() {
+CardSave _classicCard() => _classicCardFor(
+      tag: TagType.mifareMini,
+      blockCount: 20,
+    );
+
+CardSave _classicCardFor({
+  required TagType tag,
+  required int blockCount,
+}) {
   final card = CardSave(
     uid: '01 02 03 04',
     name: 'Classic',
-    tag: TagType.mifareMini,
+    tag: tag,
     data: List.generate(
-      20,
+      blockCount,
       (block) => Uint8List.fromList(
         List.generate(16, (offset) => (block * 16 + offset) & 0xff),
       ),
@@ -451,10 +627,22 @@ final class _Runner implements SlotCommandRunner {
 class _VerificationCommunicator extends ChameleonCommunicator {
   _VerificationCommunicator() : super(Logger(output: MemoryOutput()));
 
-  factory _VerificationCommunicator.fromClassic(CardSave card) {
+  factory _VerificationCommunicator.fromClassic(
+    CardSave card, {
+    TagType? targetType,
+  }) {
+    final storageType = targetType ?? card.tag;
+    final storageBlockCount = mfClassicGetBlockCount(
+      chameleonTagTypeGetMfClassicType(storageType),
+    );
     final communicator = _VerificationCommunicator()
-      ..hfType = card.tag
-      ..classicBlocks = card.data.map(Uint8List.fromList).toList()
+      ..hfType = storageType
+      ..classicBlocks = List.generate(
+        storageBlockCount,
+        (block) => block < card.data.length
+            ? Uint8List.fromList(card.data[block])
+            : _defaultClassicBlock(block),
+      )
       ..antiCollision = mifareClassicAntiCollisionForCard(card);
     return communicator;
   }
@@ -568,7 +756,7 @@ enum _UploadFailure { none, write, save }
 
 enum _SessionTransition { disconnect, dfu, replacement }
 
-final class _UploadCommunicator extends ChameleonCommunicator {
+class _UploadCommunicator extends ChameleonCommunicator {
   _UploadCommunicator({
     this.failure = _UploadFailure.none,
     this.readGate,
@@ -583,6 +771,13 @@ final class _UploadCommunicator extends ChameleonCommunicator {
       List.generate(8, (_) => EnabledSlotInfo());
   final List<SlotNames> names = List.generate(8, (_) => SlotNames());
   Uint8List lfIdentity = Uint8List(0);
+  CardData antiCollision = CardData(
+    uid: Uint8List(0),
+    sak: 0,
+    atqa: Uint8List(0),
+    ats: Uint8List(0),
+  );
+  List<Uint8List> classicBlocks = [];
   int active = 0;
   bool readerMode = false;
 
@@ -599,7 +794,11 @@ final class _UploadCommunicator extends ChameleonCommunicator {
     bool status,
   ) async {
     events.add('enable:$slot:${frequency.name}:$status');
-    enabled[slot].lf = status;
+    if (frequency == TagFrequency.hf) {
+      enabled[slot].hf = status;
+    } else {
+      enabled[slot].lf = status;
+    }
   }
 
   @override
@@ -611,12 +810,36 @@ final class _UploadCommunicator extends ChameleonCommunicator {
   @override
   Future<void> setSlotType(int slot, TagType type) async {
     events.add('type:$slot:${type.name}');
-    types[slot].lf = type;
+    if (chameleonTagToFrequency(type) == TagFrequency.hf) {
+      types[slot].hf = type;
+    } else {
+      types[slot].lf = type;
+    }
   }
 
   @override
   Future<void> setDefaultDataToSlot(int slot, TagType type) async {
     events.add('default:$slot:${type.name}');
+    if (isMifareClassic(type)) {
+      classicBlocks = List.generate(
+        mfClassicGetBlockCount(chameleonTagTypeGetMfClassicType(type)),
+        _defaultClassicBlock,
+      );
+    }
+  }
+
+  @override
+  Future<void> setMf1AntiCollision(CardData card) async {
+    antiCollision = card;
+  }
+
+  @override
+  Future<void> setMf1BlockData(int startBlock, Uint8List blocks) async {
+    for (var offset = 0; offset < blocks.length; offset += 16) {
+      classicBlocks[startBlock + offset ~/ 16] = Uint8List.fromList(
+        blocks.sublist(offset, offset + 16),
+      );
+    }
   }
 
   @override
@@ -635,7 +858,11 @@ final class _UploadCommunicator extends ChameleonCommunicator {
     TagFrequency frequency,
   ) async {
     events.add('name:$index:${frequency.name}:$name');
-    names[index].lf = name;
+    if (frequency == TagFrequency.hf) {
+      names[index].hf = name;
+    } else {
+      names[index].lf = name;
+    }
   }
 
   @override
@@ -663,6 +890,19 @@ final class _UploadCommunicator extends ChameleonCommunicator {
   }
 
   @override
+  Future<CardData> mf1GetAntiCollData() async => antiCollision;
+
+  @override
+  Future<Uint8List> mf1GetEmulatorBlock(int startBlock, int blockCount) async =>
+      Uint8List.fromList(
+        classicBlocks
+            .skip(startBlock)
+            .take(blockCount)
+            .expand((block) => block)
+            .toList(),
+      );
+
+  @override
   Future<List<EnabledSlotInfo>> getEnabledSlots() async {
     events.add('read-enabled');
     return enabled;
@@ -686,6 +926,29 @@ final class _UploadCommunicator extends ChameleonCommunicator {
     return readerMode;
   }
 }
+
+Uint8List _defaultClassicBlock(int block) => Uint8List.fromList(
+      (block < 128 && block % 4 == 3) || block % 16 == 15
+          ? const [
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0x07,
+              0x80,
+              0x69,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+              0xff,
+            ]
+          : List.filled(16, 0),
+    );
 
 String _hex(Uint8List bytes) =>
     bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
