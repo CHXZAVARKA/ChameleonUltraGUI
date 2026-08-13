@@ -8,6 +8,7 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/pending_connection.dart';
+import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -236,6 +237,84 @@ void main() {
       expect(
         fixture.appState.connectionReadiness.snapshot.errorCategory,
         ConnectionReadinessErrorCategory.timeout,
+      );
+
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'post-timeout surfaces and timers do not enqueue behind a hung command',
+    (tester) async {
+      final batteryGate = Completer<void>();
+      final communicator = _SerializedReadinessCommunicator(batteryGate);
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 25));
+      await _pumpFrames(tester, 4);
+
+      final status = fixture.appState.connectedDeviceStatus!;
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+      expect(
+        status.snapshot.battery.availability,
+        BatteryAvailability.unavailable,
+      );
+      expect(status.snapshot.mode.availability, ModeAvailability.available);
+      expect(status.snapshot.slots.availability, SlotsAvailability.available);
+      expect(
+        status.snapshot.firmware.checkResult,
+        FirmwareCheckResult.unavailable,
+      );
+      final requestsAfterTimeout = communicator.serializedRequests;
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(communicator.serializedRequests, requestsAfterTimeout);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(communicator.serializedRequests, requestsAfterTimeout);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: fixture.appState,
+          child: const MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: SlotManagerPage(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(communicator.serializedRequests, requestsAfterTimeout);
+      expect(
+        fixture.appState.connectionReadiness.snapshot.stage,
+        ConnectionReadinessStage.degraded,
+      );
+      expect(
+        status.snapshot.firmware.checkResult,
+        FirmwareCheckResult.unavailable,
+      );
+
+      unawaited(status.retryFirmwareCheck());
+      await tester.pump(const Duration(milliseconds: 25));
+      expect(communicator.serializedRequests, requestsAfterTimeout);
+      expect(
+        status.snapshot.firmware.checkResult,
+        FirmwareCheckResult.unavailable,
       );
 
       fixture.dispose();
@@ -752,8 +831,10 @@ class _SerializedReadinessCommunicator extends _ReadinessCommunicator {
 
   final Completer<void> batteryGate;
   Future<void> _tail = Future.value();
+  int serializedRequests = 0;
 
   Future<T> _serialize<T>(Future<T> Function() operation) {
+    serializedRequests++;
     final result = Completer<T>();
     _tail = _tail.then((_) async {
       try {

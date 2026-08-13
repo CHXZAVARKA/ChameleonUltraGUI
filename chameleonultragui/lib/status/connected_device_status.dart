@@ -762,6 +762,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   bool _hasPresentedHome = false;
   bool _initialStatusFinished = false;
   bool _initialStatusTimedOut = false;
+  bool _statusQueueQuarantined = false;
   bool _protocolHandshakeConfirmed = false;
   final Completer<bool> _protocolHandshakeCompletion = Completer<bool>();
   bool _disposed = false;
@@ -857,7 +858,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _homePresenceCount++;
         if (_homePresenceCount == 1 && _isAppActive) {
           if (_initialStatusFinished) {
-            if (!firstPresentation) {
+            if (!firstPresentation && !_statusQueueQuarantined) {
               unawaited(_refreshHomeOnEntry());
             }
             _startHomeTimers();
@@ -868,7 +869,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _slotManagerPresenceCount++;
         if (_slotManagerPresenceCount == 1 &&
             _isAppActive &&
-            _initialStatusFinished) {
+            _initialStatusFinished &&
+            !_statusQueueQuarantined) {
           unawaited(refreshSlots());
         }
         return StatusPresence._(() => _leaveSlotManager());
@@ -1050,8 +1052,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isCurrentReadiness(generation)) {
       return;
     }
+    _statusQueueQuarantined = false;
     await _loadInitialFacets(remainingFacets, generation);
     _publishReadinessForSnapshot();
+    if (!_statusQueueQuarantined && _homePresenceCount > 0 && _isAppActive) {
+      _startHomeTimers();
+    }
   }
 
   Future<_InitialFacetLoadResult> _loadInitialFacet(
@@ -1085,6 +1091,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       );
       if (error is TimeoutException) {
         _initialStatusTimedOut = true;
+        _quarantineStatusQueue();
       }
       markUnavailable();
       return error is TimeoutException
@@ -1097,6 +1104,14 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _canPublish &&
       generation == _readinessInitializationGeneration &&
       _connectionReadiness.isCurrent(_readinessAttempt);
+
+  void _quarantineStatusQueue() {
+    _statusQueueQuarantined = true;
+    _batteryTimer?.cancel();
+    _batteryTimer = null;
+    _activeSlotTimer?.cancel();
+    _activeSlotTimer = null;
+  }
 
   Future<T> _withReadinessTimeout<T>(
     Future<T> operation,
@@ -1195,6 +1210,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _refreshHomeOnEntry() async {
+    if (_statusQueueQuarantined) {
+      return;
+    }
     final batteryRefresh = refreshBattery();
     final modeRefresh =
         _snapshot.mode.availability == ModeAvailability.available
@@ -1211,6 +1229,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _refreshHomeAfterResume() async {
+    if (_statusQueueQuarantined) {
+      return;
+    }
     final batteryRefresh = refreshBattery();
     final modeRefresh = _snapshot.mode.availability == ModeAvailability.loading
         ? refreshMode()
@@ -1223,6 +1244,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> refreshFirmware() async {
+    if (_statusQueueQuarantined) {
+      return;
+    }
     if (!await _waitForProtocolHandshake()) {
       return;
     }
@@ -1236,6 +1260,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> retryFirmwareCheck() {
+    if (_statusQueueQuarantined) {
+      return Future.value();
+    }
     if (_snapshot.firmware.state == FirmwareState.demo ||
         _snapshot.firmware.checkResult != FirmwareCheckResult.unavailable) {
       return _firmwareRefresh ?? Future.value();
@@ -1245,6 +1272,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> setFirmwareChannel(FirmwareChannel channel) async {
     if (!_canPublish ||
+        _statusQueueQuarantined ||
         _snapshot.firmware.state == FirmwareState.demo ||
         channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
@@ -1592,7 +1620,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> refreshMode() async {
-    if (await _waitForProtocolHandshake()) {
+    if (!_statusQueueQuarantined && await _waitForProtocolHandshake()) {
       await _modeStatusMachine.refresh();
     }
   }
@@ -1601,6 +1629,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _modeStatusMachine.switchTo(target);
 
   Future<void> refreshSlots() async {
+    if (_statusQueueQuarantined) {
+      return;
+    }
     if (!await _waitForProtocolHandshake()) {
       return;
     }
@@ -2258,7 +2289,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _scheduleActiveSlotRefresh() {
-    if (_slotsRefresh != null ||
+    if (_statusQueueQuarantined ||
+        _slotsRefresh != null ||
         _snapshot.slots.pendingActivation != null ||
         _snapshot.slots.pendingReorder != null) {
       return Future.value();
@@ -2561,7 +2593,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> refreshBattery() async {
-    if (await _waitForProtocolHandshake()) {
+    if (!_statusQueueQuarantined && await _waitForProtocolHandshake()) {
       await _batteryStatusMachine.refresh();
     }
   }
@@ -2598,6 +2630,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _startHomeTimers() {
+    if (_statusQueueQuarantined) {
+      return;
+    }
     _batteryTimer?.cancel();
     _batteryTimer = Timer.periodic(
       batteryPollInterval,
@@ -2649,13 +2684,14 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (_homePresenceCount == 0) {
       if (state == AppLifecycleState.resumed &&
           _slotManagerPresenceCount > 0 &&
-          _initialStatusFinished) {
+          _initialStatusFinished &&
+          !_statusQueueQuarantined) {
         unawaited(refreshSlots());
       }
       return;
     }
     if (state == AppLifecycleState.resumed) {
-      if (_initialStatusFinished) {
+      if (_initialStatusFinished && !_statusQueueQuarantined) {
         unawaited(_refreshHomeAfterResume());
         _startHomeTimers();
       }
