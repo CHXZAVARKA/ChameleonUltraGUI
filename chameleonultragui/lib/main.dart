@@ -8,6 +8,7 @@ import 'package:chameleonultragui/connector/serial_macos.dart';
 import 'package:chameleonultragui/gui/page/tools.dart';
 import 'package:chameleonultragui/helpers/font.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
+import 'package:chameleonultragui/helpers/full_device_backup_workflow.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/maintenance_progress.dart';
@@ -81,10 +82,13 @@ class ChameleonGUIState extends ChangeNotifier {
     this.firmwareCatalog = const GitHubFirmwareCatalog(),
     this.firmwareInstaller,
     this.slotBackupFiles = const NativeSlotBackupFileAdapter(),
-  }) : singleSlotBackupWorkflow =
-            SingleSlotBackupWorkflow(files: slotBackupFiles);
+  })  : singleSlotBackupWorkflow =
+            SingleSlotBackupWorkflow(files: slotBackupFiles),
+        fullDeviceBackupWorkflow =
+            FullDeviceBackupWorkflow(files: slotBackupFiles);
 
   final SingleSlotBackupWorkflow singleSlotBackupWorkflow;
+  final FullDeviceBackupWorkflow fullDeviceBackupWorkflow;
 
   RfOperationCoordinator _rfOperations = RfOperationCoordinator();
   RfOperationCoordinator get rfOperations => _rfOperations;

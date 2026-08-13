@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
@@ -136,39 +137,25 @@ class SingleSlotBackupWorkflow {
     }
     final sourceDevice = status.snapshot.identity.device;
     return status.mutateSlots((mutation) async {
-      final metadata = await _readMetadata(mutation, position);
-      if (!metadata.hasAnyCurrentValue) {
-        return SingleSlotBackup(
-          sourceDevice: sourceDevice,
-          sourcePosition: position,
-          createdAt: clock(),
-          hf: const SlotFrequencyBackup.unavailable(
-            frequency: TagFrequency.hf,
-          ),
-          lf: const SlotFrequencyBackup.unavailable(
-            frequency: TagFrequency.lf,
-          ),
-        );
-      }
-      await mutation.run((communicator) => communicator.activateSlot(position));
-      final hf = await _captureFrequency(
-        mutation,
-        TagFrequency.hf,
-        metadata.hf,
-      );
-      final lf = await _captureFrequency(
-        mutation,
-        TagFrequency.lf,
-        metadata.lf,
-      );
-      return SingleSlotBackup(
+      final capture = await beginCapture(
+        mutation: mutation,
         sourceDevice: sourceDevice,
-        sourcePosition: position,
-        createdAt: clock(),
-        hf: hf,
-        lf: lf,
       );
+      return capture.capture(position: position, createdAt: clock());
     });
+  }
+
+  Future<SingleSlotCaptureSession> beginCapture({
+    required SlotMutationScope mutation,
+    required ChameleonDevice sourceDevice,
+  }) async {
+    final metadata = await _readAllMetadata(mutation);
+    return SingleSlotCaptureSession._(
+      workflow: this,
+      mutation: mutation,
+      sourceDevice: sourceDevice,
+      metadata: metadata,
+    );
   }
 
   Future<SlotBackupRestoreOutcome> restore({
@@ -220,9 +207,8 @@ class SingleSlotBackupWorkflow {
     }
   }
 
-  Future<_SlotMetadata> _readMetadata(
+  Future<List<_SlotMetadata>> _readAllMetadata(
     SlotMutationScope mutation,
-    int position,
   ) async {
     List<SlotTypes>? types;
     List<EnabledSlotInfo>? enabled;
@@ -245,19 +231,25 @@ class SingleSlotBackupWorkflow {
     } on SlotMutationConnectionChanged {
       rethrow;
     } catch (_) {}
-    return _SlotMetadata(
-      hf: _FrequencyMetadata(
-        type: types?[position].hf,
-        enabled: enabled?[position].hf,
-        name: names?[position].hf,
-      ),
-      lf: _FrequencyMetadata(
-        type: types?[position].lf,
-        enabled: enabled?[position].lf,
-        name: names?[position].lf,
+    return List.generate(
+      8,
+      (position) => _SlotMetadata(
+        hf: _FrequencyMetadata(
+          type: _at(types, position)?.hf,
+          enabled: _at(enabled, position)?.hf,
+          name: _at(names, position)?.hf,
+        ),
+        lf: _FrequencyMetadata(
+          type: _at(types, position)?.lf,
+          enabled: _at(enabled, position)?.lf,
+          name: _at(names, position)?.lf,
+        ),
       ),
     );
   }
+
+  T? _at<T>(List<T>? values, int index) =>
+      values != null && index < values.length ? values[index] : null;
 
   Future<SlotFrequencyBackup> _captureFrequency(
     SlotMutationScope mutation,
@@ -415,6 +407,75 @@ class SingleSlotBackupWorkflow {
   }
 
   bool _isSupported(TagType type) => SlotPayloadWriter.supports(type);
+}
+
+class SingleSlotCaptureSession {
+  const SingleSlotCaptureSession._({
+    required SingleSlotBackupWorkflow workflow,
+    required SlotMutationScope mutation,
+    required this.sourceDevice,
+    required List<_SlotMetadata> metadata,
+  })  : _workflow = workflow,
+        _mutation = mutation,
+        _metadata = metadata;
+
+  final SingleSlotBackupWorkflow _workflow;
+  final SlotMutationScope _mutation;
+  final ChameleonDevice sourceDevice;
+  final List<_SlotMetadata> _metadata;
+
+  Future<SingleSlotBackup> capture({
+    required int position,
+    required DateTime createdAt,
+  }) async {
+    if (position < 0 || position >= 8) {
+      throw RangeError.range(position, 0, 7, 'position');
+    }
+    _mutation.ensureCurrent();
+    final metadata = _metadata[position];
+    if (!metadata.hasAnyCurrentValue) {
+      return _unavailable(position, createdAt);
+    }
+    await _mutation.run(
+      (communicator) => communicator.activateSlot(position),
+    );
+    final hf = await _workflow._captureFrequency(
+      _mutation,
+      TagFrequency.hf,
+      metadata.hf,
+    );
+    final lf = await _workflow._captureFrequency(
+      _mutation,
+      TagFrequency.lf,
+      metadata.lf,
+    );
+    return SingleSlotBackup(
+      sourceDevice: sourceDevice,
+      sourcePosition: position,
+      createdAt: createdAt,
+      hf: hf,
+      lf: lf,
+    );
+  }
+
+  SingleSlotBackup unavailable({
+    required int position,
+    required DateTime createdAt,
+  }) =>
+      _unavailable(position, createdAt);
+
+  SingleSlotBackup _unavailable(int position, DateTime createdAt) =>
+      SingleSlotBackup(
+        sourceDevice: sourceDevice,
+        sourcePosition: position,
+        createdAt: createdAt,
+        hf: const SlotFrequencyBackup.unavailable(
+          frequency: TagFrequency.hf,
+        ),
+        lf: const SlotFrequencyBackup.unavailable(
+          frequency: TagFrequency.lf,
+        ),
+      );
 }
 
 class _SlotMetadata {

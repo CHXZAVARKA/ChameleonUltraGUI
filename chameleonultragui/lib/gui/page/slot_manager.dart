@@ -1,6 +1,8 @@
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/full_device_backup.dart';
+import 'package:chameleonultragui/helpers/full_device_backup_workflow.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/slot_payload.dart';
 import 'package:chameleonultragui/main.dart';
@@ -24,6 +26,8 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   int progress = -1;
   int gridPosition = 0;
   bool onlyOneSlot = false;
+  bool _backupBusy = false;
+  FullDeviceBackupProgress? _backupProgress;
   ConnectedDeviceStatus? _status;
   StatusPresence? _presence;
 
@@ -102,7 +106,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     var tags = appState.sharedPreferencesProvider.getCards();
 
     // Don't allow user to upload more tags while already uploading dump
-    if (progress != -1) {
+    if (progress != -1 || _backupBusy) {
       return Future.value("");
     }
 
@@ -114,6 +118,256 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     );
   }
 
+  Future<void> _backupAllSlots(
+    ChameleonGUIState appState,
+    ConnectedDeviceStatus status,
+    AppLocalizations localizations,
+  ) async {
+    if (_backupBusy || progress != -1) {
+      return;
+    }
+    setState(() {
+      _backupBusy = true;
+      _backupProgress = const FullDeviceBackupProgress(
+        currentPosition: 0,
+        positions: [],
+      );
+    });
+    final outcome = await appState.fullDeviceBackupWorkflow.export(
+      status: status,
+      onProgress: (progress) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _backupProgress = progress);
+      },
+      approve: (backup) {
+        if (mounted) {
+          setState(() => _backupProgress = null);
+        }
+        return _showBackupReport(backup, localizations);
+      },
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _backupBusy = false;
+      _backupProgress = null;
+    });
+    final message = switch (outcome) {
+      FullDeviceBackupExportOutcome.saved => localizations.device_backup_saved,
+      FullDeviceBackupExportOutcome.cancelled ||
+      FullDeviceBackupExportOutcome.declined =>
+        null,
+      FullDeviceBackupExportOutcome.writeFailed =>
+        localizations.device_backup_write_failed,
+      FullDeviceBackupExportOutcome.connectionChanged =>
+        localizations.device_backup_connection_changed,
+      FullDeviceBackupExportOutcome.unavailable ||
+      FullDeviceBackupExportOutcome.captureFailed =>
+        localizations.device_backup_failed,
+    };
+    if (message != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
+  Future<bool> _showBackupReport(
+    FullDeviceBackup backup,
+    AppLocalizations localizations,
+  ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizations.device_backup_report),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  localizations.device_backup_confirmed_context(
+                    backup.activeSlot + 1,
+                    _modeLabel(backup.mode, localizations),
+                  ),
+                ),
+                if (backup.hasLimitations) ...[
+                  const SizedBox(height: 12),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      localizations.device_backup_partial_warning,
+                      key: const Key('device-backup-partial-warning'),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                ...backup.positions.map(
+                  (position) => Semantics(
+                    label: localizations.device_backup_position_semantics(
+                      position.slot.sourcePosition + 1,
+                      _captureStateLabel(position.state, localizations),
+                      _captureStateLabel(position.hfState, localizations),
+                      _captureStateLabel(position.lfState, localizations),
+                    ),
+                    child: ListTile(
+                      key: Key(
+                        'device-backup-report-position-${position.slot.sourcePosition}',
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        localizations.device_backup_position_summary(
+                          position.slot.sourcePosition + 1,
+                          _captureStateLabel(position.state, localizations),
+                        ),
+                      ),
+                      subtitle: Text(
+                        localizations.device_backup_frequency_states(
+                          _captureStateLabel(position.hfState, localizations),
+                          _captureStateLabel(position.lfState, localizations),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const Divider(),
+                Text(
+                  localizations.device_backup_firmware_facts,
+                  style: Theme.of(dialogContext).textTheme.titleMedium,
+                ),
+                _factRow(
+                  localizations.device_backup_firmware_version,
+                  backup.firmware.version,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_firmware_commit,
+                  backup.firmware.commit,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_firmware_protocol,
+                  backup.firmware.protocol,
+                  localizations,
+                ),
+                const Divider(),
+                Text(
+                  localizations.device_backup_safe_preferences,
+                  style: Theme.of(dialogContext).textTheme.titleMedium,
+                ),
+                _factRow(
+                  localizations.device_backup_animation_mode,
+                  backup.preferences.animationMode,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_button_a_press,
+                  backup.preferences.buttonAPress,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_button_b_press,
+                  backup.preferences.buttonBPress,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_button_a_long_press,
+                  backup.preferences.buttonALongPress,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_button_b_long_press,
+                  backup.preferences.buttonBLongPress,
+                  localizations,
+                ),
+                _factRow(
+                  localizations.device_backup_sleep_timeout,
+                  backup.preferences.sleepTimeoutSeconds,
+                  localizations,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const Key('device-backup-cancel-save'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizations.cancel),
+          ),
+          ElevatedButton(
+            key: const Key('device-backup-confirm-save'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              backup.hasLimitations
+                  ? localizations.device_backup_save_partial
+                  : localizations.device_backup_save,
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Widget _factRow<T>(
+    String label,
+    BackupFact<T> fact,
+    AppLocalizations localizations,
+  ) {
+    final value = fact.state == BackupFactState.confirmed
+        ? fact.value is Enum
+            ? (fact.value as Enum).name
+            : fact.value.toString()
+        : _factStateLabel(fact.state, localizations);
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      subtitle: Text(value),
+    );
+  }
+
+  String _modeLabel(
+    FullDeviceOperatingMode mode,
+    AppLocalizations localizations,
+  ) =>
+      mode == FullDeviceOperatingMode.reader
+          ? localizations.reader
+          : localizations.emulator;
+
+  String _captureStateLabel(
+    FullDeviceCaptureState state,
+    AppLocalizations localizations,
+  ) =>
+      switch (state) {
+        FullDeviceCaptureState.complete =>
+          localizations.device_backup_state_complete,
+        FullDeviceCaptureState.partial =>
+          localizations.device_backup_state_partial,
+        FullDeviceCaptureState.unsupported =>
+          localizations.device_backup_state_unsupported,
+        FullDeviceCaptureState.skipped =>
+          localizations.device_backup_state_skipped,
+        FullDeviceCaptureState.failed =>
+          localizations.device_backup_state_failed,
+      };
+
+  String _factStateLabel(
+    BackupFactState state,
+    AppLocalizations localizations,
+  ) =>
+      switch (state) {
+        BackupFactState.confirmed => localizations.device_backup_state_complete,
+        BackupFactState.unsupported =>
+          localizations.device_backup_state_unsupported,
+        BackupFactState.failed => localizations.device_backup_state_failed,
+      };
+
   @override
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
@@ -122,6 +376,20 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localizations.slot_manager),
+        actions: [
+          IconButton(
+            key: const Key('slot-manager-backup-all'),
+            tooltip: localizations.backup_all_slots,
+            onPressed: status == null || _backupBusy || progress != -1
+                ? null
+                : () => _backupAllSlots(
+                      context.read<ChameleonGUIState>(),
+                      status,
+                      localizations,
+                    ),
+            icon: const Icon(Icons.settings_backup_restore),
+          ),
+        ],
       ),
       body: status == null
           ? Center(child: Text(localizations.unavailable))
@@ -152,6 +420,8 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                           ],
                         ),
                       Expanded(child: _buildGrid(context, slots)),
+                      if (_backupProgress != null)
+                        _buildBackupProgress(context, _backupProgress!),
                       if (progress != -1) ...[
                         const SizedBox(height: 32),
                         Text(localizations.uploading_dump),
@@ -171,6 +441,66 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     );
   }
 
+  Widget _buildBackupProgress(
+    BuildContext context,
+    FullDeviceBackupProgress backupProgress,
+  ) {
+    final localizations = AppLocalizations.of(context)!;
+    return Semantics(
+      key: const Key('device-backup-progress'),
+      liveRegion: true,
+      label: localizations.device_backup_progress_semantics(
+        backupProgress.currentPosition + 1,
+        backupProgress.completedPositions,
+      ),
+      child: Card(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                localizations.device_backup_progress(
+                  backupProgress.currentPosition + 1,
+                  backupProgress.completedPositions,
+                ),
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: backupProgress.fraction),
+              if (backupProgress.positions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: backupProgress.positions
+                      .map(
+                        (position) => Chip(
+                          key: Key(
+                            'device-backup-progress-position-${position.slot.sourcePosition}',
+                          ),
+                          label: Text(
+                            localizations.device_backup_progress_position(
+                              position.slot.sourcePosition + 1,
+                              _captureStateLabel(
+                                position.state,
+                                localizations,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGrid(BuildContext context, SlotsStatus slots) {
     final localizations = AppLocalizations.of(context)!;
     return AlignedGridView.count(
@@ -182,9 +512,9 @@ class SlotManagerPageState extends State<SlotManagerPage> {
       itemBuilder: (context, index) {
         final slot = slots.slots[index];
         return Container(
-          constraints: const BoxConstraints(maxHeight: 160, minHeight: 100),
+          constraints: const BoxConstraints(minHeight: 100),
           child: ElevatedButton(
-            onPressed: progress == -1
+            onPressed: progress == -1 && !_backupBusy
                 ? () {
                     setState(() => gridPosition = index);
                     cardSelectDialog(context);

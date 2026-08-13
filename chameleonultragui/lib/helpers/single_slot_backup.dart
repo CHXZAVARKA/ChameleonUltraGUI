@@ -188,8 +188,12 @@ abstract final class SingleSlotBackupCodec {
   }
 
   static String encode(SingleSlotBackup backup) {
+    return jsonEncode(toJson(backup));
+  }
+
+  static Map<String, Object?> toJson(SingleSlotBackup backup) {
     _validateEnvelope(backup);
-    return jsonEncode({
+    return {
       'format': singleSlotBackupFormat,
       'schemaVersion': singleSlotBackupSchemaVersion,
       'createdAt': backup.createdAt.toIso8601String(),
@@ -199,7 +203,7 @@ abstract final class SingleSlotBackupCodec {
         _encodeFrequency(backup.hf),
         _encodeFrequency(backup.lf),
       ],
-    });
+    };
   }
 
   static SingleSlotBackup decode(String source) {
@@ -209,7 +213,11 @@ abstract final class SingleSlotBackupCodec {
     } catch (_) {
       throw const FormatException('Backup is not valid JSON');
     }
-    final root = _map(decoded, 'backup');
+    return fromJson(decoded);
+  }
+
+  static SingleSlotBackup fromJson(Object? source) {
+    final root = _map(source, 'backup');
     if (root['format'] != singleSlotBackupFormat) {
       throw const FormatException('Unsupported backup format');
     }

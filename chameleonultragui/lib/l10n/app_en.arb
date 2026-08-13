@@ -1188,5 +1188,163 @@
   "slot_restore_failed": "The restore stopped before it could be confirmed. Check the slot before trying again.",
   "@slot_restore_failed": {
     "description": "Error shown after an unavailable or ambiguous single-slot restore command"
+  },
+  "backup_all_slots": "Back up all slots",
+  "@backup_all_slots": {
+    "description": "Slot Manager action that creates one portable backup of the complete device"
+  },
+  "device_backup_progress": "Backing up slot {position} of 8. {completed} positions confirmed.",
+  "@device_backup_progress": {
+    "description": "Visible progress while a complete device backup is captured",
+    "placeholders": {
+      "position": {"type": "int", "example": "3"},
+      "completed": {"type": "int", "example": "2"}
+    }
+  },
+  "device_backup_progress_semantics": "Backing up slot {position} of 8; {completed} positions confirmed",
+  "@device_backup_progress_semantics": {
+    "description": "Screen-reader announcement for complete device backup progress",
+    "placeholders": {
+      "position": {"type": "int", "example": "3"},
+      "completed": {"type": "int", "example": "2"}
+    }
+  },
+  "device_backup_progress_position": "Slot {position}: {state}",
+  "@device_backup_progress_position": {
+    "description": "Previously confirmed position shown while device backup continues",
+    "placeholders": {
+      "position": {"type": "int", "example": "2"},
+      "state": {"type": "String", "example": "Complete"}
+    }
+  },
+  "device_backup_report": "Device backup report",
+  "@device_backup_report": {
+    "description": "Title of the full-device backup completeness report"
+  },
+  "device_backup_confirmed_context": "Active slot {slot}; mode: {mode}",
+  "@device_backup_confirmed_context": {
+    "description": "Confirmed active slot and operating mode stored in a full-device backup",
+    "placeholders": {
+      "slot": {"type": "int", "example": "4"},
+      "mode": {"type": "String", "example": "Emulator"}
+    }
+  },
+  "device_backup_partial_warning": "This backup has limitations. Review every failed, skipped, partial, or unsupported item before saving it.",
+  "@device_backup_partial_warning": {
+    "description": "Warning shown before a limited full-device backup can be saved"
+  },
+  "device_backup_position_summary": "Slot {position}: {state}",
+  "@device_backup_position_summary": {
+    "description": "Position-level result in the full-device backup report",
+    "placeholders": {
+      "position": {"type": "int", "example": "5"},
+      "state": {"type": "String", "example": "Partial"}
+    }
+  },
+  "device_backup_frequency_states": "HF: {hf}; LF: {lf}",
+  "@device_backup_frequency_states": {
+    "description": "HF and LF capture results for one position in the full-device backup report",
+    "placeholders": {
+      "hf": {"type": "String", "example": "Complete"},
+      "lf": {"type": "String", "example": "Unsupported"}
+    }
+  },
+  "device_backup_position_semantics": "Slot {position}: {state}; HF {hf}; LF {lf}",
+  "@device_backup_position_semantics": {
+    "description": "Screen-reader summary for one position in the full-device backup report",
+    "placeholders": {
+      "position": {"type": "int", "example": "5"},
+      "state": {"type": "String", "example": "Partial"},
+      "hf": {"type": "String", "example": "Complete"},
+      "lf": {"type": "String", "example": "Unsupported"}
+    }
+  },
+  "device_backup_state_complete": "Complete",
+  "@device_backup_state_complete": {
+    "description": "Complete item state in a full-device backup report"
+  },
+  "device_backup_state_partial": "Partial",
+  "@device_backup_state_partial": {
+    "description": "Partial item state in a full-device backup report"
+  },
+  "device_backup_state_unsupported": "Unsupported",
+  "@device_backup_state_unsupported": {
+    "description": "Unsupported item state in a full-device backup report"
+  },
+  "device_backup_state_skipped": "Skipped",
+  "@device_backup_state_skipped": {
+    "description": "Skipped item state in a full-device backup report"
+  },
+  "device_backup_state_failed": "Failed",
+  "@device_backup_state_failed": {
+    "description": "Failed item state in a full-device backup report"
+  },
+  "device_backup_firmware_facts": "Firmware compatibility facts",
+  "@device_backup_firmware_facts": {
+    "description": "Heading for sanitized firmware facts in a full-device backup report"
+  },
+  "device_backup_firmware_version": "Firmware version",
+  "@device_backup_firmware_version": {
+    "description": "Firmware version row in a full-device backup report"
+  },
+  "device_backup_firmware_commit": "Firmware commit",
+  "@device_backup_firmware_commit": {
+    "description": "Sanitized firmware commit row in a full-device backup report"
+  },
+  "device_backup_firmware_protocol": "Protocol",
+  "@device_backup_firmware_protocol": {
+    "description": "Firmware protocol row in a full-device backup report"
+  },
+  "device_backup_safe_preferences": "Safe device preferences",
+  "@device_backup_safe_preferences": {
+    "description": "Heading for allowlisted preferences in a full-device backup report"
+  },
+  "device_backup_animation_mode": "Animation mode",
+  "@device_backup_animation_mode": {
+    "description": "Animation mode row in a full-device backup report"
+  },
+  "device_backup_button_a_press": "Button A press",
+  "@device_backup_button_a_press": {
+    "description": "Button A press action row in a full-device backup report"
+  },
+  "device_backup_button_b_press": "Button B press",
+  "@device_backup_button_b_press": {
+    "description": "Button B press action row in a full-device backup report"
+  },
+  "device_backup_button_a_long_press": "Button A long press",
+  "@device_backup_button_a_long_press": {
+    "description": "Button A long-press action row in a full-device backup report"
+  },
+  "device_backup_button_b_long_press": "Button B long press",
+  "@device_backup_button_b_long_press": {
+    "description": "Button B long-press action row in a full-device backup report"
+  },
+  "device_backup_sleep_timeout": "Sleep timeout",
+  "@device_backup_sleep_timeout": {
+    "description": "Sleep timeout row in a full-device backup report"
+  },
+  "device_backup_save": "Save backup",
+  "@device_backup_save": {
+    "description": "Confirmation action that writes a complete full-device backup"
+  },
+  "device_backup_save_partial": "Save partial backup",
+  "@device_backup_save_partial": {
+    "description": "Explicit confirmation action that writes a limited full-device backup"
+  },
+  "device_backup_saved": "Device backup saved.",
+  "@device_backup_saved": {
+    "description": "Confirmation shown after a full-device backup is written"
+  },
+  "device_backup_failed": "The device backup could not be captured.",
+  "@device_backup_failed": {
+    "description": "Error shown when required full-device backup facts cannot be captured"
+  },
+  "device_backup_write_failed": "The backup file could not be written. No device data was changed.",
+  "@device_backup_write_failed": {
+    "description": "Error shown when writing a captured full-device backup file fails"
+  },
+  "device_backup_connection_changed": "The connection changed during backup. No backup file was written.",
+  "@device_backup_connection_changed": {
+    "description": "Error shown when the connected-device session changes during full-device backup"
   }
 }
