@@ -413,23 +413,25 @@ void main() {
       bool? activationOutcome;
       FirmwareInstallOutcome? installOutcome;
       Object? mutationError;
-      unawaited(status.switchMode(ConnectedDeviceMode.reader).then(
-            (value) => modeOutcome = value,
-          ));
-      unawaited(status.reorderSlots(0, 1).then(
-            (value) => reorderOutcome = value,
-          ));
-      unawaited(status.activateSlot(1).then(
-            (value) => activationOutcome = value,
-          ));
-      unawaited(status.installFirmware().then(
-            (value) => installOutcome = value,
-          ));
-      unawaited(status.mutateSlots<void>((_) async {}).catchError(
-        (Object error) {
+      unawaited(
+        status
+            .switchMode(ConnectedDeviceMode.reader)
+            .then((value) => modeOutcome = value),
+      );
+      unawaited(
+        status.reorderSlots(0, 1).then((value) => reorderOutcome = value),
+      );
+      unawaited(
+        status.activateSlot(1).then((value) => activationOutcome = value),
+      );
+      unawaited(
+        status.installFirmware().then((value) => installOutcome = value),
+      );
+      unawaited(
+        status.mutateSlots<void>((_) async {}).catchError((Object error) {
           mutationError = error;
-        },
-      ));
+        }),
+      );
 
       await tester.pump(const Duration(milliseconds: 10));
 
@@ -445,6 +447,79 @@ void main() {
       expect(communicator.foregroundRequests, 0);
       expect(installs, 0);
 
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'foreground status actions are bounded while initial readiness owns queue',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final communicator = _ForegroundActionCommunicator(modeGate);
+      var installs = 0;
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        firmwareCatalog: const _UpdateAvailableFirmwareCatalog(),
+        firmwareInstaller: (_) async => installs++,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        fixture.dispose();
+      });
+      await tester.pump();
+      expect(communicator.modeCalls, 1);
+
+      final status = fixture.appState.connectedDeviceStatus!;
+      ModeActionOutcome? modeOutcome;
+      SlotReorderOutcome? reorderOutcome;
+      bool? activationOutcome;
+      FirmwareInstallOutcome? installOutcome;
+      Object? mutationError;
+      unawaited(
+        status
+            .switchMode(ConnectedDeviceMode.reader)
+            .then((value) => modeOutcome = value),
+      );
+      unawaited(
+        status.reorderSlots(0, 1).then((value) => reorderOutcome = value),
+      );
+      unawaited(
+        status.activateSlot(1).then((value) => activationOutcome = value),
+      );
+      unawaited(
+        status.installFirmware().then((value) => installOutcome = value),
+      );
+      unawaited(
+        status.mutateSlots<void>((_) async {}).catchError((Object error) {
+          mutationError = error;
+        }),
+      );
+
+      await tester.pump(const Duration(milliseconds: 5));
+
+      expect(modeOutcome, ModeActionOutcome.busy);
+      expect(reorderOutcome, SlotReorderOutcome.busy);
+      expect(activationOutcome, isFalse);
+      expect(installOutcome, FirmwareInstallOutcome.busy);
+      expect(mutationError, isA<SlotMutationBusy>());
+      expect(status.snapshot.mode.pendingMode, isNull);
+      expect(status.snapshot.slots.pendingReorder, isNull);
+      expect(status.snapshot.slots.pendingActivation, isNull);
+      expect(status.snapshot.firmware.installing, isFalse);
+      expect(communicator.foregroundRequests, 0);
+      expect(installs, 0);
+
+      modeGate.complete();
+      await tester.pump(const Duration(milliseconds: 40));
+      await _pumpFrames(tester, 12);
+
+      expect(communicator.foregroundRequests, 0);
+      expect(installs, 0);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -552,9 +627,11 @@ void main() {
       final status = fixture.appState.connectedDeviceStatus!;
 
       var channelChangeCompleted = false;
-      unawaited(status.setFirmwareChannel(FirmwareChannel.custom).then(
-            (_) => channelChangeCompleted = true,
-          ));
+      unawaited(
+        status
+            .setFirmwareChannel(FirmwareChannel.custom)
+            .then((_) => channelChangeCompleted = true),
+      );
       protocol.complete(_currentFirmware);
       await tester.pump(const Duration(milliseconds: 25));
 
@@ -565,8 +642,99 @@ void main() {
     },
   );
 
+  testWidgets('Home persists a firmware channel only after status accepts it', (
+    tester,
+  ) async {
+    final modeGate = Completer<void>();
+    final communicator = _InitialQueueOwnershipCommunicator(
+      modeGate: modeGate,
+      slotsBlocker: Completer<void>(),
+      capabilityGate: Completer<void>(),
+    );
+    addTearDown(() {
+      if (!modeGate.isCompleted) modeGate.complete();
+    });
+    final fixture = await _mountHome(
+      tester,
+      communicator,
+      timeouts: const ConnectionReadinessTimeouts(
+        protocol: Duration(milliseconds: 20),
+        statusFacet: Duration(milliseconds: 20),
+      ),
+    );
+    addTearDown(fixture.dispose);
+    await tester.pump(const Duration(milliseconds: 25));
+    await _pumpFrames(tester, 3);
+
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pump(const Duration(milliseconds: 10));
+
+    expect(
+      fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
+      FirmwareChannel.official,
+    );
+    expect(
+      fixture.appState.connectedDeviceStatus!.snapshot.firmware.channel,
+      FirmwareChannel.official,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
-    'Home persists a firmware channel only after status accepts it',
+    'firmware channel replacement after final refresh cannot be accepted',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final communicator = _InitialQueueOwnershipCommunicator(
+        modeGate: modeGate,
+        slotsBlocker: Completer<void>()..complete(),
+        capabilityGate: Completer<void>()..complete(),
+      );
+      final catalog = _ReplacingFirmwareCatalog();
+      final fixture = await _mountConnectedShell(
+        tester,
+        communicator,
+        firmwareCatalog: catalog,
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        fixture.dispose();
+      });
+      await tester.pump();
+      expect(communicator.modeCalls, 1);
+
+      final originalStatus = fixture.appState.connectedDeviceStatus!;
+      final change = originalStatus.setFirmwareChannel(FirmwareChannel.custom);
+      modeGate.complete();
+      await catalog.secondRequestStarted.future;
+      fixture.appState.communicator = _ReadinessCommunicator();
+      catalog.releaseSecondResult.complete();
+      final outcome = await change.timeout(const Duration(seconds: 1));
+      if (outcome == FirmwareChannelChangeOutcome.accepted) {
+        fixture.appState.sharedPreferencesProvider.setFirmwareChannel(
+          FirmwareChannel.custom,
+        );
+      }
+      await _pumpFrames(tester, 4);
+
+      expect(catalog.calls, greaterThanOrEqualTo(2));
+      expect(outcome, FirmwareChannelChangeOutcome.connectionChanged);
+      expect(originalStatus.isCurrentSession, isFalse);
+      expect(
+        fixture.appState.connectedDeviceStatus,
+        isNot(same(originalStatus)),
+      );
+      expect(
+        fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
+        FirmwareChannel.official,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'latest concurrent firmware channel survives readiness quarantine',
     (tester) async {
       final modeGate = Completer<void>();
       final communicator = _InitialQueueOwnershipCommunicator(
@@ -574,10 +742,7 @@ void main() {
         slotsBlocker: Completer<void>(),
         capabilityGate: Completer<void>(),
       );
-      addTearDown(() {
-        if (!modeGate.isCompleted) modeGate.complete();
-      });
-      final fixture = await _mountHome(
+      final fixture = await _mountConnectedShell(
         tester,
         communicator,
         timeouts: const ConnectionReadinessTimeouts(
@@ -585,23 +750,34 @@ void main() {
           statusFacet: Duration(milliseconds: 20),
         ),
       );
-      addTearDown(fixture.dispose);
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        fixture.dispose();
+      });
+      await tester.pump();
+      expect(communicator.modeCalls, 1);
+
+      final status = fixture.appState.connectedDeviceStatus!;
+      final customChange = status.setFirmwareChannel(FirmwareChannel.custom);
+      await tester.pump();
+      expect(status.snapshot.firmware.channel, FirmwareChannel.custom);
+      final officialChange = status.setFirmwareChannel(
+        FirmwareChannel.official,
+      );
+      await tester.pump();
+      expect(status.snapshot.firmware.channel, FirmwareChannel.official);
+
       await tester.pump(const Duration(milliseconds: 25));
+      final outcomes = await Future.wait([customChange, officialChange]);
       await _pumpFrames(tester, 3);
 
-      await tester.tap(find.byKey(const Key('home-firmware-pill')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('firmware-channel-custom')));
-      await tester.pump(const Duration(milliseconds: 10));
-
+      expect(outcomes, everyElement(FirmwareChannelChangeOutcome.rejected));
+      expect(status.snapshot.firmware.channel, FirmwareChannel.official);
       expect(
         fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
         FirmwareChannel.official,
       );
-      expect(
-        fixture.appState.connectedDeviceStatus!.snapshot.firmware.channel,
-        FirmwareChannel.official,
-      );
+      expect(communicator.gitCommitCalls, 0);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -1219,4 +1395,31 @@ class _UpdateAvailableFirmwareCatalog implements FirmwareCatalog {
         latestCommit: 'newer123',
         updateAvailable: true,
       );
+}
+
+class _ReplacingFirmwareCatalog implements FirmwareCatalog {
+  int calls = 0;
+  final Completer<void> secondRequestStarted = Completer<void>();
+  final Completer<void> releaseSecondResult = Completer<void>();
+
+  @override
+  Future<FirmwareCatalogRelease> latestFirmware({
+    required ChameleonDevice device,
+    required String? installedCommit,
+    FirmwareChannel channel = FirmwareChannel.official,
+  }) async {
+    calls++;
+    if (calls == 1) {
+      return const FirmwareCatalogRelease(
+        latestCommit: 'unknown123',
+        updateAvailable: null,
+      );
+    }
+    secondRequestStarted.complete();
+    await releaseSecondResult.future;
+    return const FirmwareCatalogRelease(
+      latestCommit: 'current123',
+      updateAvailable: false,
+    );
+  }
 }

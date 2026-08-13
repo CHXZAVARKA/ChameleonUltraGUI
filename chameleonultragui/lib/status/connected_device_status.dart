@@ -747,6 +747,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final Duration batteryPollInterval;
 
   int _firmwareChannelRevision = 0;
+  late FirmwareChannel _confirmedFirmwareChannel = _snapshot.firmware.channel;
 
   DeviceStatusSnapshot _snapshot;
   DeviceStatusSnapshot get snapshot => _snapshot;
@@ -1145,7 +1146,49 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   bool get _externalStatusProbeBlocked =>
       _initialStatusOwnsQueue || _statusQueueQuarantined;
 
-  bool get _foregroundActionBlocked => _statusQueueQuarantined;
+  bool get _foregroundActionBlocked => _externalStatusProbeBlocked;
+
+  bool _isCurrentFirmwareChannelRequest(
+    int revision,
+    FirmwareChannel channel,
+  ) =>
+      _canPublish &&
+      !_statusQueueQuarantined &&
+      revision == _firmwareChannelRevision &&
+      channel == _snapshot.firmware.channel;
+
+  FirmwareChannelChangeOutcome _finishFirmwareChannelRequest(
+    int revision,
+    FirmwareChannel channel,
+  ) {
+    if (!_canPublish) {
+      return FirmwareChannelChangeOutcome.connectionChanged;
+    }
+    if (!_isCurrentFirmwareChannelRequest(revision, channel)) {
+      return FirmwareChannelChangeOutcome.rejected;
+    }
+    _confirmedFirmwareChannel = channel;
+    return FirmwareChannelChangeOutcome.accepted;
+  }
+
+  FirmwareChannelChangeOutcome _rejectFirmwareChannelRequest(int revision) {
+    if (!_canPublish) {
+      return FirmwareChannelChangeOutcome.connectionChanged;
+    }
+    if (revision == _firmwareChannelRevision) {
+      _firmwareChannelRevision++;
+      if (_snapshot.firmware.channel != _confirmedFirmwareChannel) {
+        _publish(
+          _snapshot.copyWith(
+            firmware: _snapshot.firmware.copyWith(
+              channel: _confirmedFirmwareChannel,
+            ),
+          ),
+        );
+      }
+    }
+    return FirmwareChannelChangeOutcome.rejected;
+  }
 
   Future<_ExternalStatusProbeGate> _gateExternalStatusProbe() async {
     if (!_canPublish) {
@@ -1339,14 +1382,16 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (!_canPublish ||
         _statusQueueQuarantined ||
         _snapshot.firmware.state == FirmwareState.demo ||
-        channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
       return !_canPublish
           ? FirmwareChannelChangeOutcome.connectionChanged
-          : channel == _snapshot.firmware.channel
-              ? FirmwareChannelChangeOutcome.accepted
-              : FirmwareChannelChangeOutcome.rejected;
+          : FirmwareChannelChangeOutcome.rejected;
     }
+    if (channel == _snapshot.firmware.channel &&
+        channel == _confirmedFirmwareChannel) {
+      return FirmwareChannelChangeOutcome.accepted;
+    }
+    final requestedBeforeHandshake = !_protocolHandshakeConfirmed;
     if (!await _waitForProtocolHandshake()) {
       return _canPublish
           ? FirmwareChannelChangeOutcome.rejected
@@ -1355,16 +1400,28 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (!_canPublish ||
         _statusQueueQuarantined ||
         _snapshot.firmware.state == FirmwareState.demo ||
-        channel == _snapshot.firmware.channel ||
         _snapshot.firmware.installing) {
       return !_canPublish
           ? FirmwareChannelChangeOutcome.connectionChanged
-          : channel == _snapshot.firmware.channel
-              ? FirmwareChannelChangeOutcome.accepted
-              : FirmwareChannelChangeOutcome.rejected;
+          : FirmwareChannelChangeOutcome.rejected;
+    }
+    if (channel == _snapshot.firmware.channel &&
+        channel == _confirmedFirmwareChannel) {
+      return FirmwareChannelChangeOutcome.accepted;
+    }
+    if (requestedBeforeHandshake) {
+      final initialReadiness = _initialReadiness;
+      if (initialReadiness != null) {
+        await initialReadiness;
+        if (!_canPublish) {
+          return FirmwareChannelChangeOutcome.connectionChanged;
+        }
+        if (_initialStatusOwnsQueue || _statusQueueQuarantined) {
+          return FirmwareChannelChangeOutcome.rejected;
+        }
+      }
     }
 
-    final previousChannel = _snapshot.firmware.channel;
     _firmwareChannelRevision++;
     final revision = _firmwareChannelRevision;
     final current = _snapshot.firmware;
@@ -1384,28 +1441,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       ),
     );
 
-    if (_initialStatusOwnsQueue) {
-      await (_initialReadiness ?? Future<void>.value());
-      if (!_canPublish) {
-        return FirmwareChannelChangeOutcome.connectionChanged;
-      }
-      if (_statusQueueQuarantined) {
-        _firmwareChannelRevision++;
-        _publish(
-          _snapshot.copyWith(
-            firmware: _snapshot.firmware.copyWith(channel: previousChannel),
-          ),
-        );
-        return FirmwareChannelChangeOutcome.rejected;
-      }
-      if (_snapshot.firmware.checkResult != FirmwareCheckResult.succeeded &&
-          _snapshot.firmware.checkResult != FirmwareCheckResult.demo) {
-        _firmwareLookupAttempted = true;
-        await _startFirmwareRefresh(readFacts: _firmwareFacts == null);
-      }
-      return channel == _snapshot.firmware.channel
-          ? FirmwareChannelChangeOutcome.accepted
-          : FirmwareChannelChangeOutcome.rejected;
+    if (_initialStatusOwnsQueue && !requestedBeforeHandshake) {
+      return _rejectFirmwareChannelRequest(revision);
     }
 
     _firmwareLookupAttempted = true;
@@ -1414,21 +1451,20 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     if (inFlight != null) {
       await inFlight;
     }
-    if (!_canPublish ||
-        _statusQueueQuarantined ||
-        revision != _firmwareChannelRevision) {
-      return !_canPublish
-          ? FirmwareChannelChangeOutcome.connectionChanged
-          : FirmwareChannelChangeOutcome.rejected;
+    if (!_canPublish) {
+      return FirmwareChannelChangeOutcome.connectionChanged;
+    }
+    if (_initialStatusOwnsQueue && !requestedBeforeHandshake) {
+      return _rejectFirmwareChannelRequest(revision);
+    }
+    if (_statusQueueQuarantined) {
+      return _rejectFirmwareChannelRequest(revision);
+    }
+    if (!_isCurrentFirmwareChannelRequest(revision, channel)) {
+      return FirmwareChannelChangeOutcome.rejected;
     }
     await _startFirmwareRefresh(readFacts: _firmwareFacts == null);
-    return _canPublish &&
-            revision == _firmwareChannelRevision &&
-            channel == _snapshot.firmware.channel
-        ? FirmwareChannelChangeOutcome.accepted
-        : _canPublish
-            ? FirmwareChannelChangeOutcome.rejected
-            : FirmwareChannelChangeOutcome.connectionChanged;
+    return _finishFirmwareChannelRequest(revision, channel);
   }
 
   Future<void> _startFirmwareRefresh({required bool readFacts}) {
