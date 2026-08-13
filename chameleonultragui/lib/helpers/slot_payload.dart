@@ -267,6 +267,14 @@ abstract final class SlotPayloadWriter {
       type == TagType.ioProx ||
       type == TagType.idteck;
 
+  static TagType targetTypeForCard(CardSave card) {
+    if (isMifareClassic(card.tag) &&
+        chameleonTagSaveCheckForMifareClassicEV1(card)) {
+      return TagType.mifare2K;
+    }
+    return card.tag;
+  }
+
   static Future<void> writeCard({
     required SlotCommandRunner runner,
     required int position,
@@ -283,11 +291,7 @@ abstract final class SlotPayloadWriter {
     if (!supports(card.tag)) {
       throw UnsupportedError('Unsupported slot tag type');
     }
-    final type = targetType ??
-        (isMifareClassic(card.tag) &&
-                chameleonTagSaveCheckForMifareClassicEV1(card)
-            ? TagType.mifare2K
-            : card.tag);
+    final type = targetType ?? targetTypeForCard(card);
     final frequency = chameleonTagToFrequency(type);
     await runner.run(
       (communicator) => communicator.enableSlot(position, frequency, enabled),

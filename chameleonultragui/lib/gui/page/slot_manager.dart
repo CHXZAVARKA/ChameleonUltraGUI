@@ -5,6 +5,7 @@ import 'package:chameleonultragui/helpers/full_device_backup.dart';
 import 'package:chameleonultragui/helpers/full_device_backup_workflow.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/slot_payload.dart';
+import 'package:chameleonultragui/helpers/slot_write_verification.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
@@ -30,6 +31,10 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   FullDeviceBackupProgress? _backupProgress;
   ConnectedDeviceStatus? _status;
   StatusPresence? _presence;
+  SlotWriteVerificationResult? _lastVerification;
+  bool _verifying = false;
+
+  SlotWriteVerificationResult? get lastVerification => _lastVerification;
 
   @override
   void didChangeDependencies() {
@@ -73,33 +78,53 @@ class SlotManagerPageState extends State<SlotManagerPage> {
       return;
     }
 
+    if (mounted) {
+      setState(() {
+        _lastVerification = null;
+        _verifying = false;
+      });
+    }
     try {
-      await status.mutateSlots((mutation) async {
-        await mutation.run(
-          (communicator) => communicator.setReaderDeviceMode(false),
+      final result = await const SlotWriteWorkflow().upload(
+        status: status,
+        position: gridPosition,
+        card: card,
+        name: card.name.isEmpty ? localizations.no_name : card.name,
+        onProgress: setUploadState,
+        onVerificationStarted: () {
+          if (mounted) {
+            setState(() => _verifying = true);
+          }
+        },
+      );
+      if (mounted) {
+        setState(() => _lastVerification = result);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_verificationMessage(localizations, result))),
         );
-        await SlotPayloadWriter.writeCard(
-          runner: mutation,
-          position: gridPosition,
-          card: card,
-          enabled: true,
-          name: card.name.isEmpty ? localizations.no_name : card.name,
-          targetType: isEM410X(card.tag)
-              ? (card.tag == TagType.em410XElectra
-                  ? TagType.em410XElectra
-                  : TagType.em410X)
-              : null,
-          activateAfterEnable: true,
-          onProgress: setUploadState,
-        );
-        await mutation.run((communicator) => communicator.saveSlotData());
-      }, reconcileMode: true);
-    } on SlotMutationConnectionChanged {
-      return;
+      }
     } finally {
+      _verifying = false;
       setUploadState(-1);
     }
   }
+
+  String _verificationMessage(
+    AppLocalizations localizations,
+    SlotWriteVerificationResult result,
+  ) =>
+      switch (result.outcome) {
+        SlotWriteVerificationOutcome.verified =>
+          localizations.slot_write_verified,
+        SlotWriteVerificationOutcome.mismatch =>
+          localizations.slot_write_mismatch,
+        SlotWriteVerificationOutcome.incomplete =>
+          localizations.slot_write_incomplete,
+        SlotWriteVerificationOutcome.unknown =>
+          localizations.slot_write_unknown,
+        SlotWriteVerificationOutcome.connectionChanged =>
+          localizations.slot_write_connection_changed,
+      };
 
   Future<String?> cardSelectDialog(BuildContext context) {
     var appState = context.read<ChameleonGUIState>();
@@ -424,7 +449,11 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                         _buildBackupProgress(context, _backupProgress!),
                       if (progress != -1) ...[
                         const SizedBox(height: 32),
-                        Text(localizations.uploading_dump),
+                        Text(
+                          _verifying
+                              ? localizations.verifying_slot_write
+                              : localizations.uploading_dump,
+                        ),
                         const SizedBox(height: 16),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),

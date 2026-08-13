@@ -2237,7 +2237,7 @@ void main() {
         'save-slots',
       ]),
     );
-    expect(communicator.slotTypeReads, initialTypeReads + 1);
+    expect(communicator.slotTypeReads, initialTypeReads + 2);
     expect(status.snapshot.slots.slots.first.lf.name.value, 'Badge');
     expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
   });
@@ -3177,6 +3177,13 @@ class _SlotCommunicator extends ChameleonCommunicator {
         atqa: Uint8List.fromList([0x00, 0x04]),
         ats: Uint8List(0),
       );
+
+  @override
+  Future<Uint8List> mf1GetEmulatorBlock(
+    int startBlock,
+    int blockCount,
+  ) async =>
+      Uint8List(blockCount * 16);
 
   @override
   Future<EmulatorSettings> getMf1EmulatorSettings() async => EmulatorSettings(

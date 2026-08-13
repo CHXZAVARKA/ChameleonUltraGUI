@@ -1364,5 +1364,29 @@
   "device_backup_connection_changed": "The connection changed during backup. No backup file was written.",
   "@device_backup_connection_changed": {
     "description": "Error shown when the connected-device session changes during full-device backup"
+  },
+  "verifying_slot_write": "Verifying the saved slot against the device...",
+  "@verifying_slot_write": {
+    "description": "Progress shown while Slot Manager reads back a saved card after uploading it"
+  },
+  "slot_write_verified": "Slot write verified against the device.",
+  "@slot_write_verified": {
+    "description": "Confirmation shown when a Slot Manager upload exactly matches the device read-back"
+  },
+  "slot_write_mismatch": "The device data does not match the selected card. Review the slot before trying again.",
+  "@slot_write_mismatch": {
+    "description": "Warning shown when confirmed Slot Manager read-back data differs from the selected card"
+  },
+  "slot_write_incomplete": "The device returned incomplete slot data, so the write could not be fully verified.",
+  "@slot_write_incomplete": {
+    "description": "Warning shown when Slot Manager read-back is structurally partial"
+  },
+  "slot_write_unknown": "The slot result could not be read back. Review the slot before trying again.",
+  "@slot_write_unknown": {
+    "description": "Warning shown when Slot Manager cannot compare the resulting device slot"
+  },
+  "slot_write_connection_changed": "Verification stopped because the connected device changed.",
+  "@slot_write_connection_changed": {
+    "description": "Warning shown when Slot Manager verification stops because the device session changed"
   }
 }

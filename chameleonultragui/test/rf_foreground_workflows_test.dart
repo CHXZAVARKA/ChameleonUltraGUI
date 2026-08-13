@@ -78,6 +78,7 @@ void main() {
         'name:0:lf:LF',
         'save',
         'slot-types',
+        'slot-types',
         'enabled-slots',
         'slot-names',
         'active-slot',
