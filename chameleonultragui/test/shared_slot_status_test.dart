@@ -707,6 +707,9 @@ void main() {
         Offset(rect.right - 4, rect.center.dy),
       ];
       for (final point in points) {
+        communicator.activeSlot = (index + 1) % slotFinders.length;
+        await status.refreshSlots();
+        await tester.pump();
         final activationCount = communicator.activations.length;
         await tester.tapAt(point);
         await tester.pumpAndSettle();
@@ -884,8 +887,6 @@ void main() {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('home-slot-1')));
     await tester.pumpAndSettle();
     communicator.activations.clear();
 

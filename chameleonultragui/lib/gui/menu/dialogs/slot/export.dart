@@ -115,7 +115,8 @@ class SlotExportMenuState extends State<SlotExportMenu> {
     final appState = context.read<ChameleonGUIState>();
     final expectedStatus = widget.expectedStatus;
     if (expectedStatus != null &&
-        !identical(appState.connectedDeviceStatus, expectedStatus)) {
+        (!expectedStatus.isCurrentSession ||
+            !identical(appState.connectedDeviceStatus, expectedStatus))) {
       return null;
     }
     final result = await appState.runSessionBoundForeground((session) async {
@@ -360,7 +361,11 @@ class SlotExportMenuState extends State<SlotExportMenu> {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
     if (widget.expectedStatus != null &&
-        !identical(appState.connectedDeviceStatus, widget.expectedStatus)) {
+        (!widget.expectedStatus!.isCurrentSession ||
+            !identical(
+              appState.connectedDeviceStatus,
+              widget.expectedStatus,
+            ))) {
       return AlertDialog(
         title: Text(localizations.export_slot_data),
         content: Text(localizations.unavailable),

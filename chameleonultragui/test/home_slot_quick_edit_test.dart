@@ -6,10 +6,13 @@ import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
+import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
-import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
+import 'package:flutter/gestures.dart'
+    show kLongPressTimeout, kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -28,60 +31,64 @@ void main() {
   });
 
   testWidgets(
-      'inactive tap activates immediately and repeat active tap opens Slot Settings',
-      (tester) async {
-    final fixture = _fixture();
-    addTearDown(fixture.appState.dispose);
-    await fixture.appState.sharedPreferencesProvider.load();
-    await fixture.status.refreshSlots();
-    await _pumpGrid(tester, fixture);
+    'inactive tap activates immediately and repeat active tap opens Slot Settings',
+    (tester) async {
+      final fixture = _fixture();
+      addTearDown(fixture.appState.dispose);
+      await fixture.appState.sharedPreferencesProvider.load();
+      await fixture.status.refreshSlots();
+      await _pumpGrid(tester, fixture);
 
-    final gate = Completer<void>();
-    fixture.communicator.activationGate = gate;
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
+      final gate = Completer<void>();
+      fixture.communicator.activationGate = gate;
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
 
-    expect(fixture.communicator.activations, [1]);
-    expect(find.byType(SlotSettings), findsNothing);
+      expect(fixture.communicator.activations, [1]);
+      expect(find.byType(SlotSettings), findsNothing);
 
-    gate.complete();
-    await tester.pumpAndSettle();
-    fixture.communicator.activationGate = null;
-    fixture.communicator.activations.clear();
+      gate.complete();
+      await tester.pumpAndSettle();
+      fixture.communicator.activationGate = null;
+      fixture.communicator.activations.clear();
 
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
 
-    expect(find.byType(SlotSettings), findsOneWidget);
-  });
+      expect(find.byType(SlotSettings), findsOneWidget);
+    },
+  );
 
-  testWidgets('E and F2 edit the focused slot without changing arrow contracts',
-      (tester) async {
-    final fixture = _fixture();
-    addTearDown(fixture.appState.dispose);
-    await fixture.appState.sharedPreferencesProvider.load();
-    await fixture.status.refreshSlots();
-    await _pumpGrid(tester, fixture);
+  testWidgets(
+    'E and F2 edit the focused slot without changing arrow contracts',
+    (tester) async {
+      final fixture = _fixture();
+      addTearDown(fixture.appState.dispose);
+      await fixture.appState.sharedPreferencesProvider.load();
+      await fixture.status.refreshSlots();
+      await _pumpGrid(tester, fixture);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
-    await tester.pump();
-    expect(tester.widget<SlotSettings>(find.byType(SlotSettings)).slot, 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.pump();
+      expect(tester.widget<SlotSettings>(find.byType(SlotSettings)).slot, 0);
 
-    Navigator.of(tester.element(find.byType(SlotSettings))).pop();
-    await tester.pumpAndSettle();
-    fixture.communicator.activations.clear();
+      Navigator.of(tester.element(find.byType(SlotSettings))).pop();
+      await tester.pumpAndSettle();
+      fixture.communicator.activations.clear();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pumpAndSettle();
-    expect(fixture.communicator.activations, [1]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(fixture.communicator.activations, [1]);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
-    await tester.pump();
-    expect(tester.widget<SlotSettings>(find.byType(SlotSettings)).slot, 1);
-  });
+      await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+      await tester.pump();
+      expect(tester.widget<SlotSettings>(find.byType(SlotSettings)).slot, 1);
+    },
+  );
 
-  testWidgets('screen reader exposes one explicit Edit slot action',
-      (tester) async {
+  testWidgets('screen reader exposes one explicit Edit slot action', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
@@ -105,8 +112,47 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('secondary click exposes Edit, Move, Clear, and Export',
-      (tester) async {
+  testWidgets(
+    'stale screen reader action explains why editing is unavailable',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final fixture = _fixture();
+      addTearDown(fixture.appState.dispose);
+      await fixture.appState.sharedPreferencesProvider.load();
+      await fixture.status.refreshSlots();
+      fixture.communicator.failNames = true;
+      await fixture.status.refreshSlots();
+      await _pumpGrid(tester, fixture);
+
+      final node = tester.getSemantics(find.byKey(const Key('home-slot-1')));
+      final editActions = node
+          .getSemanticsData()
+          .customSemanticsActionIds!
+          .where(
+            (id) => CustomSemanticsAction.getAction(id)!.label == 'Edit slot',
+          )
+          .toList();
+      expect(editActions, hasLength(1));
+
+      node.owner!.performAction(
+        node.id,
+        SemanticsAction.customAction,
+        editActions.single,
+      );
+      await tester.pump();
+
+      expect(find.byType(SlotSettings), findsNothing);
+      expect(
+        find.text('Slot details are unavailable. Refresh the slot status.'),
+        findsOneWidget,
+      );
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('secondary click exposes Edit, Move, Clear, and Export', (
+    tester,
+  ) async {
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -126,8 +172,9 @@ void main() {
     expect(find.text('Export Slot Data'), findsOneWidget);
   });
 
-  testWidgets('context actions reuse settings, export, and atomic move flows',
-      (tester) async {
+  testWidgets('context actions reuse settings, export, and atomic move flows', (
+    tester,
+  ) async {
     final fixture = _fixture(supportsSwap: true);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -165,8 +212,9 @@ void main() {
     expect(fixture.communicator.swaps, [(2, 3)]);
   });
 
-  testWidgets('stale slot facts block quick edit with an explanation',
-      (tester) async {
+  testWidgets('stale slot facts block quick edit with an explanation', (
+    tester,
+  ) async {
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -185,8 +233,9 @@ void main() {
     );
   });
 
-  testWidgets('pending activation blocks keyboard edit with an explanation',
-      (tester) async {
+  testWidgets('pending activation blocks keyboard edit with an explanation', (
+    tester,
+  ) async {
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -210,8 +259,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('stale active-slot fact cannot open the old active editor',
-      (tester) async {
+  testWidgets('stale active-slot fact cannot open the old active editor', (
+    tester,
+  ) async {
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -230,8 +280,38 @@ void main() {
     );
   });
 
-  testWidgets('replacement session disables Home slot dialog without commands',
-      (tester) async {
+  testWidgets(
+    'replacement session disables Home slot dialog without commands',
+    (tester) async {
+      final fixture = _fixture();
+      addTearDown(fixture.appState.dispose);
+      await fixture.appState.sharedPreferencesProvider.load();
+      await fixture.status.refreshSlots();
+      await _pumpGrid(tester, fixture);
+
+      await tester.tap(find.byKey(const Key('home-slot-1')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SlotSettings), findsOneWidget);
+
+      final replacement = fixture.replaceConnection();
+      fixture.appState.changesMade();
+      await tester.pump();
+      expect(
+        tester.widget<HomeSlotGrid>(find.byType(HomeSlotGrid)).status,
+        same(fixture.status),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(find.byType(SlotSettings), findsOneWidget);
+      expect(find.text('Unavailable'), findsOneWidget);
+      expect(find.byKey(const Key('slot-settings-edit-hf')), findsNothing);
+      expect(replacement.activations, isEmpty);
+    },
+  );
+
+  testWidgets('nested export stays pinned to the quick-opened device session', (
+    tester,
+  ) async {
     final fixture = _fixture();
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
@@ -240,22 +320,161 @@ void main() {
 
     await tester.tap(find.byKey(const Key('home-slot-1')));
     await tester.pumpAndSettle();
-    expect(find.byType(SlotSettings), findsOneWidget);
+    await tester.tap(find.byKey(const Key('slot-settings-export')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SlotExportMenu), findsOneWidget);
 
     final replacement = fixture.replaceConnection();
     fixture.appState.changesMade();
     await tester.pump();
-    expect(
-      tester.widget<HomeSlotGrid>(find.byType(HomeSlotGrid)).status,
-      same(fixture.status),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.byType(SlotSettings), findsOneWidget);
-    expect(find.text('Unavailable'), findsOneWidget);
-    expect(find.byKey(const Key('slot-settings-edit-hf')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(SlotExportMenu),
+        matching: find.text('Unavailable'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Save to file'), findsNothing);
     expect(replacement.activations, isEmpty);
   });
+
+  testWidgets(
+    'nested editor disables immediately when its session disconnects',
+    (tester) async {
+      final fixture = _fixture();
+      addTearDown(fixture.appState.dispose);
+      await fixture.appState.sharedPreferencesProvider.load();
+      fixture.communicator.slotTypes[0] =
+          SlotTypes(hf: TagType.unknown, lf: TagType.em410X);
+      await fixture.status.refreshSlots();
+      await _pumpGrid(tester, fixture);
+
+      await tester.tap(find.byKey(const Key('home-slot-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+      await tester.pump();
+      expect(find.byKey(const Key('slot-edit-save')), findsOneWidget);
+
+      fixture.appState.connector!.connected = false;
+      fixture.appState.changesMade();
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('slot-edit-connection-changed-close')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('slot-edit-save')), findsNothing);
+    },
+  );
+
+  testWidgets('touch long press remains drag-only and never quick-edits', (
+    tester,
+  ) async {
+    final fixture = _fixture(supportsSwap: true);
+    addTearDown(fixture.appState.dispose);
+    await fixture.appState.sharedPreferencesProvider.load();
+    await fixture.status.refreshSlots();
+    await fixture.status.refreshSlotReorderCapability();
+    await _pumpGrid(tester, fixture);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('home-slot-1'))),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const Key('home-slot-2'))),
+    );
+    await tester.pump();
+
+    expect(find.byType(SlotSettings), findsNothing);
+    expect(fixture.communicator.activations, isEmpty);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(fixture.communicator.swaps, [(0, 1)]);
+    expect(fixture.communicator.activations, isEmpty);
+  });
+
+  testWidgets(
+    'real Home quick edit covers layouts, RTL, target sizes, text, and motion',
+    (tester) async {
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      const cases = [
+        _HomeCase(
+          size: Size(360, 900),
+          layout: SlotLayout.eightAcross,
+          textDirection: TextDirection.ltr,
+          textScaler: TextScaler.linear(1.8),
+        ),
+        _HomeCase(
+          size: Size(700, 900),
+          layout: SlotLayout.twoByFour,
+          textDirection: TextDirection.rtl,
+          disableAnimations: true,
+        ),
+        _HomeCase(
+          size: Size(1200, 900),
+          layout: SlotLayout.eightAcross,
+          textDirection: TextDirection.ltr,
+        ),
+      ];
+
+      for (final testCase in cases) {
+        SharedPreferences.setMockInitialValues({});
+        final fixture = _fixture();
+        await fixture.appState.sharedPreferencesProvider.load();
+        fixture.appState.sharedPreferencesProvider.setSlotLayout(
+          testCase.layout,
+        );
+        await fixture.status.refreshSlots();
+        await fixture.status.refreshSlotReorderCapability();
+        tester.view.physicalSize = testCase.size;
+        tester.view.devicePixelRatio = 1;
+        await _pumpHome(tester, fixture, testCase);
+        await tester.pump();
+
+        expect(find.byType(HomePage), findsOneWidget);
+        expect(
+          tester.widget<HomeSlotGrid>(find.byType(HomeSlotGrid)).layout,
+          testCase.layout,
+        );
+        expect(
+          Directionality.of(
+            tester.element(find.byKey(const Key('home-slot-1'))),
+          ),
+          testCase.textDirection,
+        );
+        for (var slot = 1; slot <= 8; slot++) {
+          final size = tester.getSize(find.byKey(Key('home-slot-$slot')));
+          expect(size.width, greaterThanOrEqualTo(48));
+          expect(size.height, greaterThanOrEqualTo(48));
+        }
+        if (testCase.disableAnimations) {
+          expect(
+            tester
+                .widget<AnimatedContainer>(
+                  find.byKey(const Key('home-active-slot-1')),
+                )
+                .duration,
+            Duration.zero,
+          );
+        }
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(const Key('home-slot-1')));
+        await tester.pump();
+        expect(find.byType(SlotSettings), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        fixture.appState.dispose();
+      }
+    },
+  );
 }
 
 Future<void> _openContextMenu(WidgetTester tester, int zeroBasedSlot) async {
@@ -285,6 +504,49 @@ Future<void> _pumpGrid(WidgetTester tester, _Fixture fixture) =>
         ),
       ),
     );
+
+Future<void> _pumpHome(
+  WidgetTester tester,
+  _Fixture fixture,
+  _HomeCase testCase,
+) =>
+    tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: fixture.appState,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: testCase.textScaler,
+              disableAnimations: testCase.disableAnimations,
+            ),
+            child: Directionality(
+              textDirection: testCase.textDirection,
+              child: child!,
+            ),
+          ),
+          home: const HomePage(),
+        ),
+      ),
+    );
+
+class _HomeCase {
+  const _HomeCase({
+    required this.size,
+    required this.layout,
+    required this.textDirection,
+    this.textScaler = TextScaler.noScaling,
+    this.disableAnimations = false,
+  });
+
+  final Size size;
+  final SlotLayout layout;
+  final TextDirection textDirection;
+  final TextScaler textScaler;
+  final bool disableAnimations;
+}
 
 class _Fixture {
   _Fixture(this.harness);
@@ -328,10 +590,8 @@ class _QuickEditCommunicator extends ChameleonCommunicator {
     );
     slotNames = List.generate(
       8,
-      (index) => SlotNames(
-        hf: 'Slot ${index + 1} HF',
-        lf: 'Slot ${index + 1} LF',
-      ),
+      (index) =>
+          SlotNames(hf: 'Slot ${index + 1} HF', lf: 'Slot ${index + 1} LF'),
     );
   }
 
@@ -392,4 +652,21 @@ class _QuickEditCommunicator extends ChameleonCommunicator {
     slotNames[source] = slotNames[target];
     slotNames[target] = sourceNames;
   }
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() async =>
+      BatteryCharge(percent: 72, voltage: 3910);
+
+  @override
+  Future<bool> isReaderDeviceMode() async => false;
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0202);
+
+  @override
+  Future<String> getGitCommitHash() async => 'current1';
+
+  @override
+  Future<DeviceSettings> getDeviceSettings() async => DeviceSettings();
 }

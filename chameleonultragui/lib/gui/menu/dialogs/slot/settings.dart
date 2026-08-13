@@ -35,8 +35,10 @@ class SlotSettingsState extends State<SlotSettings> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final status = context.watch<ChameleonGUIState>().connectedDeviceStatus;
-    if (widget.expectedStatus != null &&
-        !identical(status, widget.expectedStatus)) {
+    if (status == null ||
+        !status.isCurrentSession ||
+        (widget.expectedStatus != null &&
+            !identical(status, widget.expectedStatus))) {
       _status = null;
       _ready = false;
       return;
@@ -47,9 +49,7 @@ class SlotSettingsState extends State<SlotSettings> {
     _status = status;
     _ready = false;
     _loadError = null;
-    if (status != null) {
-      unawaited(_activateSlot(status));
-    }
+    unawaited(_activateSlot(status));
   }
 
   Future<void> _activateSlot(ConnectedDeviceStatus status) async {
@@ -59,7 +59,7 @@ class SlotSettingsState extends State<SlotSettings> {
           (communicator) => communicator.activateSlot(widget.slot),
         ),
       );
-      if (mounted && identical(status, _status)) {
+      if (mounted && identical(status, _status) && status.isCurrentSession) {
         setState(() => _ready = true);
       }
     } catch (error) {
@@ -190,6 +190,7 @@ class SlotSettingsState extends State<SlotSettings> {
                               hf: hf.type.value!,
                               lf: lf.type.value!,
                             ),
+                            expectedStatus: status,
                           ),
                         );
                       }

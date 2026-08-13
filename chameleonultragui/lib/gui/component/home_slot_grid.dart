@@ -833,9 +833,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                             reorder: reorder,
                             preview: preview,
                             onTap: () => _handleTap(index),
-                            onEdit: _slotFactsAreCurrent(slots, index)
-                                ? () => _openSlotSettings(index)
-                                : null,
+                            onEdit: () => _openSlotSettings(index),
                             onSecondaryTapDown: preview
                                 ? null
                                 : (details) => unawaited(
@@ -1130,7 +1128,7 @@ class _SlotColumn extends StatelessWidget {
   final _SlotReorderPresentation reorder;
   final bool preview;
   final VoidCallback onTap;
-  final VoidCallback? onEdit;
+  final VoidCallback onEdit;
   final GestureTapDownCallback? onSecondaryTapDown;
 
   String _frequencyDescription(
@@ -1213,8 +1211,7 @@ class _SlotColumn extends StatelessWidget {
         '${activating ? '\n${localizations.activating}' : ''}'
         '$reorderDescription$capabilityDescription';
     final customActions = <CustomSemanticsAction, VoidCallback>{
-      if (onEdit case final edit?)
-        CustomSemanticsAction(label: localizations.edit_slot): edit,
+      CustomSemanticsAction(label: localizations.edit_slot): onEdit,
       if (reorder.actions.before case final action?)
         CustomSemanticsAction(
           label: localizations.slot_reorder_move_before(action.target + 1),

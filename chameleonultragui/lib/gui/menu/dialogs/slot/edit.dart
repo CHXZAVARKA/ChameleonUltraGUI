@@ -83,6 +83,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   ConnectedDeviceStatus _requireCurrentStatus() {
     final status = _status;
     if (status == null ||
+        !status.isCurrentSession ||
         !identical(
           status,
           context.read<ChameleonGUIState>().connectedDeviceStatus,
@@ -372,8 +373,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
-    final connectionChanged =
-        _status == null || !identical(_status, appState.connectedDeviceStatus);
+    final status = _status;
+    final connectionChanged = status == null ||
+        !status.isCurrentSession ||
+        !identical(status, appState.connectedDeviceStatus);
 
     final dialog = AlertDialog(
       title: Text(localizations.edit_slot_data),
