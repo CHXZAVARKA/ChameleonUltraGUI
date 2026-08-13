@@ -1,8 +1,10 @@
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
+import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -131,6 +133,9 @@ class HomePageState extends State<HomePage> {
                 alignment: Alignment.topCenter,
                 child: _FirmwarePill(status: status),
               );
+              final readiness = _HomeConnectionReadiness(
+                readiness: appState.connectionReadiness,
+              );
               final bottomDashboard = Center(
                 child: ConstrainedBox(
                   key: const Key('home-bottom-dashboard'),
@@ -167,6 +172,7 @@ class HomePageState extends State<HomePage> {
                           height: constraints.maxHeight - 24,
                           child: Column(
                             children: [
+                              readiness,
                               firmware,
                               const Spacer(),
                               bottomDashboard,
@@ -176,6 +182,7 @@ class HomePageState extends State<HomePage> {
                       : Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            readiness,
                             firmware,
                             const SizedBox(height: 24),
                             bottomDashboard,
@@ -187,6 +194,33 @@ class HomePageState extends State<HomePage> {
           );
         },
       ),
+    );
+  }
+}
+
+class _HomeConnectionReadiness extends StatelessWidget {
+  const _HomeConnectionReadiness({required this.readiness});
+
+  final ConnectionReadinessTracker readiness;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: readiness,
+      builder: (context, _) {
+        final stage = readiness.snapshot.stage;
+        if (stage == ConnectionReadinessStage.ready ||
+            stage == ConnectionReadinessStage.disconnected) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: ConnectionReadinessCard(
+            readiness: readiness,
+            compact: true,
+          ),
+        );
+      },
     );
   }
 }

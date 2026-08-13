@@ -6,7 +6,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/connector/serial_native.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
+import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/gui/page/connect.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/pending_connection.dart';
@@ -69,7 +69,7 @@ void main() {
 
         expect(serial.connectCalls, 1);
         expect(find.byType(PendingConnectionPage), findsOneWidget);
-        expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+        expect(find.byType(ConnectionReadinessCard), findsOneWidget);
         expect(serial.receivedSelection, same(selectedDevice));
 
         connectGate.complete();
@@ -149,7 +149,7 @@ void main() {
   }
 
   testWidgets(
-    'loader replaces refresh until discovery finds a device',
+    'readiness stage replaces refresh until discovery finds a device',
     (tester) async {
       SharedPreferences.setMockInitialValues({
         'auto_connect_first_found': false,
@@ -200,20 +200,20 @@ void main() {
 
       expect(serial.scanCalls, 1);
       expect(find.byIcon(Icons.refresh), findsNothing);
-      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+      expect(find.byType(ConnectionReadinessCard), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 2);
-      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+      expect(find.byType(ConnectionReadinessCard), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 3);
       expect(find.text('device-a'), findsOneWidget);
-      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+      expect(find.byType(ConnectionReadinessCard), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
@@ -221,7 +221,7 @@ void main() {
       expect(serial.scanCalls, 4);
       expect(find.text('device-a'), findsOneWidget);
       expect(find.text('device-b'), findsOneWidget);
-      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+      expect(find.byType(ConnectionReadinessCard), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
     },

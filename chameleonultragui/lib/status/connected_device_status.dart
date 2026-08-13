@@ -8,6 +8,7 @@ import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/widgets.dart';
 
 part 'connected_device/battery_status_machine.dart';
@@ -668,12 +669,16 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   ConnectedDeviceStatus({
     required ConnectedDeviceSession session,
     required RfOperationCoordinator rfOperations,
+    required ConnectionReadinessTracker connectionReadiness,
+    required ConnectionReadinessAttempt readinessAttempt,
     FirmwareCatalog firmwareCatalog = const GitHubFirmwareCatalog(),
     FirmwareInstaller? firmwareInstaller,
     FirmwareChannel firmwareChannel = FirmwareChannel.official,
     this.batteryPollInterval = const Duration(seconds: 15),
   })  : _session = session,
         _rfOperations = rfOperations,
+        _connectionReadiness = connectionReadiness,
+        _readinessAttempt = readinessAttempt,
         _firmwareCatalog = firmwareCatalog,
         _firmwareInstaller = firmwareInstaller ??
             ((channel) => flashFirmware(
@@ -704,6 +709,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
 
   final ConnectedDeviceSession _session;
   final RfOperationCoordinator _rfOperations;
+  final ConnectionReadinessTracker _connectionReadiness;
+  final ConnectionReadinessAttempt _readinessAttempt;
   final FirmwareCatalog _firmwareCatalog;
   final FirmwareInstaller _firmwareInstaller;
   final Duration batteryPollInterval;
@@ -721,6 +728,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<SlotReorderCapability>? _slotReorderCapabilityRefresh;
   Future<void>? _firmwareRefresh;
   Future<List<int>>? _deviceCapabilitiesRead;
+  Future<void>? _initialReadiness;
+  final Set<VoidCallback> _readinessTimeoutCancellations = {};
+  int _readinessInitializationGeneration = 0;
+  FirmwareVersion? _protocolVersion;
+  Future<FirmwareVersion>? _protocolVersionRead;
   _FirmwareFacts? _firmwareFacts;
   final Map<int, Set<SlotFacet>> _semanticReorderAmbiguity = {};
   bool _firmwareLookupAttempted = false;
@@ -728,6 +740,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final Object _backgroundOperationGroup = Object();
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
+  bool _firstHomeEntry = true;
+  bool _initialStatusFinished = false;
+  bool _initialStatusTimedOut = false;
   bool _disposed = false;
 
   late final _BatteryStatusMachine _batteryStatusMachine =
@@ -815,8 +830,14 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       case StatusSurface.home:
         _homePresenceCount++;
         if (_homePresenceCount == 1 && _isAppActive) {
-          unawaited(_refreshHomeOnEntry());
-          _startHomeTimers();
+          if (_firstHomeEntry) {
+            _firstHomeEntry = false;
+            unawaited(_completeInitialHomeEntry());
+            _startHomeTimers();
+          } else {
+            unawaited(_refreshHomeOnEntry());
+            _startHomeTimers();
+          }
         }
         return StatusPresence._(() => _leaveHome());
       case StatusSurface.slotManager:
@@ -826,6 +847,223 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         }
         return StatusPresence._(() => _leaveSlotManager());
     }
+  }
+
+  Future<void> _completeInitialHomeEntry() async {
+    final generation = ++_readinessInitializationGeneration;
+    await (_initialReadiness ??= _initializeReadiness(generation));
+  }
+
+  Future<void> _initializeReadiness(int generation) async {
+    final protocolRead = _session.connector.portName == 'Demo'
+        ? null
+        : (_protocolVersionRead ??= _session.communicator.getFirmwareVersion());
+    final statusFacets = <Future<void>>[
+      _loadInitialFacet(
+        'battery',
+        generation,
+        refreshBattery,
+        () => _publish(
+          _snapshot.copyWith(battery: const BatteryStatus.unavailable()),
+        ),
+      ),
+      _loadInitialFacet(
+        'mode',
+        generation,
+        refreshMode,
+        () => _publish(
+          _snapshot.copyWith(
+            mode: ModeStatus.unavailable(
+              confirmedMode: _snapshot.mode.confirmedMode,
+            ),
+          ),
+        ),
+      ),
+      _loadInitialFacet(
+        'slots',
+        generation,
+        refreshSlots,
+        () => _publish(
+          _snapshot.copyWith(slots: _failedSlots(_snapshot.slots)),
+        ),
+      ),
+      _loadInitialFacet(
+        'firmware',
+        generation,
+        refreshFirmware,
+        _markFirmwareUnavailable,
+      ),
+    ];
+
+    if (protocolRead != null) {
+      try {
+        final version = await _withReadinessTimeout(
+          protocolRead,
+          _connectionReadiness.timeouts.protocol,
+        );
+        if (!_canPublish ||
+            generation != _readinessInitializationGeneration ||
+            !_connectionReadiness.isCurrent(_readinessAttempt)) {
+          return;
+        }
+        _protocolVersion = version;
+      } catch (error, stackTrace) {
+        if (!_canPublish ||
+            generation != _readinessInitializationGeneration ||
+            !_connectionReadiness.isCurrent(_readinessAttempt)) {
+          return;
+        }
+        _session.appState.log?.w(
+          'Connected-device protocol probe failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        _connectionReadiness.fail(
+          _readinessAttempt,
+          error is TimeoutException
+              ? ConnectionReadinessErrorCategory.timeout
+              : ConnectionReadinessErrorCategory.protocol,
+        );
+        return;
+      }
+    }
+
+    _connectionReadiness.transition(
+      _readinessAttempt,
+      ConnectionReadinessStage.loadingStatus,
+    );
+    await Future.wait(statusFacets);
+    if (!_canPublish ||
+        generation != _readinessInitializationGeneration ||
+        !_connectionReadiness.isCurrent(_readinessAttempt)) {
+      return;
+    }
+    _initialStatusFinished = true;
+    _publishReadinessForSnapshot();
+  }
+
+  Future<void> _loadInitialFacet(
+    String facet,
+    int generation,
+    Future<void> Function() load,
+    VoidCallback markUnavailable,
+  ) async {
+    try {
+      await _withReadinessTimeout(
+        load(),
+        _connectionReadiness.timeouts.statusFacet,
+      );
+    } catch (error, stackTrace) {
+      if (!_canPublish ||
+          generation != _readinessInitializationGeneration ||
+          !_connectionReadiness.isCurrent(_readinessAttempt)) {
+        return;
+      }
+      _session.appState.log?.w(
+        'Initial connected-device $facet status timed out',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (error is TimeoutException) {
+        _initialStatusTimedOut = true;
+      }
+      markUnavailable();
+    }
+  }
+
+  Future<T> _withReadinessTimeout<T>(
+    Future<T> operation,
+    Duration duration,
+  ) {
+    final completer = Completer<T>();
+    late final Timer timer;
+    late final VoidCallback cancel;
+
+    void finishValue(T value) {
+      if (completer.isCompleted) {
+        return;
+      }
+      timer.cancel();
+      _readinessTimeoutCancellations.remove(cancel);
+      completer.complete(value);
+    }
+
+    void finishError(Object error, StackTrace stackTrace) {
+      if (completer.isCompleted) {
+        return;
+      }
+      timer.cancel();
+      _readinessTimeoutCancellations.remove(cancel);
+      completer.completeError(error, stackTrace);
+    }
+
+    cancel = () {
+      if (completer.isCompleted) {
+        return;
+      }
+      timer.cancel();
+      _readinessTimeoutCancellations.remove(cancel);
+      completer.completeError(StateError('Connected-device status disposed'));
+    };
+    timer = Timer(duration, () {
+      finishError(
+        TimeoutException('Connected-device readiness timed out', duration),
+        StackTrace.current,
+      );
+    });
+    _readinessTimeoutCancellations.add(cancel);
+    operation.then(finishValue, onError: finishError);
+    return completer.future;
+  }
+
+  void _markFirmwareUnavailable() {
+    final version = _protocolVersion;
+    final current = _snapshot.firmware;
+    _publish(
+      _snapshot.copyWith(
+        firmware: FirmwareStatus(
+          channel: current.channel,
+          state: FirmwareState.checkUnavailable,
+          installedVersion:
+              version == null ? null : numToVerCode(version.version),
+          installedCommit: current.installedCommit,
+          protocol: version == null
+              ? FirmwareProtocol.unknown
+              : version.legacyProtocol
+                  ? FirmwareProtocol.legacy
+                  : FirmwareProtocol.current,
+          compatibility:
+              current.compatibility == FirmwareCompatibility.incompatible
+                  ? FirmwareCompatibility.incompatible
+                  : FirmwareCompatibility.unknown,
+          checkResult: FirmwareCheckResult.unavailable,
+        ),
+      ),
+    );
+  }
+
+  void _publishReadinessForSnapshot() {
+    if (!_initialStatusFinished ||
+        !_canPublish ||
+        !_connectionReadiness.isCurrent(_readinessAttempt)) {
+      return;
+    }
+    final degraded =
+        _snapshot.battery.availability == BatteryAvailability.unavailable ||
+            _snapshot.mode.availability == ModeAvailability.unavailable ||
+            _snapshot.slots.availability != SlotsAvailability.available ||
+            _snapshot.firmware.checkResult == FirmwareCheckResult.unavailable;
+    _connectionReadiness.transition(
+      _readinessAttempt,
+      degraded
+          ? ConnectionReadinessStage.degraded
+          : ConnectionReadinessStage.ready,
+      errorCategory: degraded
+          ? _initialStatusTimedOut
+              ? ConnectionReadinessErrorCategory.timeout
+              : ConnectionReadinessErrorCategory.status
+          : null,
+    );
   }
 
   Future<void> _refreshHomeOnEntry() async {
@@ -1050,20 +1288,23 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     while (_canPublish) {
       final result = await _rfOperations.tryRunBackground<_FirmwareFacts?>(
         () async {
-          FirmwareVersion? version;
+          FirmwareVersion? version = _protocolVersion;
           String? commit;
           List<int>? capabilities;
 
           if (!_canPublish) {
             return null;
           }
-          try {
-            version = await _session.communicator.getFirmwareVersion();
-          } catch (error, stackTrace) {
-            if (!_canPublish) {
-              return null;
+          if (version == null) {
+            try {
+              version = await (_protocolVersionRead ??=
+                  _session.communicator.getFirmwareVersion());
+            } catch (error, stackTrace) {
+              if (!_canPublish) {
+                return null;
+              }
+              _logFirmwareFactFailure('version', error, stackTrace);
             }
-            _logFirmwareFactFailure('version', error, stackTrace);
           }
           if (!_canPublish) {
             return null;
@@ -2189,6 +2430,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
     _snapshot = next;
     notifyListeners();
+    _publishReadinessForSnapshot();
   }
 
   void _startHomeTimers() {
@@ -2222,6 +2464,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
     _homePresenceCount--;
     if (_homePresenceCount == 0) {
+      if (!_initialStatusFinished) {
+        _readinessInitializationGeneration++;
+        _initialReadiness = null;
+        _firstHomeEntry = true;
+        _cancelReadinessTimeouts();
+      }
       _batteryTimer?.cancel();
       _batteryTimer = null;
       _activeSlotTimer?.cancel();
@@ -2260,6 +2508,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _disposed = true;
+    _cancelReadinessTimeouts();
     _batteryTimer?.cancel();
     _batteryTimer = null;
     _activeSlotTimer?.cancel();
@@ -2267,5 +2516,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _semanticReorderAmbiguity.clear();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _cancelReadinessTimeouts() {
+    for (final cancel in _readinessTimeoutCancellations.toList()) {
+      cancel();
+    }
+    _readinessTimeoutCancellations.clear();
   }
 }
