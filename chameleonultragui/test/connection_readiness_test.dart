@@ -82,44 +82,120 @@ void main() {
     );
   }
 
+  testWidgets('Home traces protocol and initial status before becoming ready', (
+    tester,
+  ) async {
+    final protocol = Completer<FirmwareVersion>();
+    final slots = Completer<void>();
+    final communicator = _ReadinessCommunicator(
+      protocol: protocol.future,
+      slotsGate: slots.future,
+    );
+    final fixture = await _mountHome(tester, communicator);
+
+    expect(find.text('Waiting for Chameleon'), findsOneWidget);
+    expect(
+      fixture.appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.waitingForProtocol,
+    );
+
+    protocol.complete(_currentFirmware);
+    await _pumpFrames(tester, 3);
+
+    expect(find.text('Loading device status'), findsOneWidget);
+    expect(
+      fixture.appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.loadingStatus,
+    );
+
+    slots.complete();
+    await _pumpFrames(tester, 12);
+
+    expect(
+      fixture.appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.ready,
+    );
+    expect(find.byKey(const Key('connection-readiness')), findsNothing);
+    expect(
+      fixture.appState.connectedDeviceStatus!.snapshot.slots.availability,
+      SlotsAvailability.available,
+    );
+    fixture.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
-    'Home traces protocol and initial status before becoming ready',
+    'initial status probes wait for the protocol handshake to finish',
     (tester) async {
       final protocol = Completer<FirmwareVersion>();
-      final slots = Completer<void>();
-      final communicator = _ReadinessCommunicator(
-        protocol: protocol.future,
-        slotsGate: slots.future,
-      );
+      final communicator = _ReadinessCommunicator(protocol: protocol.future);
       final fixture = await _mountHome(tester, communicator);
 
-      expect(find.text('Waiting for Chameleon'), findsOneWidget);
       expect(
         fixture.appState.connectionReadiness.snapshot.stage,
         ConnectionReadinessStage.waitingForProtocol,
       );
+      final explicitModeRefresh =
+          fixture.appState.connectedDeviceStatus!.refreshMode();
+      await tester.pump(const Duration(milliseconds: 1100));
+      expect(communicator.statusProbeCalls, 0);
 
       protocol.complete(_currentFirmware);
+      await explicitModeRefresh;
       await _pumpFrames(tester, 3);
 
-      expect(find.text('Loading device status'), findsOneWidget);
+      expect(communicator.statusProbeCalls, greaterThan(0));
+      expect(
+        fixture.appState.connectionReadiness.snapshot.history.map(
+          (record) => record.stage,
+        ),
+        contains(ConnectionReadinessStage.waitingForProtocol),
+      );
+
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'each serialized optional facet receives its own timeout budget',
+    (tester) async {
+      final batteryGate = Completer<void>();
+      final communicator = _SerializedReadinessCommunicator(batteryGate);
+      final fixture = await _mountHome(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 25));
+
+      final waitingSnapshot = fixture.appState.connectedDeviceStatus!.snapshot;
+      expect(
+        waitingSnapshot.battery.availability,
+        BatteryAvailability.unavailable,
+      );
+      expect(waitingSnapshot.mode.availability, ModeAvailability.loading);
+      expect(waitingSnapshot.slots.availability, SlotsAvailability.loading);
       expect(
         fixture.appState.connectionReadiness.snapshot.stage,
         ConnectionReadinessStage.loadingStatus,
       );
 
-      slots.complete();
-      await _pumpFrames(tester, 12);
+      batteryGate.completeError(StateError('battery unavailable'));
+      await _pumpFrames(tester, 16);
 
+      final settledSnapshot = fixture.appState.connectedDeviceStatus!.snapshot;
+      expect(settledSnapshot.mode.availability, ModeAvailability.available);
+      expect(settledSnapshot.slots.availability, SlotsAvailability.available);
       expect(
         fixture.appState.connectionReadiness.snapshot.stage,
-        ConnectionReadinessStage.ready,
+        ConnectionReadinessStage.degraded,
       );
-      expect(find.byKey(const Key('connection-readiness')), findsNothing);
-      expect(
-        fixture.appState.connectedDeviceStatus!.snapshot.slots.availability,
-        SlotsAvailability.available,
-      );
+
       fixture.dispose();
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -135,10 +211,7 @@ void main() {
       final readiness = fixture.appState.connectionReadiness.snapshot;
       final status = fixture.appState.connectedDeviceStatus!.snapshot;
       expect(readiness.stage, ConnectionReadinessStage.degraded);
-      expect(
-        readiness.errorCategory,
-        ConnectionReadinessErrorCategory.status,
-      );
+      expect(readiness.errorCategory, ConnectionReadinessErrorCategory.status);
       expect(find.text('Connected with limited status'), findsOneWidget);
       expect(find.text('--%'), findsOneWidget);
       expect(status.slots.availability, SlotsAvailability.available);
@@ -186,8 +259,9 @@ void main() {
     },
   );
 
-  testWidgets('a bounded protocol timeout is a redacted failed stage',
-      (tester) async {
+  testWidgets('a bounded protocol timeout is a redacted failed stage', (
+    tester,
+  ) async {
     final protocol = Completer<FirmwareVersion>();
     final communicator = _ReadinessCommunicator(protocol: protocol.future);
     final fixture = await _mountHome(
@@ -203,6 +277,42 @@ void main() {
     await _pumpFrames(tester, 2);
     expect(find.text('Connection failed'), findsOneWidget);
     expect(find.text('The device did not respond in time.'), findsOneWidget);
+    expect(
+      fixture.appState.connectionReadiness.snapshot.errorCategory,
+      ConnectionReadinessErrorCategory.timeout,
+    );
+
+    protocol.complete(_currentFirmware);
+    fixture.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('protocol handshake remains bounded without Home being mounted', (
+    tester,
+  ) async {
+    final protocol = Completer<FirmwareVersion>();
+    final communicator = _ReadinessCommunicator(protocol: protocol.future);
+    final fixture = await _mountConnectedShell(
+      tester,
+      communicator,
+      timeouts: const ConnectionReadinessTimeouts(
+        protocol: Duration(milliseconds: 20),
+        statusFacet: Duration(milliseconds: 20),
+      ),
+    );
+
+    expect(
+      fixture.appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.waitingForProtocol,
+    );
+
+    await tester.pump(const Duration(milliseconds: 25));
+    await _pumpFrames(tester, 2);
+
+    expect(
+      fixture.appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.failed,
+    );
     expect(
       fixture.appState.connectionReadiness.snapshot.errorCategory,
       ConnectionReadinessErrorCategory.timeout,
@@ -274,18 +384,19 @@ void main() {
     now = now.add(const Duration(seconds: 2));
     tracker.fail(session, ConnectionReadinessErrorCategory.timeout);
 
+    expect(tracker.snapshot.history.map((record) => record.stage), [
+      ConnectionReadinessStage.discovering,
+      ConnectionReadinessStage.connectingTransport,
+      ConnectionReadinessStage.waitingForProtocol,
+    ]);
     expect(
-      tracker.snapshot.history.map((record) => record.stage),
-      [
-        ConnectionReadinessStage.discovering,
-        ConnectionReadinessStage.connectingTransport,
-        ConnectionReadinessStage.waitingForProtocol,
-      ],
+      tracker.snapshot.history[0].elapsed,
+      const Duration(milliseconds: 250),
     );
     expect(
-        tracker.snapshot.history[0].elapsed, const Duration(milliseconds: 250));
-    expect(
-        tracker.snapshot.history[1].elapsed, const Duration(milliseconds: 500));
+      tracker.snapshot.history[1].elapsed,
+      const Duration(milliseconds: 500),
+    );
     expect(tracker.snapshot.terminalElapsed, const Duration(seconds: 2));
     expect(
       tracker.snapshot.errorCategory,
@@ -338,6 +449,38 @@ Future<_ReadinessFixture> _mountHome(
         supportedLocales: AppLocalizations.supportedLocales,
         home: HomePage(),
       ),
+    ),
+  );
+  await tester.pump();
+  return _ReadinessFixture(appState);
+}
+
+Future<_ReadinessFixture> _mountConnectedShell(
+  WidgetTester tester,
+  _ReadinessCommunicator communicator, {
+  ConnectionReadinessTimeouts timeouts = const ConnectionReadinessTimeouts(),
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final preferences = SharedPreferencesProvider();
+  await preferences.load();
+  final serial = _ReadinessSerial(
+    log: Logger(output: MemoryOutput()),
+    type: ConnectionType.usb,
+    port: '/dev/readiness',
+  );
+  final appState = ChameleonGUIState(
+    preferences,
+    firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    connectionReadinessTimeouts: timeouts,
+  )
+    ..connector = serial
+    ..log = serial.log
+    ..communicator = communicator;
+
+  await tester.pumpWidget(
+    ChangeNotifierProvider<ChameleonGUIState>.value(
+      value: appState,
+      child: const MaterialApp(home: SizedBox.shrink()),
     ),
   );
   await tester.pump();
@@ -410,20 +553,39 @@ class _ReadinessCommunicator extends ChameleonCommunicator {
   final Future<FirmwareVersion> protocol;
   final Future<void>? slotsGate;
   final bool failBattery;
+  int batteryCalls = 0;
+  int modeCalls = 0;
+  int slotTypeCalls = 0;
+  int gitCommitCalls = 0;
+  int deviceCapabilitiesCalls = 0;
+  int activeSlotCalls = 0;
+
+  int get statusProbeCalls =>
+      batteryCalls +
+      modeCalls +
+      slotTypeCalls +
+      gitCommitCalls +
+      deviceCapabilitiesCalls +
+      activeSlotCalls;
 
   @override
   Future<FirmwareVersion> getFirmwareVersion() => protocol;
 
   @override
-  Future<String> getGitCommitHash() async => 'readiness123';
+  Future<String> getGitCommitHash() async {
+    gitCommitCalls++;
+    return 'readiness123';
+  }
 
   @override
-  Future<List<int>> getDeviceCapabilities() async => [
-        ChameleonCommand.setIdteckEmulatorID.value,
-      ];
+  Future<List<int>> getDeviceCapabilities() async {
+    deviceCapabilitiesCalls++;
+    return [ChameleonCommand.setIdteckEmulatorID.value];
+  }
 
   @override
   Future<BatteryCharge> getBatteryCharge() async {
+    batteryCalls++;
     if (failBattery) {
       throw StateError('sensitive transport detail must stay redacted');
     }
@@ -431,10 +593,14 @@ class _ReadinessCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<bool> isReaderDeviceMode() async => false;
+  Future<bool> isReaderDeviceMode() async {
+    modeCalls++;
+    return false;
+  }
 
   @override
   Future<List<SlotTypes>> getSlotTagTypes() async {
+    slotTypeCalls++;
     await slotsGate;
     return List.generate(
       8,
@@ -446,10 +612,8 @@ class _ReadinessCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<List<EnabledSlotInfo>> getEnabledSlots() async => List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: index == 0, lf: false),
-      );
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
+      List.generate(8, (index) => EnabledSlotInfo(hf: index == 0, lf: false));
 
   @override
   Future<List<SlotNames>> getSlotTagNames() async => List.generate(
@@ -458,5 +622,69 @@ class _ReadinessCommunicator extends ChameleonCommunicator {
       );
 
   @override
-  Future<int> getActiveSlot() async => 0;
+  Future<int> getActiveSlot() async {
+    activeSlotCalls++;
+    return 0;
+  }
+}
+
+class _SerializedReadinessCommunicator extends _ReadinessCommunicator {
+  _SerializedReadinessCommunicator(this.batteryGate);
+
+  final Completer<void> batteryGate;
+  Future<void> _tail = Future.value();
+
+  Future<T> _serialize<T>(Future<T> Function() operation) {
+    final result = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        result.complete(await operation());
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      }
+    });
+    return result.future;
+  }
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() => _serialize(() async {
+        batteryCalls++;
+        await batteryGate.future;
+        return BatteryCharge(percent: 78, voltage: 3970);
+      });
+
+  @override
+  Future<bool> isReaderDeviceMode() => _serialize(() async {
+        modeCalls++;
+        return false;
+      });
+
+  @override
+  Future<List<SlotTypes>> getSlotTagTypes() => _serialize(() async {
+        slotTypeCalls++;
+        return super.getSlotTagTypes();
+      });
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() =>
+      _serialize(super.getEnabledSlots);
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() =>
+      _serialize(super.getSlotTagNames);
+
+  @override
+  Future<int> getActiveSlot() => _serialize(super.getActiveSlot);
+
+  @override
+  Future<String> getGitCommitHash() => _serialize(() async {
+        gitCommitCalls++;
+        return 'readiness123';
+      });
+
+  @override
+  Future<List<int>> getDeviceCapabilities() => _serialize(() async {
+        deviceCapabilitiesCalls++;
+        return [ChameleonCommand.setIdteckEmulatorID.value];
+      });
 }

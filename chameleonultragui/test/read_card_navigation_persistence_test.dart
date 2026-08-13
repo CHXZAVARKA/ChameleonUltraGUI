@@ -13,6 +13,7 @@ import 'package:chameleonultragui/helpers/mifare_classic/key_profile.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1110,6 +1111,19 @@ class _ReadCardFixture {
       ..log = logger
       ..connector = connector
       ..communicator = communicator;
+    addTearDown(appState.dispose);
+    addTearDown(logger.close);
+
+    final readinessDeadline = DateTime.now().add(const Duration(seconds: 2));
+    while (!const {
+          ConnectionReadinessStage.ready,
+          ConnectionReadinessStage.degraded,
+          ConnectionReadinessStage.failed,
+          ConnectionReadinessStage.disconnected,
+        }.contains(appState.connectionReadiness.snapshot.stage) &&
+        DateTime.now().isBefore(readinessDeadline)) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
 
     setTestViewport(tester, size: physicalSize);
     await tester.pumpWidget(
@@ -1156,7 +1170,7 @@ class _ReadCardFixture {
       ..device = ChameleonDevice.ultra
       ..connectionType = ConnectionType.usb;
     appState
-      ..communicator = ChameleonCommunicator(logger, port: connector)
+      ..communicator = _ReadyCommunicator(logger, port: connector)
       ..changesMade();
   }
 }
@@ -1202,6 +1216,8 @@ class _ReplaceableReadCardFixture {
 
     final originalAppState = createAppState(originalCommunicatorFactory);
     final replacementAppState = createAppState(replacementCommunicatorFactory);
+    addTearDown(originalAppState.dispose);
+    addTearDown(replacementAppState.dispose);
     final hostKey = GlobalKey<_ReplaceableReadCardHostState>();
 
     setTestViewport(tester, size: const Size(3000, 1600));
@@ -1295,7 +1311,8 @@ List<Uint8List> _miniTargetBlocks() {
   return blocks;
 }
 
-class _PendingHFCommunicator extends ChameleonCommunicator {
+class _PendingHFCommunicator extends ChameleonCommunicator
+    with _ReadinessCommunicatorStub {
   _PendingHFCommunicator(super.logger, {super.port});
 
   final Completer<void> scanStarted = Completer<void>();
@@ -1341,7 +1358,8 @@ class _PendingHFCommunicator extends ChameleonCommunicator {
   void completeScan(CardData? card) => _scanResult.complete(card);
 }
 
-class _PendingLFCommunicator extends ChameleonCommunicator {
+class _PendingLFCommunicator extends ChameleonCommunicator
+    with _ReadinessCommunicatorStub {
   _PendingLFCommunicator(super.logger, {super.port});
 
   final Completer<void> readStarted = Completer<void>();
@@ -1384,7 +1402,47 @@ class _PendingLFCommunicator extends ChameleonCommunicator {
   void completeRead(EM410XCard? card) => _readResult.complete(card);
 }
 
-class _ContinuousHFCommunicator extends ChameleonCommunicator {
+mixin _ReadinessCommunicatorStub on ChameleonCommunicator {
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0100);
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() async =>
+      BatteryCharge(percent: 60, voltage: 3900);
+
+  @override
+  Future<List<SlotTypes>> getSlotTagTypes() async =>
+      List.generate(8, (_) => SlotTypes());
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
+      List.generate(8, (_) => EnabledSlotInfo());
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() async =>
+      List.generate(8, (_) => SlotNames());
+
+  @override
+  Future<int> getActiveSlot() async => 0;
+
+  @override
+  Future<String> getGitCommitHash() async => 'abcdef0';
+
+  @override
+  Future<List<int>> getDeviceCapabilities() async => const [];
+}
+
+class _ReadyCommunicator extends ChameleonCommunicator
+    with _ReadinessCommunicatorStub {
+  _ReadyCommunicator(super.logger, {super.port});
+
+  @override
+  Future<bool> isReaderDeviceMode() async => true;
+}
+
+class _ContinuousHFCommunicator extends ChameleonCommunicator
+    with _ReadinessCommunicatorStub {
   _ContinuousHFCommunicator(super.logger, {super.port});
 
   int scanCalls = 0;
@@ -1574,7 +1632,8 @@ class _CrossTabMaintenanceCommunicator extends ChameleonCommunicator {
   void completeContinuousScan() => _continuousScan.complete(null);
 }
 
-class _ContinuousLFCommunicator extends ChameleonCommunicator {
+class _ContinuousLFCommunicator extends ChameleonCommunicator
+    with _ReadinessCommunicatorStub {
   _ContinuousLFCommunicator(super.logger, {super.port});
 
   int readCalls = 0;

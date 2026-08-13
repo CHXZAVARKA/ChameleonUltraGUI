@@ -4,7 +4,6 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_android.dart';
 import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
-import 'package:chameleonultragui/gui/component/error_page.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/manual_connect.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -33,7 +32,7 @@ class _ConnectPageState extends State<ConnectPage> {
   final Map<String, _DiscoveredChameleon> _deviceCache = {};
   Timer? _scanTimer;
   int _scanGeneration = 0;
-  Object? _error;
+  bool _showReadinessFailure = false;
   bool _scanInProgress = false;
   bool _connectionInProgress = false;
   bool _showedPermissionsSnackbar = false;
@@ -45,7 +44,14 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scanNow());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_appState.connectionReadiness.snapshot.stage ==
+          ConnectionReadinessStage.failed) {
+        _scheduleNextScan();
+      } else {
+        _scanNow();
+      }
+    });
   }
 
   @override
@@ -147,17 +153,19 @@ class _ConnectPageState extends State<ConnectPage> {
 
     setState(() {
       _scanInProgress = true;
-      _error = null;
+      _showReadinessFailure = false;
     });
 
+    final connector = appState.connector!;
     final readiness = appState.connectionReadiness;
     final readinessAttempt = readiness.beginDiscovery();
 
     try {
-      final discovered = await appState.connector!
+      final discovered = await connector
           .availableChameleons(false)
           .timeout(readiness.timeouts.discovery);
-      if (!readiness.isCurrent(readinessAttempt)) {
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
         return;
       }
       final devices = _mergeDevices(discovered);
@@ -181,7 +189,17 @@ class _ConnectPageState extends State<ConnectPage> {
       _showPermissionsWarningIfNeeded(devices);
       await _maybeAutoConnect(devices);
     } catch (error) {
-      await appState.connector!.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt) ||
+          connector.connected ||
+          connector.pendingConnection) {
+        return;
+      }
+      await connector.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
       readiness.fail(
         readinessAttempt,
         error is TimeoutException
@@ -193,7 +211,7 @@ class _ConnectPageState extends State<ConnectPage> {
       }
 
       setState(() {
-        _error = error;
+        _showReadinessFailure = true;
       });
     } finally {
       if (mounted) {
@@ -287,7 +305,15 @@ class _ConnectPageState extends State<ConnectPage> {
       appState.changesMade();
     } catch (error) {
       connector.pendingConnection = false;
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
       await connector.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
       readiness.fail(
         readinessAttempt,
         error is TimeoutException
@@ -297,7 +323,7 @@ class _ConnectPageState extends State<ConnectPage> {
       appState.changesMade();
       if (mounted) {
         setState(() {
-          _error = error;
+          _showReadinessFailure = true;
         });
       }
     } finally {
@@ -452,12 +478,16 @@ class _ConnectPageState extends State<ConnectPage> {
     final appState = context.watch<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
 
-    if (_error != null) {
+    if (_showReadinessFailure) {
       return Scaffold(
         appBar: AppBar(
           title: Text(localizations.connect),
         ),
-        body: ErrorPage(errorMessage: _error.toString()),
+        body: Center(
+          child: ConnectionReadinessCard(
+            readiness: appState.connectionReadiness,
+          ),
+        ),
       );
     }
 

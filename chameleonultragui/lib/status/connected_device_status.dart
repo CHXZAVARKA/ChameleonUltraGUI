@@ -705,6 +705,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
               : FirmwareStatus.checking(channel: firmwareChannel),
         ) {
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_startInitialReadiness());
   }
 
   final ConnectedDeviceSession _session;
@@ -740,9 +741,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final Object _backgroundOperationGroup = Object();
   int _homePresenceCount = 0;
   int _slotManagerPresenceCount = 0;
-  bool _firstHomeEntry = true;
+  bool _hasPresentedHome = false;
+  bool _hasPresentedSlotManager = false;
   bool _initialStatusFinished = false;
   bool _initialStatusTimedOut = false;
+  bool _protocolHandshakeConfirmed = false;
+  final Completer<bool> _protocolHandshakeCompletion = Completer<bool>();
   bool _disposed = false;
 
   late final _BatteryStatusMachine _batteryStatusMachine =
@@ -767,19 +771,22 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     },
   );
 
-  Future<SlotReorderCapability> refreshSlotReorderCapability() {
+  Future<SlotReorderCapability> refreshSlotReorderCapability() async {
     final current = _snapshot.slots.reorderCapability;
     if (current != SlotReorderCapability.unknown || !_canPublish) {
-      return Future.value(current);
+      return current;
+    }
+    if (!await _waitForProtocolHandshake()) {
+      return _snapshot.slots.reorderCapability;
     }
     final activeRefresh = _slotReorderCapabilityRefresh;
     if (activeRefresh != null) {
-      return activeRefresh;
+      return await activeRefresh;
     }
 
     final refresh = _refreshSlotReorderCapability();
     _slotReorderCapabilityRefresh = refresh;
-    return refresh.whenComplete(() {
+    return await refresh.whenComplete(() {
       if (identical(_slotReorderCapabilityRefresh, refresh)) {
         _slotReorderCapabilityRefresh = null;
       }
@@ -828,28 +835,33 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   StatusPresence present(StatusSurface surface) {
     switch (surface) {
       case StatusSurface.home:
+        final firstPresentation = !_hasPresentedHome;
+        _hasPresentedHome = true;
         _homePresenceCount++;
         if (_homePresenceCount == 1 && _isAppActive) {
-          if (_firstHomeEntry) {
-            _firstHomeEntry = false;
-            unawaited(_completeInitialHomeEntry());
-            _startHomeTimers();
-          } else {
-            unawaited(_refreshHomeOnEntry());
+          if (_initialStatusFinished) {
+            if (!firstPresentation) {
+              unawaited(_refreshHomeOnEntry());
+            }
             _startHomeTimers();
           }
         }
         return StatusPresence._(() => _leaveHome());
       case StatusSurface.slotManager:
+        final firstPresentation = !_hasPresentedSlotManager;
+        _hasPresentedSlotManager = true;
         _slotManagerPresenceCount++;
-        if (_slotManagerPresenceCount == 1 && _isAppActive) {
+        if (_slotManagerPresenceCount == 1 &&
+            _isAppActive &&
+            _initialStatusFinished &&
+            !firstPresentation) {
           unawaited(refreshSlots());
         }
         return StatusPresence._(() => _leaveSlotManager());
     }
   }
 
-  Future<void> _completeInitialHomeEntry() async {
+  Future<void> _startInitialReadiness() async {
     final generation = ++_readinessInitializationGeneration;
     await (_initialReadiness ??= _initializeReadiness(generation));
   }
@@ -858,42 +870,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final protocolRead = _session.connector.portName == 'Demo'
         ? null
         : (_protocolVersionRead ??= _session.communicator.getFirmwareVersion());
-    final statusFacets = <Future<void>>[
-      _loadInitialFacet(
-        'battery',
-        generation,
-        refreshBattery,
-        () => _publish(
-          _snapshot.copyWith(battery: const BatteryStatus.unavailable()),
-        ),
-      ),
-      _loadInitialFacet(
-        'mode',
-        generation,
-        refreshMode,
-        () => _publish(
-          _snapshot.copyWith(
-            mode: ModeStatus.unavailable(
-              confirmedMode: _snapshot.mode.confirmedMode,
-            ),
-          ),
-        ),
-      ),
-      _loadInitialFacet(
-        'slots',
-        generation,
-        refreshSlots,
-        () => _publish(
-          _snapshot.copyWith(slots: _failedSlots(_snapshot.slots)),
-        ),
-      ),
-      _loadInitialFacet(
-        'firmware',
-        generation,
-        refreshFirmware,
-        _markFirmwareUnavailable,
-      ),
-    ];
 
     if (protocolRead != null) {
       try {
@@ -904,6 +880,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish ||
             generation != _readinessInitializationGeneration ||
             !_connectionReadiness.isCurrent(_readinessAttempt)) {
+          _completeProtocolHandshake(false);
           return;
         }
         _protocolVersion = version;
@@ -911,6 +888,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         if (!_canPublish ||
             generation != _readinessInitializationGeneration ||
             !_connectionReadiness.isCurrent(_readinessAttempt)) {
+          _completeProtocolHandshake(false);
           return;
         }
         _session.appState.log?.w(
@@ -924,15 +902,71 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
               ? ConnectionReadinessErrorCategory.timeout
               : ConnectionReadinessErrorCategory.protocol,
         );
+        _completeProtocolHandshake(false);
         return;
       }
     }
+    _protocolHandshakeConfirmed = true;
+    _completeProtocolHandshake(true);
 
     _connectionReadiness.transition(
       _readinessAttempt,
       ConnectionReadinessStage.loadingStatus,
     );
-    await Future.wait(statusFacets);
+    final statusFacets = <Future<void> Function()>[
+      () => _loadInitialFacet(
+            'battery',
+            generation,
+            refreshBattery,
+            () => _publish(
+              _snapshot.copyWith(battery: const BatteryStatus.unavailable()),
+            ),
+          ),
+      () => _loadInitialFacet(
+            'mode',
+            generation,
+            refreshMode,
+            () => _publish(
+              _snapshot.copyWith(
+                mode: ModeStatus.unavailable(
+                  confirmedMode: _snapshot.mode.confirmedMode,
+                ),
+              ),
+            ),
+          ),
+      () => _loadInitialFacet(
+            'slots',
+            generation,
+            refreshSlots,
+            () => _publish(
+              _snapshot.copyWith(slots: _failedSlots(_snapshot.slots)),
+            ),
+          ),
+      () => _loadInitialFacet(
+            'firmware',
+            generation,
+            refreshFirmware,
+            _markFirmwareUnavailable,
+          ),
+      () => _loadInitialFacet(
+            'slot reorder capability',
+            generation,
+            () async {
+              await refreshSlotReorderCapability();
+            },
+            () => _publishSlotReorderCapability(
+              SlotReorderCapability.unavailable,
+            ),
+          ),
+    ];
+    for (final loadFacet in statusFacets) {
+      if (!_canPublish ||
+          generation != _readinessInitializationGeneration ||
+          !_connectionReadiness.isCurrent(_readinessAttempt)) {
+        return;
+      }
+      await loadFacet();
+    }
     if (!_canPublish ||
         generation != _readinessInitializationGeneration ||
         !_connectionReadiness.isCurrent(_readinessAttempt)) {
@@ -940,6 +974,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
     _initialStatusFinished = true;
     _publishReadinessForSnapshot();
+    if (_homePresenceCount > 0 && _isAppActive) {
+      _startHomeTimers();
+    }
   }
 
   Future<void> _loadInitialFacet(
@@ -1094,13 +1131,17 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> refreshFirmware() {
+  Future<void> refreshFirmware() async {
+    if (!await _waitForProtocolHandshake()) {
+      return;
+    }
     if (_snapshot.firmware.state == FirmwareState.demo ||
         _firmwareLookupAttempted) {
-      return _firmwareRefresh ?? Future.value();
+      await (_firmwareRefresh ?? Future.value());
+      return;
     }
     _firmwareLookupAttempted = true;
-    return _startFirmwareRefresh(readFacts: true);
+    await _startFirmwareRefresh(readFacts: true);
   }
 
   Future<void> retryFirmwareCheck() {
@@ -1452,20 +1493,28 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refreshMode() => _modeStatusMachine.refresh();
+  Future<void> refreshMode() async {
+    if (await _waitForProtocolHandshake()) {
+      await _modeStatusMachine.refresh();
+    }
+  }
 
   Future<ModeActionOutcome> switchMode(ConnectedDeviceMode target) =>
       _modeStatusMachine.switchTo(target);
 
-  Future<void> refreshSlots() {
+  Future<void> refreshSlots() async {
+    if (!await _waitForProtocolHandshake()) {
+      return;
+    }
     final currentRefresh = _slotsRefresh;
     if (currentRefresh != null) {
-      return currentRefresh;
+      await currentRefresh;
+      return;
     }
 
     final refresh = _refreshSlots();
     _slotsRefresh = refresh;
-    return refresh.whenComplete(() {
+    await refresh.whenComplete(() {
       if (identical(_slotsRefresh, refresh)) {
         _slotsRefresh = null;
       }
@@ -2413,7 +2462,24 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> refreshBattery() => _batteryStatusMachine.refresh();
+  Future<void> refreshBattery() async {
+    if (await _waitForProtocolHandshake()) {
+      await _batteryStatusMachine.refresh();
+    }
+  }
+
+  Future<bool> _waitForProtocolHandshake() async {
+    if (_protocolHandshakeConfirmed) {
+      return _canPublish;
+    }
+    return await _protocolHandshakeCompletion.future && _canPublish;
+  }
+
+  void _completeProtocolHandshake(bool confirmed) {
+    if (!_protocolHandshakeCompletion.isCompleted) {
+      _protocolHandshakeCompletion.complete(confirmed);
+    }
+  }
 
   bool get _canPublish => !_disposed && _session.isCurrent;
 
@@ -2464,12 +2530,6 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     }
     _homePresenceCount--;
     if (_homePresenceCount == 0) {
-      if (!_initialStatusFinished) {
-        _readinessInitializationGeneration++;
-        _initialReadiness = null;
-        _firstHomeEntry = true;
-        _cancelReadinessTimeouts();
-      }
       _batteryTimer?.cancel();
       _batteryTimer = null;
       _activeSlotTimer?.cancel();
@@ -2486,14 +2546,18 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_homePresenceCount == 0) {
-      if (state == AppLifecycleState.resumed && _slotManagerPresenceCount > 0) {
+      if (state == AppLifecycleState.resumed &&
+          _slotManagerPresenceCount > 0 &&
+          _initialStatusFinished) {
         unawaited(refreshSlots());
       }
       return;
     }
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshHomeAfterResume());
-      _startHomeTimers();
+      if (_initialStatusFinished) {
+        unawaited(_refreshHomeAfterResume());
+        _startHomeTimers();
+      }
     } else {
       _batteryTimer?.cancel();
       _batteryTimer = null;
@@ -2508,6 +2572,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _disposed = true;
+    _completeProtocolHandshake(false);
     _cancelReadinessTimeouts();
     _batteryTimer?.cancel();
     _batteryTimer = null;
