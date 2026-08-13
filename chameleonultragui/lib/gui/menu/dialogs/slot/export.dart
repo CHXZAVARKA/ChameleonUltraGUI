@@ -10,6 +10,7 @@ import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:flutter/material.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:provider/provider.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:flutter/services.dart';
@@ -93,13 +94,15 @@ class SlotExportMenu extends StatefulWidget {
   final SlotNames names;
   final EnabledSlotInfo enabledSlotInfo;
   final SlotTypes slotTypes;
+  final ConnectedDeviceStatus? expectedStatus;
 
   const SlotExportMenu(
       {super.key,
       required this.slot,
       required this.names,
       required this.enabledSlotInfo,
-      required this.slotTypes});
+      required this.slotTypes,
+      this.expectedStatus});
 
   @override
   SlotExportMenuState createState() => SlotExportMenuState();
@@ -110,8 +113,21 @@ class SlotExportMenuState extends State<SlotExportMenu> {
 
   Future<CardSave?> rebuildCardSaveFromSlot(TagFrequency frequency) async {
     final appState = context.read<ChameleonGUIState>();
+    final expectedStatus = widget.expectedStatus;
+    if (expectedStatus != null &&
+        !identical(appState.connectedDeviceStatus, expectedStatus)) {
+      return null;
+    }
     final result = await appState.runSessionBoundForeground((session) async {
-      bool canContinue() => mounted && session.isCurrent;
+      bool canContinue() =>
+          mounted &&
+          session.isCurrent &&
+          (expectedStatus == null ||
+              (expectedStatus.isCurrentSession &&
+                  identical(
+                    appState.connectedDeviceStatus,
+                    expectedStatus,
+                  )));
       if (!canContinue()) {
         return null;
       }
@@ -343,6 +359,13 @@ class SlotExportMenuState extends State<SlotExportMenu> {
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
+    if (widget.expectedStatus != null &&
+        !identical(appState.connectedDeviceStatus, widget.expectedStatus)) {
+      return AlertDialog(
+        title: Text(localizations.export_slot_data),
+        content: Text(localizations.unavailable),
+      );
+    }
 
     List<String> buttons = [];
     if (widget.slotTypes.hf != TagType.unknown) {

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid_navigation.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
+import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -114,6 +116,11 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyE ||
+        event.logicalKey == LogicalKeyboardKey.f2) {
+      _openSlotSettings(_focusedSlot);
+      return KeyEventResult.handled;
     }
     final numberedSlot = _numberedSlot(event.logicalKey);
     if (numberedSlot != null) {
@@ -235,6 +242,208 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
           ),
         );
     }
+  }
+
+  void _handleTap(int index) {
+    final slots = widget.status.snapshot.slots;
+    if (slots.activeSlot.isConfirmed && slots.activeSlot.value == index) {
+      if (_activeSlotFactIsCurrent(slots)) {
+        _openSlotSettings(index);
+      } else {
+        _showEditUnavailable();
+      }
+      return;
+    }
+    unawaited(_activate(index));
+  }
+
+  bool _activeSlotFactIsCurrent(SlotsStatus slots) =>
+      slots.activeSlot.isConfirmed &&
+      !slots.unavailableFacets.contains(SlotFacet.activeSlot) &&
+      !slots.staleFacets.contains(SlotFacet.activeSlot);
+
+  void _openSlotSettings(int index) {
+    final status = widget.status;
+    final slots = status.snapshot.slots;
+    if (!status.isCurrentSession ||
+        slots.pendingActivation != null ||
+        slots.pendingReorder != null ||
+        !_slotFactsAreCurrent(slots, index)) {
+      if (status.isCurrentSession && identical(widget.status, status)) {
+        _showEditUnavailable();
+      }
+      return;
+    }
+    _focusNode.requestFocus();
+    if (_focusedSlot != index) {
+      setState(() => _focusedSlot = index);
+    }
+    showDialog<void>(
+      context: context,
+      builder: (_) => SlotSettings(slot: index, expectedStatus: status),
+    );
+  }
+
+  void _showEditUnavailable() {
+    final localizations = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('home-slot-edit-unavailable'),
+          content: Text(localizations.slot_edit_unavailable),
+        ),
+      );
+  }
+
+  bool _slotFactsAreCurrent(SlotsStatus slots, int index) {
+    final slot = slots.slots[index];
+    const requiredFacets = {
+      SlotFacet.types,
+      SlotFacet.enabledStates,
+      SlotFacet.names,
+    };
+    return !slots.unavailableFacets.any(requiredFacets.contains) &&
+        !slots.staleFacets.any(requiredFacets.contains) &&
+        !(slots.staleSlotFacets[index]?.any(requiredFacets.contains) ??
+            false) &&
+        slot.hf.type.isConfirmed &&
+        slot.hf.enabled.isConfirmed &&
+        slot.hf.name.isConfirmed &&
+        slot.lf.type.isConfirmed &&
+        slot.lf.enabled.isConfirmed &&
+        slot.lf.name.isConfirmed;
+  }
+
+  Future<void> _showSlotContextMenu(
+    int index,
+    Offset globalPosition,
+  ) async {
+    final status = widget.status;
+    if (!status.isCurrentSession) {
+      return;
+    }
+    final localizations = AppLocalizations.of(context)!;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final localPosition = overlay.globalToLocal(globalPosition);
+    final slots = status.snapshot.slots;
+    final slotFactsCurrent = _slotFactsAreCurrent(slots, index);
+    final canExport = slotFactsCurrent &&
+        (slots.slots[index].hf.type.value != TagType.unknown ||
+            slots.slots[index].lf.type.value != TagType.unknown);
+    final action = await showMenu<_SlotContextAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        localPosition & Size.zero,
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: _SlotContextAction.edit,
+          enabled: slotFactsCurrent,
+          child: ListTile(
+            leading: const Icon(Icons.edit),
+            title: Text(localizations.edit_slot),
+          ),
+        ),
+        PopupMenuItem(
+          value: _SlotContextAction.move,
+          enabled: _canStartReorderFor(status),
+          child: ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: Text(localizations.move_slot),
+          ),
+        ),
+        PopupMenuItem(
+          value: _SlotContextAction.clear,
+          enabled: slotFactsCurrent,
+          child: ListTile(
+            leading: const Icon(Icons.clear_rounded),
+            title: Text(localizations.clear_slot),
+          ),
+        ),
+        PopupMenuItem(
+          value: _SlotContextAction.export,
+          enabled: canExport,
+          child: ListTile(
+            leading: const Icon(Icons.download),
+            title: Text(localizations.export_slot_data),
+          ),
+        ),
+      ],
+    );
+    if (!mounted ||
+        action == null ||
+        !status.isCurrentSession ||
+        !identical(widget.status, status)) {
+      return;
+    }
+    switch (action) {
+      case _SlotContextAction.edit || _SlotContextAction.clear:
+        _openSlotSettings(index);
+      case _SlotContextAction.move:
+        await _showMoveDialog(index, status);
+      case _SlotContextAction.export:
+        _openSlotExport(index, status);
+    }
+  }
+
+  Future<void> _showMoveDialog(
+    int source,
+    ConnectedDeviceStatus status,
+  ) async {
+    if (!_canStartReorderFor(status)) {
+      return;
+    }
+    final localizations = AppLocalizations.of(context)!;
+    final target = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(localizations.move_slot),
+        children: [
+          for (var index = 0; index < 8; index++)
+            if (index != source)
+              SimpleDialogOption(
+                key: Key('home-slot-move-target-${index + 1}'),
+                onPressed: () => Navigator.of(dialogContext).pop(index),
+                child: Text(localizations.swap_with_slot(index + 1)),
+              ),
+        ],
+      ),
+    );
+    if (target != null &&
+        mounted &&
+        status.isCurrentSession &&
+        identical(widget.status, status)) {
+      await _reorder(source, target, originatingStatus: status);
+    }
+  }
+
+  void _openSlotExport(int index, ConnectedDeviceStatus status) {
+    final slots = status.snapshot.slots;
+    if (!status.isCurrentSession ||
+        !identical(widget.status, status) ||
+        !_slotFactsAreCurrent(slots, index)) {
+      return;
+    }
+    final slot = slots.slots[index];
+    showDialog<void>(
+      context: context,
+      builder: (_) => SlotExportMenu(
+        slot: index,
+        names: SlotNames(hf: slot.hf.name.value!, lf: slot.lf.name.value!),
+        enabledSlotInfo: EnabledSlotInfo(
+          hf: slot.hf.enabled.value!,
+          lf: slot.lf.enabled.value!,
+        ),
+        slotTypes: SlotTypes(
+          hf: slot.hf.type.value!,
+          lf: slot.lf.type.value!,
+        ),
+        expectedStatus: status,
+      ),
+    );
   }
 
   bool get _activationBlocked {
@@ -623,7 +832,18 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                             blocked: _activationBlocked,
                             reorder: reorder,
                             preview: preview,
-                            onTap: () => _activate(index),
+                            onTap: () => _handleTap(index),
+                            onEdit: _slotFactsAreCurrent(slots, index)
+                                ? () => _openSlotSettings(index)
+                                : null,
+                            onSecondaryTapDown: preview
+                                ? null
+                                : (details) => unawaited(
+                                      _showSlotContextMenu(
+                                        index,
+                                        details.globalPosition,
+                                      ),
+                                    ),
                           );
                         }
 
@@ -819,6 +1039,8 @@ enum _SlotMarkState {
   loading,
 }
 
+enum _SlotContextAction { edit, move, clear, export }
+
 class _SlotReorderAction {
   const _SlotReorderAction({required this.target, required this.invoke});
 
@@ -892,6 +1114,8 @@ class _SlotColumn extends StatelessWidget {
     required this.reorder,
     required this.preview,
     required this.onTap,
+    required this.onEdit,
+    required this.onSecondaryTapDown,
   });
 
   final int index;
@@ -906,6 +1130,8 @@ class _SlotColumn extends StatelessWidget {
   final _SlotReorderPresentation reorder;
   final bool preview;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
+  final GestureTapDownCallback? onSecondaryTapDown;
 
   String _frequencyDescription(
     AppLocalizations localizations,
@@ -987,6 +1213,8 @@ class _SlotColumn extends StatelessWidget {
         '${activating ? '\n${localizations.activating}' : ''}'
         '$reorderDescription$capabilityDescription';
     final customActions = <CustomSemanticsAction, VoidCallback>{
+      if (onEdit case final edit?)
+        CustomSemanticsAction(label: localizations.edit_slot): edit,
       if (reorder.actions.before case final action?)
         CustomSemanticsAction(
           label: localizations.slot_reorder_move_before(action.target + 1),
@@ -1027,6 +1255,8 @@ class _SlotColumn extends StatelessWidget {
               excludeFromSemantics: true,
               borderRadius: BorderRadius.circular(18),
               onTap: blocked || preview ? null : onTap,
+              onSecondaryTapDown:
+                  blocked || preview ? null : onSecondaryTapDown,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [

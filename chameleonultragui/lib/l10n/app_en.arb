@@ -1009,6 +1009,31 @@
   "dashed_outline": "Dashed outline",
   "refresh_slot_status": "Refresh slot status",
   "slot_grid_description": "Eight device slots. HF is the top row and LF is the bottom row.",
+  "edit_slot": "Edit slot",
+  "@edit_slot": {
+    "description": "Screen-reader and context-menu action that opens the existing settings for a device slot"
+  },
+  "move_slot": "Move slot",
+  "@move_slot": {
+    "description": "Context-menu action and dialog title for swapping a complete slot bundle with another position"
+  },
+  "swap_with_slot": "Swap with slot {slot}",
+  "@swap_with_slot": {
+    "description": "Destination option for swapping a complete slot bundle",
+    "placeholders": {
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
+  "clear_slot": "Clear slot",
+  "@clear_slot": {
+    "description": "Context-menu action that opens the existing slot settings where either frequency can be cleared"
+  },
+  "slot_edit_unavailable": "Slot details are unavailable. Refresh the slot status.",
+  "@slot_edit_unavailable": {
+    "description": "Explanation shown when quick editing cannot safely open because required slot facts are unavailable or stale"
+  },
   "slot_layout": "Slot layout",
   "slot_layout_eight_across": "Eight slots in one row",
   "slot_layout_two_by_four": "Two rows of four slots",

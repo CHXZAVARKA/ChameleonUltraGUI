@@ -13,9 +13,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class SlotSettings extends StatefulWidget {
-  const SlotSettings({super.key, required this.slot});
+  const SlotSettings({
+    super.key,
+    required this.slot,
+    this.expectedStatus,
+  });
 
   final int slot;
+  final ConnectedDeviceStatus? expectedStatus;
 
   @override
   SlotSettingsState createState() => SlotSettingsState();
@@ -30,6 +35,12 @@ class SlotSettingsState extends State<SlotSettings> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final status = context.watch<ChameleonGUIState>().connectedDeviceStatus;
+    if (widget.expectedStatus != null &&
+        !identical(status, widget.expectedStatus)) {
+      _status = null;
+      _ready = false;
+      return;
+    }
     if (identical(status, _status)) {
       return;
     }

@@ -447,14 +447,14 @@ void main() {
 
     final node = tester.getSemantics(find.byKey(const Key('home-slot-2')));
     final data = node.getSemanticsData();
-    expect(data.customSemanticsActionIds, hasLength(2));
+    expect(data.customSemanticsActionIds, hasLength(3));
     final actions = [
       for (final id in data.customSemanticsActionIds!)
         CustomSemanticsAction.getAction(id)!.label,
     ];
     expect(
       actions,
-      containsAll(['Move before slot 1', 'Move after slot 3']),
+      containsAll(['Edit slot', 'Move before slot 1', 'Move after slot 3']),
     );
 
     final moveAfter = data.customSemanticsActionIds!.firstWhere(
@@ -489,11 +489,16 @@ void main() {
       for (final id in data.customSemanticsActionIds!)
         CustomSemanticsAction.getAction(id)!.label,
     ];
-    expect(actions, ['Move before slot 3']);
+    expect(actions, containsAll(['Edit slot', 'Move before slot 3']));
+    expect(actions, hasLength(2));
+    final moveBefore = data.customSemanticsActionIds!.firstWhere(
+      (id) =>
+          CustomSemanticsAction.getAction(id)!.label == 'Move before slot 3',
+    );
     node.owner!.performAction(
       node.id,
       SemanticsAction.customAction,
-      data.customSemanticsActionIds!.single,
+      moveBefore,
     );
     await tester.pumpAndSettle();
     expect(fixture.communicator.swaps, [(3, 2)]);
