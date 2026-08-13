@@ -961,6 +961,8 @@ final class _UploadCommunicator extends ChameleonCommunicator {
   }
 }
 
+// Keep this literal independent from the production verifier so the workflow
+// test catches any drift from the firmware factory image.
 Uint8List _defaultClassicBlock(int block) => Uint8List.fromList(
       (block < 128 && block % 4 == 3) || block % 16 == 15
           ? const [
