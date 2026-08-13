@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/single_slot_backup.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -116,18 +118,54 @@ void main() {
         () => SingleSlotBackupCodec.decode(minimal(model: 'none')),
         throwsFormatException,
       );
-      expect(
-        () => SingleSlotBackupCodec.decode(
-          minimal(
-            hf: '{"frequency":"hf","state":"complete",'
-                '"type":1000,"enabled":true,"name":"Mini",'
-                '"payload":{"uid":${_binary([1, 2, 3, 4])},"sak":9,'
-                '"atqa":${_binary([0, 4])},"ats":${_binary([])},'
-                '"chunkSize":16,"chunkCount":19,'
-                '"data":${_binary(List.filled(19 * 16, 0))}}}',
+      final validMini = SingleSlotBackupCodec.encode(
+        SingleSlotBackup(
+          sourceDevice: ChameleonDevice.ultra,
+          sourcePosition: 0,
+          createdAt: DateTime.utc(2026),
+          hf: SlotFrequencyBackup.complete(
+            frequency: TagFrequency.hf,
+            type: TagType.mifareMini,
+            enabled: true,
+            name: 'Mini',
+            payload: SlotCardPayload(
+              uid: Uint8List.fromList([1, 2, 3, 4]),
+              sak: 9,
+              atqa: Uint8List.fromList([0, 4]),
+              data: List.generate(20, (_) => Uint8List(16)),
+              emulator: const SlotEmulatorMetadata(
+                detectionEnabled: false,
+                gen1aEnabled: false,
+                gen2OrMagicEnabled: false,
+                useFirstBlockCollision: false,
+                writeMode: MifareWriteMode.normal,
+                prngType: Mf1PrngType.weak,
+              ),
+            ),
+          ),
+          lf: SlotFrequencyBackup.empty(
+            frequency: TagFrequency.lf,
+            enabled: false,
+            name: '',
           ),
         ),
-        throwsFormatException,
+      );
+      final invalidGeometry = jsonDecode(validMini) as Map<String, dynamic>;
+      final hf = (invalidGeometry['frequencies'] as List<dynamic>).first
+          as Map<String, dynamic>;
+      final payload = hf['payload'] as Map<String, dynamic>;
+      payload['chunkCount'] = 19;
+      payload['data'] = _binary(List.filled(19 * 16, 0));
+
+      expect(
+        () => SingleSlotBackupCodec.decode(jsonEncode(invalidGeometry)),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'Invalid MIFARE Classic geometry',
+          ),
+        ),
       );
 
       expect(
@@ -244,9 +282,9 @@ void main() {
   });
 }
 
-String _binary(List<int> bytes) {
-  // Digest is intentionally irrelevant for the impossible-geometry assertion:
-  // the codec must still reject the document before it can be restored.
-  return '{"encoding":"base64","length":${bytes.length},'
-      '"sha256":"${'0' * 64}","data":""}';
-}
+Map<String, Object> _binary(List<int> bytes) => {
+      'encoding': 'base64',
+      'length': bytes.length,
+      'sha256': sha256.convert(bytes).toString(),
+      'data': base64Encode(bytes),
+    };

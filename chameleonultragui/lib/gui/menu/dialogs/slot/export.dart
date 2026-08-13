@@ -6,8 +6,8 @@ import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
-import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
+import 'package:chameleonultragui/helpers/slot_command_runner.dart';
+import 'package:chameleonultragui/helpers/slot_payload.dart';
 import 'package:flutter/material.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -19,7 +19,7 @@ import 'package:file_picker/file_picker.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
-export 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart'
+export 'package:chameleonultragui/helpers/slot_payload.dart'
     show MifareClassicSlotDump, readMifareClassicSlotDump;
 
 void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
@@ -35,7 +35,28 @@ void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
       : null;
 }
 
-class _SlotReadCanceled implements Exception {
+final class _SessionSlotCommandRunner implements SlotCommandRunner {
+  const _SessionSlotCommandRunner(this.session, {required this.mounted});
+
+  final ConnectedDeviceSession session;
+  final bool Function() mounted;
+
+  @override
+  Future<T> run<T>(
+    Future<T> Function(ChameleonCommunicator communicator) operation,
+  ) async {
+    if (!mounted() || !session.isCurrent) {
+      throw const _SlotReadCanceled();
+    }
+    final result = await operation(session.communicator);
+    if (!mounted() || !session.isCurrent) {
+      throw const _SlotReadCanceled();
+    }
+    return result;
+  }
+}
+
+class _SlotReadCanceled implements SlotCommandRunnerChanged {
   const _SlotReadCanceled();
 }
 
@@ -86,195 +107,27 @@ class SlotExportMenuState extends State<SlotExportMenu> {
       if (!canContinue()) {
         return null;
       }
-      return _rebuildCardSaveUnderLease(
-        session.communicator,
-        frequency,
-        canContinue,
-      );
+      final type = frequency == TagFrequency.hf
+          ? widget.slotTypes.hf
+          : widget.slotTypes.lf;
+      if (!SlotPayloadReader.supports(type)) {
+        return null;
+      }
+      try {
+        final result = await SlotPayloadReader.read(
+          runner: _SessionSlotCommandRunner(session, mounted: () => mounted),
+          type: type,
+        );
+        return result.toCardSave(
+          type: type,
+          name:
+              frequency == TagFrequency.hf ? widget.names.hf : widget.names.lf,
+        );
+      } on _SlotReadCanceled {
+        return null;
+      }
     });
     return result.executed ? result.value : null;
-  }
-
-  Future<CardSave?> _rebuildCardSaveUnderLease(
-    ChameleonCommunicator communicator,
-    TagFrequency frequency,
-    bool Function() canContinue,
-  ) async {
-    Future<T?> read<T>(Future<T> Function() operation) async {
-      if (!canContinue()) {
-        return null;
-      }
-      final value = await operation();
-      return canContinue() ? value : null;
-    }
-
-    if (frequency == TagFrequency.lf) {
-      if (isEM410X(widget.slotTypes.lf)) {
-        final uid = await read(communicator.getEM410XEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: bytesToHexSpace(uid),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      } else if (widget.slotTypes.lf == TagType.hidProx) {
-        final uid = await read(communicator.getHIDProxEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: uid.toString(),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      } else if (widget.slotTypes.lf == TagType.viking) {
-        final uid = await read(communicator.getVikingEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: uid.toString(),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      } else if (widget.slotTypes.lf == TagType.pac) {
-        final uid = await read(communicator.getPacEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: uid.toString(),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      } else if (widget.slotTypes.lf == TagType.ioProx) {
-        final uid = await read(communicator.getIoProxEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: uid.toString(),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      } else if (widget.slotTypes.lf == TagType.idteck) {
-        final uid = await read(communicator.getIdteckEmulatorID);
-        if (uid == null) {
-          return null;
-        }
-        return CardSave(
-          uid: uid.toString(),
-          name: widget.names.lf,
-          tag: widget.slotTypes.lf,
-        );
-      }
-    } else {
-      final data = await read(communicator.mf1GetAntiCollData);
-      if (data == null) {
-        return null;
-      }
-
-      if (isMifareUltralight(widget.slotTypes.hf)) {
-        int pageCount = mfUltralightGetPagesCount(widget.slotTypes.hf);
-        List<Uint8List> pages = [];
-
-        for (int page = 0; page < pageCount; page++) {
-          final pageData =
-              await read(() => communicator.mf0EmulatorReadPages(page, 1));
-          if (pageData == null) {
-            return null;
-          }
-          pages.add(pageData);
-        }
-
-        CardSaveExtra extraData = CardSaveExtra();
-
-        final version = await read(communicator.mf0EmulatorGetVersionData);
-        if (version == null) {
-          return null;
-        }
-        if (version.isNotEmpty) {
-          extraData.ultralightVersion = version;
-        }
-
-        final signature = await read(communicator.mf0EmulatorGetSignatureData);
-        if (signature == null) {
-          return null;
-        }
-        if (signature.isNotEmpty) {
-          extraData.ultralightSignature = signature;
-        }
-
-        if (mfUltralightHasCounters(widget.slotTypes.hf)) {
-          List<int> counters = [];
-          int counterCount = mfUltralightGetCounterCount(widget.slotTypes.hf);
-
-          for (int i = 0; i < counterCount; i++) {
-            final counterData =
-                await read(() => communicator.mf0EmulatorGetCounterData(i));
-            if (counterData == null) {
-              return null;
-            }
-            counters.add(counterData.$1);
-          }
-
-          if (counters.isNotEmpty) {
-            extraData.ultralightCounters = counters;
-          }
-        }
-
-        return CardSave(
-          uid: bytesToHexSpace(data.uid),
-          name: widget.names.hf,
-          sak: data.sak,
-          atqa: data.atqa,
-          ats: data.ats,
-          tag: widget.slotTypes.hf,
-          data: pages,
-          extraData: extraData,
-        );
-      } else {
-        int blockCount = mfClassicGetBlockCount(
-            chameleonTagTypeGetMfClassicType(widget.slotTypes.hf));
-        late final MifareClassicSlotDump dump;
-        try {
-          dump = await readMifareClassicSlotDump(
-            blockCount: blockCount,
-            readBlocks: (firstBlock, requestedBlocks) async {
-              final result = await read(
-                () => communicator.mf1GetEmulatorBlock(
-                  firstBlock,
-                  requestedBlocks,
-                ),
-              );
-              if (result == null) {
-                throw const _SlotReadCanceled();
-              }
-              return result;
-            },
-          );
-        } on _SlotReadCanceled {
-          return null;
-        }
-
-        return CardSave(
-          uid: bytesToHexSpace(data.uid),
-          name: widget.names.hf,
-          sak: data.sak,
-          atqa: data.atqa,
-          ats: data.ats,
-          tag: widget.slotTypes.hf,
-          data: dump.blocks,
-          extraData: CardSaveExtra(
-            mifareClassicDumpComplete: dump.complete,
-          ),
-        );
-      }
-    }
-
-    return null;
   }
 
   Future<void> onTap(

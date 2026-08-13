@@ -6,8 +6,8 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/helpers/single_slot_backup.dart';
+import 'package:chameleonultragui/helpers/slot_payload.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
 import 'package:file_picker/file_picker.dart';
@@ -77,266 +77,6 @@ class OpenedSlotBackup {
   final SlotBackupOpenOutcome outcome;
   final SingleSlotBackup? backup;
   final Object? error;
-}
-
-class MifareClassicSlotDump {
-  const MifareClassicSlotDump({
-    required this.blocks,
-    required this.complete,
-  });
-
-  final List<Uint8List> blocks;
-  final bool complete;
-}
-
-Future<MifareClassicSlotDump> readMifareClassicSlotDump({
-  required int blockCount,
-  required Future<Uint8List> Function(int firstBlock, int blockCount)
-      readBlocks,
-  int maxBlocksPerRead = 16,
-}) async {
-  if (blockCount <= 0 || maxBlocksPerRead <= 0) {
-    throw ArgumentError('Block counts must be positive');
-  }
-
-  final binData = Uint8List(blockCount * 16);
-  var complete = true;
-  for (var firstBlock = 0;
-      firstBlock < blockCount;
-      firstBlock += maxBlocksPerRead) {
-    final requestedBlocks =
-        (blockCount - firstBlock).clamp(0, maxBlocksPerRead);
-    final result = await readBlocks(firstBlock, requestedBlocks);
-    final expectedLength = requestedBlocks * 16;
-    if (result.length != expectedLength) {
-      complete = false;
-    }
-    final copyLength = result.length.clamp(0, expectedLength);
-    binData.setRange(
-      firstBlock * 16,
-      firstBlock * 16 + copyLength,
-      result,
-    );
-  }
-  return MifareClassicSlotDump(
-    blocks: List.generate(
-      blockCount,
-      (block) => Uint8List.fromList(
-        binData.sublist(block * 16, (block + 1) * 16),
-      ),
-    ),
-    complete: complete,
-  );
-}
-
-abstract final class SlotPayloadWriter {
-  static bool supports(TagType type) =>
-      isMifareClassic(type) ||
-      isMifareUltralight(type) ||
-      isEM410X(type) ||
-      type == TagType.hidProx ||
-      type == TagType.viking ||
-      type == TagType.pac ||
-      type == TagType.ioProx ||
-      type == TagType.idteck;
-
-  static Future<void> writeCard({
-    required SlotMutationScope mutation,
-    required int position,
-    required CardSave card,
-    required bool enabled,
-    required String name,
-    SlotEmulatorMetadata? emulator,
-    CardData? antiCollision,
-    void Function(int progress)? onProgress,
-  }) async {
-    if (!supports(card.tag)) {
-      throw UnsupportedError('Unsupported slot tag type');
-    }
-    final type = isMifareClassic(card.tag) &&
-            chameleonTagSaveCheckForMifareClassicEV1(card)
-        ? TagType.mifare2K
-        : card.tag;
-    final frequency = chameleonTagToFrequency(type);
-    await mutation.run(
-      (communicator) => communicator.enableSlot(position, frequency, enabled),
-    );
-    await mutation.run(
-      (communicator) => communicator.setSlotType(position, type),
-    );
-    await mutation.run(
-      (communicator) => communicator.setDefaultDataToSlot(position, type),
-    );
-    if (isMifareClassic(type) || isMifareUltralight(type)) {
-      await mutation.run(
-        (communicator) => communicator.setMf1AntiCollision(
-          antiCollision ??
-              (isMifareClassic(type)
-                  ? mifareClassicAntiCollisionForCard(card)
-                  : CardData(
-                      uid: hexToBytes(card.uid),
-                      sak: card.sak,
-                      atqa: card.atqa,
-                      ats: card.ats,
-                    )),
-        ),
-      );
-    }
-    if (isMifareClassic(type)) {
-      onProgress?.call(0);
-      final blockCount = mfClassicGetBlockCount(
-        chameleonTagTypeGetMfClassicType(type),
-      );
-      for (var firstBlock = 0; firstBlock < blockCount; firstBlock += 8) {
-        final blocks = card.data
-            .skip(firstBlock)
-            .take(8)
-            .where((block) => block.length == 16)
-            .expand((block) => block)
-            .toList();
-        if (blocks.isNotEmpty) {
-          await mutation.run(
-            (communicator) => communicator.setMf1BlockData(
-              firstBlock,
-              Uint8List.fromList(blocks),
-            ),
-          );
-        }
-        onProgress?.call(
-            ((firstBlock + 8).clamp(0, blockCount) / blockCount * 100).round());
-      }
-      await _restoreClassicSettings(mutation, emulator);
-    } else if (isMifareUltralight(type)) {
-      onProgress?.call(0);
-      final pageCount = mfUltralightGetPagesCount(type);
-      for (var page = 0; page < pageCount && page < card.data.length; page++) {
-        await mutation.run(
-          (communicator) =>
-              communicator.mf0EmulatorWritePages(page, card.data[page]),
-        );
-        onProgress?.call(((page + 1) / pageCount * 100).round());
-      }
-      if (card.extraData.ultralightVersion.isNotEmpty) {
-        await mutation.run(
-          (communicator) => communicator.mf0EmulatorSetVersionData(
-            card.extraData.ultralightVersion,
-          ),
-        );
-      }
-      if (card.extraData.ultralightSignature.isNotEmpty) {
-        await mutation.run(
-          (communicator) => communicator.mf0EmulatorSetSignatureData(
-            card.extraData.ultralightSignature,
-          ),
-        );
-      }
-      for (var index = 0;
-          index < card.extraData.ultralightCounters.length;
-          index++) {
-        await mutation.run(
-          (communicator) => communicator.mf0EmulatorSetCounterData(
-            index,
-            card.extraData.ultralightCounters[index],
-            true,
-          ),
-        );
-      }
-      if (mfUltralightHasCounters(type)) {
-        await mutation.run((communicator) => communicator.mf0ResetAuthCount());
-      }
-      await _restoreUltralightSettings(mutation, emulator);
-    } else if (isEM410X(type)) {
-      await mutation.run(
-        (communicator) => communicator.setEM410XEmulatorID(
-          hexToBytes(card.uid),
-        ),
-      );
-    } else if (type == TagType.hidProx) {
-      await mutation.run(
-        (communicator) => communicator.setHIDProxEmulatorID(
-          hexToBytes(HIDCard.fromUID(card.uid).toString()),
-        ),
-      );
-    } else if (type == TagType.viking) {
-      await mutation.run(
-        (communicator) => communicator.setVikingEmulatorID(
-          hexToBytes(card.uid),
-        ),
-      );
-    } else if (type == TagType.pac) {
-      await mutation.run(
-        (communicator) => communicator.setPacEmulatorID(hexToBytes(card.uid)),
-      );
-    } else if (type == TagType.ioProx) {
-      await mutation.run(
-        (communicator) =>
-            communicator.setIoProxEmulatorID(hexToBytes(card.uid)),
-      );
-    } else if (type == TagType.idteck) {
-      await mutation.run(
-        (communicator) =>
-            communicator.setIdteckEmulatorID(hexToBytes(card.uid)),
-      );
-    }
-    await mutation.run(
-      (communicator) => communicator.setSlotTagName(position, name, frequency),
-    );
-    onProgress?.call(100);
-  }
-
-  static Future<void> _restoreClassicSettings(
-    SlotMutationScope mutation,
-    SlotEmulatorMetadata? emulator,
-  ) async {
-    if (emulator == null) {
-      return;
-    }
-    await mutation.run(
-      (communicator) =>
-          communicator.setMf1DetectionStatus(emulator.detectionEnabled),
-    );
-    await mutation.run(
-      (communicator) => communicator.setMf1Gen1aMode(emulator.gen1aEnabled),
-    );
-    await mutation.run(
-      (communicator) =>
-          communicator.setMf1Gen2Mode(emulator.gen2OrMagicEnabled),
-    );
-    await mutation.run(
-      (communicator) => communicator.setMf1UseFirstBlockColl(
-        emulator.useFirstBlockCollision,
-      ),
-    );
-    await mutation.run(
-      (communicator) => communicator.setMf1WriteMode(emulator.writeMode),
-    );
-    if (emulator.prngType != null) {
-      await mutation.run(
-        (communicator) => communicator.setMf1PrngType(emulator.prngType!),
-      );
-    }
-  }
-
-  static Future<void> _restoreUltralightSettings(
-    SlotMutationScope mutation,
-    SlotEmulatorMetadata? emulator,
-  ) async {
-    if (emulator == null) {
-      return;
-    }
-    await mutation.run(
-      (communicator) =>
-          communicator.mf0SetMagicMode(emulator.gen2OrMagicEnabled),
-    );
-    await mutation.run(
-      (communicator) => communicator.mf0NtagSetDetectionEnable(
-        emulator.detectionEnabled,
-      ),
-    );
-    await mutation.run(
-      (communicator) => communicator.mf0NtagSetWriteMode(emulator.writeMode),
-    );
-  }
 }
 
 class SingleSlotBackupWorkflow {
@@ -586,172 +326,15 @@ class SingleSlotBackupWorkflow {
     }
   }
 
-  Future<_PayloadReadResult> _readPayload(
+  Future<SlotPayloadReadResult> _readPayload(
     SlotMutationScope mutation,
     TagType type,
-  ) async {
-    if (isMifareClassic(type)) {
-      final anticollision = await mutation.run(
-        (communicator) => communicator.mf1GetAntiCollData(),
+  ) =>
+      SlotPayloadReader.read(
+        runner: mutation,
+        type: type,
+        includeEmulatorMetadata: true,
       );
-      final settings = await mutation.run(
-        (communicator) => communicator.getMf1EmulatorSettings(),
-      );
-      Mf1PrngType? prngType;
-      try {
-        prngType = await mutation.run(
-          (communicator) => communicator.getMf1PrngType(),
-        );
-      } on SlotMutationConnectionChanged {
-        rethrow;
-      } catch (_) {}
-      final dump = await readMifareClassicSlotDump(
-        blockCount: mfClassicGetBlockCount(
-          chameleonTagTypeGetMfClassicType(type),
-        ),
-        readBlocks: (firstBlock, blockCount) => mutation.run(
-          (communicator) => communicator.mf1GetEmulatorBlock(
-            firstBlock,
-            blockCount,
-          ),
-        ),
-      );
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: anticollision.uid,
-          sak: anticollision.sak,
-          atqa: anticollision.atqa,
-          ats: anticollision.ats,
-          data: dump.blocks,
-          emulator: SlotEmulatorMetadata(
-            detectionEnabled: settings.isDetectionEnabled,
-            gen1aEnabled: settings.isGen1a,
-            gen2OrMagicEnabled: settings.isGen2,
-            useFirstBlockCollision: settings.isAntiColl,
-            writeMode: settings.writeMode,
-            prngType: prngType,
-          ),
-        ),
-        structurallyComplete: dump.complete,
-      );
-    }
-    if (isMifareUltralight(type)) {
-      final anticollision = await mutation.run(
-        (communicator) => communicator.mf1GetAntiCollData(),
-      );
-      final settings = await mutation.run(
-        (communicator) => communicator.mf0NtagGetEmulatorConfig(),
-      );
-      final pages = <Uint8List>[];
-      for (var page = 0; page < mfUltralightGetPagesCount(type); page++) {
-        pages.add(
-          await mutation.run(
-            (communicator) => communicator.mf0EmulatorReadPages(page, 1),
-          ),
-        );
-      }
-      final counters = <int>[];
-      if (mfUltralightHasCounters(type)) {
-        for (var index = 0;
-            index < mfUltralightGetCounterCount(type);
-            index++) {
-          counters.add(
-            (await mutation.run(
-              (communicator) => communicator.mf0EmulatorGetCounterData(index),
-            ))
-                .$1,
-          );
-        }
-      }
-      final version = await mutation.run(
-        (communicator) => communicator.mf0EmulatorGetVersionData(),
-      );
-      final signature = await mutation.run(
-        (communicator) => communicator.mf0EmulatorGetSignatureData(),
-      );
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: anticollision.uid,
-          sak: anticollision.sak,
-          atqa: anticollision.atqa,
-          ats: anticollision.ats,
-          data: pages,
-          ultralightVersion: version,
-          ultralightSignature: signature,
-          ultralightCounters: counters,
-          emulator: SlotEmulatorMetadata(
-            detectionEnabled: settings.isDetectionEnabled,
-            gen1aEnabled: false,
-            gen2OrMagicEnabled: settings.isGen2,
-            useFirstBlockCollision: false,
-            writeMode: settings.writeMode,
-          ),
-        ),
-      );
-    }
-    if (isEM410X(type)) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: await mutation.run(
-            (communicator) => communicator.getEM410XEmulatorID(),
-          ),
-        ),
-      );
-    }
-    if (type == TagType.hidProx) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: hexToBytes(
-            (await mutation.run(
-              (communicator) => communicator.getHIDProxEmulatorID(),
-            ))
-                .toString(),
-          ),
-        ),
-      );
-    }
-    if (type == TagType.viking) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: (await mutation.run(
-            (communicator) => communicator.getVikingEmulatorID(),
-          ))
-              .uid,
-        ),
-      );
-    }
-    if (type == TagType.pac) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: (await mutation.run(
-            (communicator) => communicator.getPacEmulatorID(),
-          ))
-              .uid,
-        ),
-      );
-    }
-    if (type == TagType.ioProx) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: (await mutation.run(
-            (communicator) => communicator.getIoProxEmulatorID(),
-          ))
-              .uid,
-        ),
-      );
-    }
-    if (type == TagType.idteck) {
-      return _PayloadReadResult(
-        payload: SlotCardPayload(
-          uid: (await mutation.run(
-            (communicator) => communicator.getIdteckEmulatorID(),
-          ))
-              .uid,
-        ),
-      );
-    }
-    throw UnsupportedError('Unsupported slot tag type');
-  }
 
   Future<void> _restoreFrequency(
     SlotMutationScope mutation,
@@ -781,7 +364,7 @@ class SingleSlotBackupWorkflow {
     }
     final payload = frequency.payload!;
     await SlotPayloadWriter.writeCard(
-      mutation: mutation,
+      runner: mutation,
       position: position,
       card: CardSave(
         uid: bytesToHexSpace(payload.uid),
@@ -802,6 +385,7 @@ class SingleSlotBackupWorkflow {
       enabled: frequency.enabled!,
       name: frequency.name!,
       emulator: payload.emulator,
+      ultralightTearingStates: payload.ultralightTearingStates,
       antiCollision: chameleonTagToFrequency(frequency.type!) == TagFrequency.hf
           ? CardData(
               uid: payload.uid,
@@ -875,14 +459,4 @@ class _FrequencyMetadata {
   final String? name;
 
   bool get hasAnyValue => type != null || enabled != null || name != null;
-}
-
-class _PayloadReadResult {
-  const _PayloadReadResult({
-    required this.payload,
-    this.structurallyComplete = true,
-  });
-
-  final SlotCardPayload payload;
-  final bool structurallyComplete;
 }

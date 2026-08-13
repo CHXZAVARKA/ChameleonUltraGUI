@@ -234,6 +234,97 @@ void main() {
       expect(backup.isRestorable, isFalse);
     });
 
+    test('failed Classic PRNG metadata read cannot produce a complete backup',
+        () async {
+      final communicator = _BackupCommunicator(
+        hfType: TagType.mifareMini,
+        failPrngRead: true,
+      );
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+
+      final backup = await SingleSlotBackupWorkflow(
+        files: _MemoryBackupFiles(),
+      ).capture(
+        status: fixture.appState.connectedDeviceStatus!,
+        position: 0,
+      );
+
+      expect(backup!.hf.state, SlotBackupCompleteness.partial);
+      expect(backup.isRestorable, isFalse);
+    });
+
+    test('non-restorable Ultralight tearing state is marked partial', () async {
+      final communicator = _BackupCommunicator(
+        hfType: TagType.ultralight11,
+        ultralightTearingStates: const [true, false, true],
+        antiCollisionRead: CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4, 5, 6, 7]),
+          sak: 0,
+          atqa: Uint8List.fromList([0, 4]),
+          ats: Uint8List(0),
+        ),
+      );
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+
+      final backup = await SingleSlotBackupWorkflow(
+        files: _MemoryBackupFiles(),
+      ).capture(
+        status: fixture.appState.connectedDeviceStatus!,
+        position: 0,
+      );
+
+      expect(backup!.hf.state, SlotBackupCompleteness.partial);
+      expect(backup.hf.payload!.ultralightTearingStates, [true, false, true]);
+      expect(backup.isRestorable, isFalse);
+    });
+
+    test('Ultralight tearing state round-trips through restore exactly',
+        () async {
+      final communicator = _BackupCommunicator(
+        hfType: TagType.ultralight11,
+        ultralightTearingStates: const [true, true, true],
+        antiCollisionRead: CardData(
+          uid: Uint8List.fromList([1, 2, 3, 4, 5, 6, 7]),
+          sak: 0,
+          atqa: Uint8List.fromList([0, 4]),
+          ats: Uint8List(0),
+        ),
+      );
+      final fixture = ConnectedDeviceTestHarness(communicator: communicator);
+      addTearDown(fixture.appState.dispose);
+      final workflow = SingleSlotBackupWorkflow(files: _MemoryBackupFiles());
+
+      final captured = await workflow.capture(
+        status: fixture.appState.connectedDeviceStatus!,
+        position: 0,
+      );
+      final decoded = SingleSlotBackupCodec.decode(
+        SingleSlotBackupCodec.encode(captured!),
+      );
+
+      expect(decoded.hf.payload!.ultralightTearingStates, [true, true, true]);
+      communicator.events.clear();
+      expect(
+        await workflow.restore(
+          status: fixture.appState.connectedDeviceStatus!,
+          backup: decoded,
+          targetPosition: 2,
+        ),
+        SlotBackupRestoreOutcome.restored,
+      );
+      expect(
+        communicator.events
+            .where((event) => event.startsWith('ultralight-counter:')),
+        containsAllInOrder([
+          'ultralight-counter:0:1:true',
+          'ultralight-counter:1:2:true',
+          'ultralight-counter:2:3:true',
+        ]),
+      );
+    });
+
     test('picker cancellation performs no device work', () async {
       final communicator = _BackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
@@ -433,6 +524,8 @@ final class _BackupCommunicator extends ChameleonCommunicator {
     this.payloadReadGate,
     this.antiCollisionRead,
     this.shortClassicRead = false,
+    this.failPrngRead = false,
+    this.ultralightTearingStates = const [true, true, true],
   }) : super(Logger(output: MemoryOutput()));
 
   final TagType hfType;
@@ -442,6 +535,8 @@ final class _BackupCommunicator extends ChameleonCommunicator {
   final Completer<void>? payloadReadGate;
   final CardData? antiCollisionRead;
   final bool shortClassicRead;
+  final bool failPrngRead;
+  final List<bool> ultralightTearingStates;
   final Completer<void> readStarted = Completer<void>();
   final Completer<void> payloadReadStarted = Completer<void>();
   final List<String> events = [];
@@ -499,7 +594,12 @@ final class _BackupCommunicator extends ChameleonCommunicator {
       );
 
   @override
-  Future<Mf1PrngType> getMf1PrngType() async => Mf1PrngType.weak;
+  Future<Mf1PrngType> getMf1PrngType() async {
+    if (failPrngRead) {
+      throw StateError('PRNG metadata unavailable');
+    }
+    return Mf1PrngType.weak;
+  }
 
   @override
   Future<EmulatorSettings> mf0NtagGetEmulatorConfig() async => EmulatorSettings(
@@ -538,7 +638,7 @@ final class _BackupCommunicator extends ChameleonCommunicator {
 
   @override
   Future<(int, bool)> mf0EmulatorGetCounterData(int index) async =>
-      (index + 1, true);
+      (index + 1, ultralightTearingStates[index]);
 
   @override
   Future<Uint8List> getEM410XEmulatorID() async =>
@@ -621,7 +721,7 @@ final class _BackupCommunicator extends ChameleonCommunicator {
     int value,
     bool resetTearing,
   ) async {
-    events.add('ultralight-counter:$index:$value');
+    events.add('ultralight-counter:$index:$value:$resetTearing');
   }
 
   @override

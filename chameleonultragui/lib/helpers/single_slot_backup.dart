@@ -30,6 +30,7 @@ class SlotCardPayload {
     Uint8List? ultralightVersion,
     Uint8List? ultralightSignature,
     List<int> ultralightCounters = const [],
+    List<bool> ultralightTearingStates = const [],
     this.emulator,
   })  : atqa = Uint8List.fromList(atqa ?? const []),
         ats = Uint8List.fromList(ats ?? const []),
@@ -38,6 +39,7 @@ class SlotCardPayload {
         ultralightSignature =
             Uint8List.fromList(ultralightSignature ?? const []),
         ultralightCounters = List.unmodifiable(ultralightCounters),
+        ultralightTearingStates = List.unmodifiable(ultralightTearingStates),
         uid = Uint8List.fromList(uid);
 
   final Uint8List uid;
@@ -48,6 +50,7 @@ class SlotCardPayload {
   final Uint8List ultralightVersion;
   final Uint8List ultralightSignature;
   final List<int> ultralightCounters;
+  final List<bool> ultralightTearingStates;
   final SlotEmulatorMetadata? emulator;
 }
 
@@ -274,6 +277,7 @@ abstract final class SingleSlotBackupCodec {
       'ultralightVersion': _encodeBytes(payload.ultralightVersion),
       'ultralightSignature': _encodeBytes(payload.ultralightSignature),
       'ultralightCounters': payload.ultralightCounters,
+      'ultralightTearingStates': payload.ultralightTearingStates,
       if (payload.emulator != null)
         'emulator': {
           'detectionEnabled': payload.emulator!.detectionEnabled,
@@ -355,6 +359,16 @@ abstract final class SingleSlotBackupCodec {
     final counters = _list(map['ultralightCounters'], 'ultralightCounters')
         .map((value) => _integer(value, 'ultralightCounter'))
         .toList();
+    final tearingStates =
+        _list(map['ultralightTearingStates'], 'ultralightTearingStates')
+            .map((value) {
+      if (value is! bool) {
+        throw const FormatException(
+          'ultralightTearingState must be a boolean',
+        );
+      }
+      return value;
+    }).toList();
     final emulator = map['emulator'] == null
         ? null
         : _decodeEmulator(_map(map['emulator'], 'emulator'));
@@ -369,6 +383,7 @@ abstract final class SingleSlotBackupCodec {
       ultralightSignature:
           _decodeBytes(map['ultralightSignature'], 'ultralightSignature'),
       ultralightCounters: counters,
+      ultralightTearingStates: tearingStates,
       emulator: emulator,
     );
   }
@@ -497,6 +512,7 @@ abstract final class SingleSlotBackupCodec {
       if (!validUidLengthsForTagType(type).contains(payload.uid.length) ||
           payload.atqa.length != 2 ||
           payload.emulator == null ||
+          payload.emulator!.prngType == null ||
           payload.data.length != expected ||
           payload.data.any((block) => block.length != 16)) {
         throw const FormatException('Invalid MIFARE Classic geometry');
@@ -510,6 +526,13 @@ abstract final class SingleSlotBackupCodec {
           payload.data.length != mfUltralightGetPagesCount(type) ||
           payload.data.any((page) => page.length != 4)) {
         throw const FormatException('Invalid MIFARE Ultralight geometry');
+      }
+      final expectedCounters =
+          mfUltralightHasCounters(type) ? mfUltralightGetCounterCount(type) : 0;
+      if (payload.ultralightCounters.length != expectedCounters ||
+          payload.ultralightTearingStates.length != expectedCounters ||
+          payload.ultralightTearingStates.any((state) => !state)) {
+        throw const FormatException('Invalid MIFARE Ultralight metadata');
       }
       return;
     }

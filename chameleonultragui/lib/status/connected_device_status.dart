@@ -7,6 +7,7 @@ import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
+import 'package:chameleonultragui/helpers/slot_command_runner.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/widgets.dart';
 
@@ -612,7 +613,7 @@ class StatusPresence {
   }
 }
 
-class SlotMutationConnectionChanged implements Exception {
+class SlotMutationConnectionChanged implements SlotCommandRunnerChanged {
   const SlotMutationConnectionChanged();
 
   @override
@@ -626,7 +627,7 @@ class SlotMutationBusy implements Exception {
   String toString() => 'Another slot mutation is in progress';
 }
 
-class SlotMutationScope {
+class SlotMutationScope implements SlotCommandRunner {
   const SlotMutationScope._(this._session);
 
   final ConnectedDeviceSession _session;
@@ -639,6 +640,7 @@ class SlotMutationScope {
     }
   }
 
+  @override
   Future<T> run<T>(
     Future<T> Function(ChameleonCommunicator communicator) operation,
   ) async {
