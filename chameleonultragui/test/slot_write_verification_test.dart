@@ -23,37 +23,71 @@ void main() {
   group('post-write comparison', () {
     test('verifies every supported Classic source and storage geometry',
         () async {
-      const cases = [
-        (TagType.mifareMini, 20, TagType.mifareMini, 20),
-        (TagType.mifare1K, 64, TagType.mifare1K, 64),
-        (TagType.mifare1K, 72, TagType.mifare2K, 128),
-        (TagType.mifare2K, 128, TagType.mifare2K, 128),
-        (TagType.mifare4K, 256, TagType.mifare4K, 256),
+      const cases = <({
+        TagType sourceType,
+        int sourceBlocks,
+        TagType targetType,
+        int targetBlocks,
+      })>[
+        (
+          sourceType: TagType.mifareMini,
+          sourceBlocks: 20,
+          targetType: TagType.mifareMini,
+          targetBlocks: 20,
+        ),
+        (
+          sourceType: TagType.mifare1K,
+          sourceBlocks: 64,
+          targetType: TagType.mifare1K,
+          targetBlocks: 64,
+        ),
+        (
+          sourceType: TagType.mifare1K,
+          sourceBlocks: 72,
+          targetType: TagType.mifare2K,
+          targetBlocks: 128,
+        ),
+        (
+          sourceType: TagType.mifare2K,
+          sourceBlocks: 128,
+          targetType: TagType.mifare2K,
+          targetBlocks: 128,
+        ),
+        (
+          sourceType: TagType.mifare4K,
+          sourceBlocks: 256,
+          targetType: TagType.mifare4K,
+          targetBlocks: 256,
+        ),
       ];
 
       for (final geometryCase in cases) {
         final card = _classicCardFor(
-          tag: geometryCase.$1,
-          blockCount: geometryCase.$2,
+          tag: geometryCase.sourceType,
+          blockCount: geometryCase.sourceBlocks,
         );
         final communicator = _VerificationCommunicator.fromClassic(
           card,
-          targetType: geometryCase.$3,
+          targetType: geometryCase.targetType,
         );
 
         final result = await SlotWriteVerifier.verify(
           runner: _Runner(communicator),
           position: 0,
           card: card,
-          targetType: geometryCase.$3,
+          targetType: geometryCase.targetType,
         );
 
         expect(
           result.outcome,
           SlotWriteVerificationOutcome.verified,
-          reason: '${geometryCase.$1.name}:${geometryCase.$2}',
+          reason:
+              '${geometryCase.sourceType.name}:${geometryCase.sourceBlocks}',
         );
-        expect(communicator.classicBlocks, hasLength(geometryCase.$4));
+        expect(
+          communicator.classicBlocks,
+          hasLength(geometryCase.targetBlocks),
+        );
       }
     });
 
@@ -756,7 +790,7 @@ enum _UploadFailure { none, write, save }
 
 enum _SessionTransition { disconnect, dfu, replacement }
 
-class _UploadCommunicator extends ChameleonCommunicator {
+final class _UploadCommunicator extends ChameleonCommunicator {
   _UploadCommunicator({
     this.failure = _UploadFailure.none,
     this.readGate,
