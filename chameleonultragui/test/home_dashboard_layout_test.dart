@@ -357,7 +357,13 @@ void main() {
 
             final reason = '${size.width} ${brightness.name} '
                 '${layout.name} ${scenario.name}';
-            _expectDashboardHierarchy(tester, size, layout, reason);
+            _expectDashboardHierarchy(
+              tester,
+              size,
+              layout,
+              scenario,
+              reason,
+            );
             _expectScenario(tester, scenario, reason);
             expect(_takeExceptions(tester), isEmpty, reason: reason);
 
@@ -437,7 +443,10 @@ void main() {
     final initialActive =
         appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value!;
     final targetSlot = (initialActive + 1) % 8;
-    await tester.tap(find.byKey(Key('home-slot-${targetSlot + 1}')));
+    final targetSlotFinder = find.byKey(Key('home-slot-${targetSlot + 1}'));
+    await tester.ensureVisible(targetSlotFinder);
+    await tester.pump();
+    await tester.tap(targetSlotFinder);
     await tester.pumpAndSettle();
     expect(
       appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value,
@@ -512,6 +521,7 @@ void _expectDashboardHierarchy(
   WidgetTester tester,
   Size size,
   SlotLayout slotLayout,
+  _DashboardScenario scenario,
   String reason,
 ) {
   expect(find.byType(Image), findsNothing, reason: reason);
@@ -526,7 +536,11 @@ void _expectDashboardHierarchy(
     reason: reason,
   );
 
-  final firmware = find.byKey(const Key('home-firmware-pill'));
+  final firmwareReady = scenario != _DashboardScenario.loading &&
+      scenario != _DashboardScenario.error;
+  final firmware = find.byKey(
+    Key(firmwareReady ? 'home-firmware-pill' : 'home-firmware-placeholder'),
+  );
   final slots = find.byKey(const Key('home-slot-grid'));
   final controls = find.byKey(const Key('home-controls'));
   final layout = find.byKey(const Key('home-slot-layout-control'));
@@ -542,6 +556,13 @@ void _expectDashboardHierarchy(
   expect(find.byKey(const Key('home-dashboard-scroll')), findsOneWidget,
       reason: reason);
   expect(firmware, findsOneWidget, reason: reason);
+  expect(
+    find.byKey(
+      Key(firmwareReady ? 'home-firmware-placeholder' : 'home-firmware-pill'),
+    ),
+    findsNothing,
+    reason: reason,
+  );
   expect(slots, findsOneWidget, reason: reason);
   expect(controls, findsOneWidget, reason: reason);
   expect(layout, findsOneWidget, reason: reason);
@@ -583,7 +604,9 @@ void _expectDashboardHierarchy(
   expect(tester.getSize(mode).height, greaterThanOrEqualTo(48), reason: reason);
   expect(tester.getSize(settings).height, greaterThanOrEqualTo(48),
       reason: reason);
-  expect(firmware.hitTestable(), findsOneWidget, reason: reason);
+  if (firmwareReady) {
+    expect(firmware.hitTestable(), findsOneWidget, reason: reason);
+  }
   expect(layout.hitTestable(), findsOneWidget, reason: reason);
   expect(modeAction.hitTestable(), findsOneWidget, reason: reason);
   expect(find.byKey(const Key('home-mode-retry')), findsNothing,
@@ -609,7 +632,8 @@ void _expectScenario(
     case _DashboardScenario.normal:
       expect(find.text('Up to date'), findsOneWidget, reason: reason);
     case _DashboardScenario.loading:
-      expect(find.text('Checking'), findsOneWidget, reason: reason);
+      expect(find.byKey(const Key('home-firmware-placeholder')), findsOneWidget,
+          reason: reason);
     case _DashboardScenario.stale:
       expect(find.byKey(const Key('home-slot-refresh')), findsNothing,
           reason: reason);

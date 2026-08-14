@@ -97,6 +97,7 @@ void main() {
 
     expect(find.text('Waiting for Chameleon'), findsOneWidget);
     expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+    expect(find.byKey(const Key('home-firmware-pill')), findsNothing);
     expect(
       find.byKey(const Key('connection-readiness-icon')),
       findsNothing,
@@ -111,6 +112,7 @@ void main() {
 
     expect(find.text('Loading device status'), findsOneWidget);
     expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+    expect(find.byKey(const Key('home-firmware-pill')), findsNothing);
     expect(
       find.byKey(const Key('connection-readiness-icon')),
       findsNothing,
@@ -128,6 +130,7 @@ void main() {
       ConnectionReadinessStage.ready,
     );
     expect(find.byKey(const Key('connection-readiness')), findsNothing);
+    expect(find.byKey(const Key('home-firmware-pill')), findsOneWidget);
     expect(
       fixture.appState.connectedDeviceStatus!.snapshot.slots.availability,
       SlotsAvailability.available,

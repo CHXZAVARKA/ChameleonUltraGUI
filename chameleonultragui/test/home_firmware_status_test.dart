@@ -20,7 +20,7 @@ void main() {
     await SharedPreferencesProvider().load();
   });
 
-  testWidgets('Home shows firmware Checking independently of other facets',
+  testWidgets('Home hides firmware status until connection readiness finishes',
       (tester) async {
     final communicator = _FirmwareCommunicator.pendingFirmware();
     final catalog = _FakeFirmwareCatalog.current();
@@ -29,20 +29,18 @@ void main() {
     await pumpHome(tester, appState);
     await tester.pump();
 
-    expect(find.byKey(const Key('home-firmware-pill')), findsOneWidget);
-    expect(find.text('Firmware'), findsOneWidget);
-    expect(find.text('Checking'), findsOneWidget);
+    expect(find.byKey(const Key('home-firmware-pill')), findsNothing);
+    expect(find.byKey(const Key('home-firmware-placeholder')), findsOneWidget);
     expect(find.text('Chameleon Ultra'), findsOneWidget);
     expect(catalog.lookups, 0);
-    expect(
-      tester
-          .widget<Text>(find.byKey(const Key('firmware-status-text')))
-          .style
-          ?.color,
-      Theme.of(tester.element(find.byKey(const Key('home-firmware-pill'))))
-          .colorScheme
-          .onSurfaceVariant,
-    );
+
+    communicator.completePendingFirmware();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('home-firmware-pill')), findsOneWidget);
+    expect(find.text('Firmware'), findsOneWidget);
+    expect(find.text('Up to date'), findsOneWidget);
+    expect(catalog.lookups, 1);
 
     appState.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -308,7 +306,7 @@ void main() {
     ]);
   });
 
-  testWidgets('channel change waits for the initial firmware lookup',
+  testWidgets('firmware controls stay hidden until the initial lookup finishes',
       (tester) async {
     final officialLookup = Completer<FirmwareCatalogRelease>();
     final catalog = _FakeFirmwareCatalog([
@@ -327,13 +325,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(catalog.channels, [FirmwareChannel.official]);
-
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
-    await tester.pump();
-    expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
-        FirmwareChannel.official);
+    expect(find.byKey(const Key('home-firmware-pill')), findsNothing);
+    expect(find.byKey(const Key('home-firmware-placeholder')), findsOneWidget);
 
     officialLookup.complete(
       const FirmwareCatalogRelease(
@@ -347,6 +340,8 @@ void main() {
     expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
         FirmwareChannel.official);
 
+    await tester.tap(find.byKey(const Key('home-firmware-pill')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('firmware-channel-custom')));
     await tester.pumpAndSettle();
 
@@ -377,12 +372,12 @@ void main() {
     await tester.pump();
     expect(communicator.firmwareReads, 1);
 
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
-    await tester.pump();
+    final channelChange = appState.connectedDeviceStatus!.setFirmwareChannel(
+      FirmwareChannel.custom,
+    );
 
     communicator.completePendingFirmware();
+    await channelChange;
     await tester.pumpAndSettle();
 
     expect(communicator.firmwareReads, 1);

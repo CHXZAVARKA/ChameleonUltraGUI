@@ -129,9 +129,9 @@ class HomePageState extends State<HomePage> {
             builder: (context, constraints) {
               final horizontalPadding =
                   constraints.maxWidth < 500 ? 12.0 : 28.0;
-              final firmware = Align(
-                alignment: Alignment.topCenter,
-                child: _FirmwarePill(status: status),
+              final firmware = _HomeFirmwareStatus(
+                status: status,
+                readiness: appState.connectionReadiness,
               );
               final readiness = _HomeConnectionReadiness(
                 readiness: appState.connectionReadiness,
@@ -445,6 +445,37 @@ class _FirmwarePill extends StatelessWidget {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _HomeFirmwareStatus extends StatelessWidget {
+  const _HomeFirmwareStatus({
+    required this.status,
+    required this.readiness,
+  });
+
+  final ConnectedDeviceStatus status;
+  final ConnectionReadinessTracker readiness;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: readiness,
+      builder: (context, _) {
+        final stage = readiness.snapshot.stage;
+        if (stage != ConnectionReadinessStage.ready &&
+            stage != ConnectionReadinessStage.degraded) {
+          return const SizedBox(
+            key: Key('home-firmware-placeholder'),
+            height: 48,
+          );
+        }
+        return Align(
+          alignment: Alignment.topCenter,
+          child: _FirmwarePill(status: status),
         );
       },
     );

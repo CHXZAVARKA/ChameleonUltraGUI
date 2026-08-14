@@ -31,29 +31,55 @@ class ConnectionReadinessCard extends StatelessWidget {
             label: label,
             excludeSemantics: true,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48, maxWidth: 420),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ChameleonLoadingIndicator(
-                      size: 72,
-                      semanticLabel: label,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      label,
-                      key: const Key('connection-readiness-label'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ],
-                ),
+              constraints: BoxConstraints(
+                minHeight: 48,
+                maxWidth: compact ? 560 : 420,
               ),
+              child: compact
+                  ? SizedBox(
+                      height: 48,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ChameleonLoadingIndicator(
+                            size: 36,
+                            semanticLabel: label,
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              label,
+                              key: const Key('connection-readiness-label'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ChameleonLoadingIndicator(
+                            size: 72,
+                            semanticLabel: label,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            label,
+                            key: const Key('connection-readiness-label'),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                    ),
             ),
           );
         }
