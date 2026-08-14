@@ -1,5 +1,6 @@
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/material.dart';
 
@@ -22,6 +23,40 @@ class ConnectionReadinessCard extends StatelessWidget {
         final localizations = AppLocalizations.of(context)!;
         final label = _stageLabel(localizations, snapshot);
         final error = _errorLabel(localizations, snapshot.errorCategory);
+        if (!compact && _stageIsInProgress(snapshot.stage)) {
+          return Semantics(
+            key: const Key('connection-readiness'),
+            container: true,
+            liveRegion: true,
+            label: label,
+            excludeSemantics: true,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48, maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ChameleonLoadingIndicator(
+                      size: 72,
+                      semanticLabel: label,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      label,
+                      key: const Key('connection-readiness-label'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
         return Semantics(
           key: const Key('connection-readiness'),
           container: true,
@@ -80,6 +115,15 @@ class ConnectionReadinessCard extends StatelessWidget {
     );
   }
 }
+
+bool _stageIsInProgress(ConnectionReadinessStage stage) => switch (stage) {
+      ConnectionReadinessStage.discovering ||
+      ConnectionReadinessStage.connectingTransport ||
+      ConnectionReadinessStage.waitingForProtocol ||
+      ConnectionReadinessStage.loadingStatus =>
+        true,
+      _ => false,
+    };
 
 String _stageLabel(
   AppLocalizations localizations,

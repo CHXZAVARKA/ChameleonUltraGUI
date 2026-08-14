@@ -7,6 +7,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/connector/serial_native.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
+import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
 import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/gui/page/connect.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
@@ -207,6 +208,7 @@ void main() {
       expect(serial.scanCalls, 1);
       expect(find.byIcon(Icons.refresh), findsNothing);
       expect(find.byType(ConnectionReadinessCard), findsOneWidget);
+      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();

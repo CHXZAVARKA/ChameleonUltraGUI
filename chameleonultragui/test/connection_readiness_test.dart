@@ -65,7 +65,7 @@ void main() {
         await tester.pump();
 
         expect(find.byType(PendingConnectionPage), findsOneWidget);
-        expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+        expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
         expect(
           find.text(
             transport == ConnectionType.ble
@@ -96,6 +96,7 @@ void main() {
     final fixture = await _mountHome(tester, communicator);
 
     expect(find.text('Waiting for Chameleon'), findsOneWidget);
+    expect(find.byType(ChameleonLoadingIndicator), findsNothing);
     expect(
       fixture.appState.connectionReadiness.snapshot.stage,
       ConnectionReadinessStage.waitingForProtocol,
