@@ -713,6 +713,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
                   session.appState,
                   channel: channel,
                 )),
+        _confirmedFirmwareChannel = firmwareChannel,
         _snapshot = DeviceStatusSnapshot(
           identity: DeviceIdentityStatus(
             device: session.connector.device,
@@ -747,7 +748,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   final Duration batteryPollInterval;
 
   int _firmwareChannelRevision = 0;
-  late FirmwareChannel _confirmedFirmwareChannel = _snapshot.firmware.channel;
+  FirmwareChannel _confirmedFirmwareChannel;
 
   DeviceStatusSnapshot _snapshot;
   DeviceStatusSnapshot get snapshot => _snapshot;

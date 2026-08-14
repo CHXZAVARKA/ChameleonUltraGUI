@@ -685,29 +685,24 @@ void main() {
   testWidgets(
     'firmware channel replacement after final refresh cannot be accepted',
     (tester) async {
-      final modeGate = Completer<void>();
-      final communicator = _InitialQueueOwnershipCommunicator(
-        modeGate: modeGate,
-        slotsBlocker: Completer<void>()..complete(),
-        capabilityGate: Completer<void>()..complete(),
-      );
+      final communicator = _ReadinessCommunicator();
       final catalog = _ReplacingFirmwareCatalog();
       final fixture = await _mountConnectedShell(
         tester,
         communicator,
         firmwareCatalog: catalog,
       );
-      addTearDown(() {
-        if (!modeGate.isCompleted) modeGate.complete();
-        fixture.dispose();
-      });
-      await tester.pump();
+      addTearDown(fixture.dispose);
+      await _pumpFrames(tester, 12);
+
       expect(communicator.modeCalls, 1);
+      expect(catalog.calls, 1);
 
       final originalStatus = fixture.appState.connectedDeviceStatus!;
       final change = originalStatus.setFirmwareChannel(FirmwareChannel.custom);
-      modeGate.complete();
-      await catalog.secondRequestStarted.future;
+      await catalog.secondRequestStarted.future.timeout(
+        const Duration(seconds: 1),
+      );
       fixture.appState.communicator = _ReadinessCommunicator();
       catalog.releaseSecondResult.complete();
       final outcome = await change.timeout(const Duration(seconds: 1));
@@ -729,6 +724,45 @@ void main() {
         fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
         FirmwareChannel.official,
       );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'first firmware channel request rolls back on readiness rejection',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final communicator = _InitialQueueOwnershipCommunicator(
+        modeGate: modeGate,
+        slotsBlocker: Completer<void>(),
+        capabilityGate: Completer<void>(),
+      );
+      final fixture = await _mountConnectedShell(
+        tester,
+        communicator,
+        timeouts: const ConnectionReadinessTimeouts(
+          protocol: Duration(milliseconds: 20),
+          statusFacet: Duration(milliseconds: 20),
+        ),
+      );
+      addTearDown(() {
+        if (!modeGate.isCompleted) modeGate.complete();
+        fixture.dispose();
+      });
+      await tester.pump();
+      expect(communicator.modeCalls, 1);
+
+      final status = fixture.appState.connectedDeviceStatus!;
+      final outcome = await status.setFirmwareChannel(FirmwareChannel.custom);
+
+      expect(outcome, FirmwareChannelChangeOutcome.rejected);
+      expect(status.snapshot.firmware.channel, FirmwareChannel.official);
+      expect(
+        fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
+        FirmwareChannel.official,
+      );
+      expect(communicator.gitCommitCalls, 0);
+      await tester.pump(const Duration(milliseconds: 25));
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -758,20 +792,44 @@ void main() {
       expect(communicator.modeCalls, 1);
 
       final status = fixture.appState.connectedDeviceStatus!;
-      final customChange = status.setFirmwareChannel(FirmwareChannel.custom);
-      await tester.pump();
-      expect(status.snapshot.firmware.channel, FirmwareChannel.custom);
-      final officialChange = status.setFirmwareChannel(
-        FirmwareChannel.official,
+      Future<FirmwareChannelChangeOutcome> selectChannel(
+        FirmwareChannel channel,
+      ) {
+        final change = status.setFirmwareChannel(channel);
+        unawaited(change.then((outcome) {
+          if (outcome == FirmwareChannelChangeOutcome.accepted) {
+            fixture.appState.sharedPreferencesProvider.setFirmwareChannel(
+              channel,
+            );
+          }
+        }));
+        return change;
+      }
+
+      Future<FirmwareChannelChangeOutcome>? officialChange;
+      void selectOfficialAfterOptimisticCustom() {
+        if (officialChange == null &&
+            status.snapshot.firmware.channel == FirmwareChannel.custom) {
+          officialChange = selectChannel(FirmwareChannel.official);
+        }
+      }
+
+      status.addListener(selectOfficialAfterOptimisticCustom);
+      addTearDown(
+        () => status.removeListener(selectOfficialAfterOptimisticCustom),
       );
+      final customChange = selectChannel(FirmwareChannel.custom);
       await tester.pump();
-      expect(status.snapshot.firmware.channel, FirmwareChannel.official);
+      expect(officialChange, isNotNull);
 
       await tester.pump(const Duration(milliseconds: 25));
-      final outcomes = await Future.wait([customChange, officialChange]);
+      final outcomes = await Future.wait([customChange, officialChange!]);
       await _pumpFrames(tester, 3);
 
-      expect(outcomes, everyElement(FirmwareChannelChangeOutcome.rejected));
+      expect(outcomes, [
+        FirmwareChannelChangeOutcome.rejected,
+        FirmwareChannelChangeOutcome.accepted,
+      ]);
       expect(status.snapshot.firmware.channel, FirmwareChannel.official);
       expect(
         fixture.appState.sharedPreferencesProvider.getFirmwareChannel(),
@@ -1415,7 +1473,9 @@ class _ReplacingFirmwareCatalog implements FirmwareCatalog {
         updateAvailable: null,
       );
     }
-    secondRequestStarted.complete();
+    if (!secondRequestStarted.isCompleted) {
+      secondRequestStarted.complete();
+    }
     await releaseSecondResult.future;
     return const FirmwareCatalogRelease(
       latestCommit: 'current123',
