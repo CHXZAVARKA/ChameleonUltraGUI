@@ -33,10 +33,15 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   final ScrollController _eightAcrossController = ScrollController(
     keepScrollOffset: false,
   );
-  final List<GlobalKey> _slotKeys = List.generate(
-    8,
-    (index) => GlobalKey(debugLabel: 'Home slot ${index + 1}'),
-  );
+  final Map<SlotLayout, List<GlobalKey>> _slotKeysByLayout = {
+    for (final layout in SlotLayout.values)
+      layout: List.generate(
+        8,
+        (index) => GlobalKey(
+          debugLabel: 'Home ${layout.name} slot ${index + 1}',
+        ),
+      ),
+  };
   final GlobalKey _eightAcrossViewportKey = GlobalKey(
     debugLabel: 'Home slot grid scroll viewport',
   );
@@ -50,6 +55,8 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
   Timer? _autoScrollTimer;
   double _autoScrollDirection = 0;
   ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _reorderFeedback;
+
+  List<GlobalKey> get _slotKeys => _slotKeysByLayout[widget.layout]!;
 
   @override
   void initState() {

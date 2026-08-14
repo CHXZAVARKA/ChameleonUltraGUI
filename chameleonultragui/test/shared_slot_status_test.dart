@@ -114,6 +114,35 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('switching slot layout while a slot is hovered stays mounted',
+      (tester) async {
+    final appState = _connectedState(_SlotCommunicator());
+    addTearDown(appState.dispose);
+
+    await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byKey(const Key('home-slot-7'))),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    await tester.tap(find.byKey(const Key('home-slot-layout-two-by-four')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('home-slot-layout-eight-across')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+        find.byKey(const Key('home-slot-grid-eight-across')), findsOneWidget);
+  });
+
   testWidgets('two-by-four keeps row-major slots tappable at 360px',
       (tester) async {
     setTestViewport(tester, size: const Size(360, 900));
