@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -40,20 +41,16 @@ void main() {
       fixture.connector.connected = false;
       fixture.appState.onConnectorStateChanged();
       fixture.connector.connected = true;
-      fixture.appState.communicator = ChameleonCommunicator(
-        fixture.logger,
-        port: fixture.connector,
-      );
+      fixture.appState.communicator = _SessionCommunicator(fixture.logger)
+        ..open(fixture.connector);
       fixture.appState.changesMade();
     },
     'connector replacement': (fixture) {
       fixture.appState.connector = TestSerial(log: fixture.logger);
     },
     'communicator replacement': (fixture) {
-      fixture.appState.communicator = ChameleonCommunicator(
-        fixture.logger,
-        port: fixture.connector,
-      );
+      fixture.appState.communicator = _SessionCommunicator(fixture.logger)
+        ..open(fixture.connector);
     },
     'DFU transition': (fixture) {
       fixture.connector.isDFU = true;
@@ -95,10 +92,8 @@ void main() {
     expect(owner, isNotNull);
     expect(wakelock.states.last, isTrue);
 
-    fixture.appState.communicator = ChameleonCommunicator(
-      fixture.logger,
-      port: fixture.connector,
-    );
+    fixture.appState.communicator = _SessionCommunicator(fixture.logger)
+      ..open(fixture.connector);
     await Future<void>.delayed(Duration.zero);
 
     expect(wakelock.states.last, isFalse);
@@ -196,10 +191,8 @@ void main() {
         fixture.connector.connected = false;
         fixture.appState.onConnectorStateChanged();
         fixture.connector.connected = true;
-        fixture.appState.communicator = ChameleonCommunicator(
-          fixture.logger,
-          port: fixture.connector,
-        );
+        fixture.appState.communicator = _SessionCommunicator(fixture.logger)
+          ..open(fixture.connector);
       },
     );
 
@@ -287,10 +280,8 @@ void main() {
         callbackRan = true;
       },
     );
-    fixture.appState.communicator = ChameleonCommunicator(
-      fixture.logger,
-      port: fixture.connector,
-    );
+    fixture.appState.communicator = _SessionCommunicator(fixture.logger)
+      ..open(fixture.connector);
     blocker.complete();
     await blockingOperation;
 
@@ -310,13 +301,45 @@ typedef _Fixture = ({
 });
 
 _Fixture _connectedAppState() {
-  final harness = connectedDeviceSessionHarness();
+  final logger = Logger(output: MemoryOutput());
+  final connector = TestSerial(log: logger)..connected = false;
+  final communicator = _SessionCommunicator(logger)..open(connector);
+  final appState = ChameleonGUIState(SharedPreferencesProvider())
+    ..log = logger
+    ..connector = connector
+    ..communicator = communicator;
+
+  // These tests exercise only the identity and lifetime of a device session.
+  // Bind while disconnected so the unrelated status initializer does not own
+  // the RF queue, then expose the same connected session to the test body.
+  connector.connected = true;
+  addTearDown(appState.dispose);
+
   return (
-    appState: harness.appState,
-    connector: harness.serial,
-    communicator: harness.communicator,
-    logger: harness.logger,
+    appState: appState,
+    connector: connector,
+    communicator: communicator,
+    logger: logger,
   );
+}
+
+final class _SessionCommunicator extends ReadinessTestCommunicator {
+  _SessionCommunicator(super.log);
+
+  @override
+  Future<List<SlotTypes>> getSlotTagTypes() async =>
+      List.generate(8, (_) => SlotTypes());
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
+      List.generate(8, (_) => EnabledSlotInfo());
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() async =>
+      List.generate(8, (_) => SlotNames());
+
+  @override
+  Future<int> getActiveSlot() async => 0;
 }
 
 class _RecordingWakelock extends WakelockPlusPlatformInterface {

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/menu/tools/hf_sniffing.dart';
@@ -10,11 +9,15 @@ import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/connected_device_test_harness.dart';
+import 'support/firmware_catalog_stub.dart';
 
 void main() {
   testWidgets('Slot Manager upload waits for and holds foreground RF access',
@@ -390,10 +393,16 @@ class _WorkflowFixture {
       holdSlotTypes: holdSlotTypes,
       holdCapabilities: holdCapabilities,
     );
-    final appState = ChameleonGUIState(preferences)
+    final appState = ChameleonGUIState(
+      preferences,
+      firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    )
       ..log = logger
       ..connector = connector
       ..communicator = communicator;
+    await _settleReadiness(appState);
+    communicator.finishInitialReadiness();
+    communicator.operations.clear();
     return _WorkflowFixture._(
       appState: appState,
       communicator: communicator,
@@ -417,18 +426,21 @@ class _WorkflowFixture {
   }
 
   void dispose() {
+    appState.dispose();
     logger.close();
   }
 }
 
-class _WorkflowCommunicator extends ChameleonCommunicator {
+class _WorkflowCommunicator extends ReadinessTestCommunicator {
   _WorkflowCommunicator(
-    super.logger, {
-    required super.port,
+    super.log, {
+    required EmulatorSerial port,
     this.throwOnLfSniff = false,
     this.holdSlotTypes = false,
     this.holdCapabilities = false,
-  });
+  }) {
+    open(port);
+  }
 
   final bool throwOnLfSniff;
   final bool holdSlotTypes;
@@ -442,9 +454,15 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
   final Completer<void> allowSlotTypes = Completer<void>();
   final Completer<void> capabilitiesStarted = Completer<void>();
   final Completer<void> allowCapabilities = Completer<void>();
+  bool _initialReadiness = true;
+
+  void finishInitialReadiness() => _initialReadiness = false;
 
   @override
   Future<List<SlotTypes>> getSlotTagTypes() async {
+    if (_initialReadiness) {
+      return List.generate(8, (_) => SlotTypes());
+    }
     operations.add('slot-types');
     if (holdSlotTypes) {
       slotTypesStarted.complete();
@@ -455,18 +473,27 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
 
   @override
   Future<List<EnabledSlotInfo>> getEnabledSlots() async {
+    if (_initialReadiness) {
+      return List.generate(8, (_) => EnabledSlotInfo());
+    }
     operations.add('enabled-slots');
     return List.generate(8, (_) => EnabledSlotInfo());
   }
 
   @override
   Future<List<SlotNames>> getSlotTagNames() async {
+    if (_initialReadiness) {
+      return List.generate(8, (_) => SlotNames());
+    }
     operations.add('slot-names');
     return List.generate(8, (_) => SlotNames());
   }
 
   @override
   Future<int> getActiveSlot() async {
+    if (_initialReadiness) {
+      return 0;
+    }
     operations.add('active-slot');
     return 0;
   }
@@ -525,6 +552,9 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
 
   @override
   Future<List<int>> getDeviceCapabilities() async {
+    if (_initialReadiness) {
+      return [ChameleonCommand.lfSniff.value];
+    }
     operations.add('capabilities');
     if (holdCapabilities) {
       capabilitiesStarted.complete();
@@ -536,6 +566,9 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
 
   @override
   Future<bool> isReaderDeviceMode() async {
+    if (_initialReadiness) {
+      return false;
+    }
     operations.add('reader-mode');
     readerModeStarted.complete();
     await allowReaderMode.future;
@@ -550,6 +583,20 @@ class _WorkflowCommunicator extends ChameleonCommunicator {
     }
     return Uint8List.fromList([0x80, 0x81, 0x82, 0x10]);
   }
+}
+
+Future<void> _settleReadiness(ChameleonGUIState appState) async {
+  const terminal = {
+    ConnectionReadinessStage.ready,
+    ConnectionReadinessStage.degraded,
+  };
+  for (var attempt = 0; attempt < 200; attempt++) {
+    if (terminal.contains(appState.connectionReadiness.snapshot.stage)) {
+      return;
+    }
+    await Future<void>.value();
+  }
+  fail('Workflow fixture readiness did not settle');
 }
 
 String _hex(Uint8List bytes) =>

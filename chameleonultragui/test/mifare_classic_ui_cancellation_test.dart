@@ -348,10 +348,14 @@ class _ClassicFixture {
       output: logOutput,
     );
     addTearDown(logger.close);
+    final connector = _TestSerial(log: logger)..connected = false;
+    final communicator = ChameleonCommunicator(logger, port: connector);
     final appState = ChameleonGUIState(preferences)
-      ..connector = (_TestSerial(log: logger)..connected = true)
-      ..communicator = ChameleonCommunicator(logger)
-      ..log = logger;
+      ..log = logger
+      ..connector = connector
+      ..communicator = communicator;
+    connector.connected = true;
+    addTearDown(appState.dispose);
     final recovery = _CancellableRecovery(
       appState: appState,
       localizations: localizations,
@@ -408,9 +412,13 @@ class _ClassicFixture {
 
   void reconnect() {
     appState.connector!.connected = false;
+    final logger = appState.log!;
+    final connector = _TestSerial(log: logger)..connected = false;
     appState
-      ..connector = (_TestSerial(log: Logger())..connected = true)
-      ..communicator = ChameleonCommunicator(Logger());
+      ..connector = connector
+      ..communicator = ChameleonCommunicator(logger, port: connector);
+    connector.connected = true;
+    appState.changesMade();
   }
 }
 

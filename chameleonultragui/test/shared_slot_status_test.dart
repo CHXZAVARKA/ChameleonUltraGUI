@@ -948,13 +948,18 @@ void main() {
       (tester) async {
     final refreshGate = Completer<void>();
     final activationGate = Completer<void>();
-    final communicator = _SlotCommunicator()
-      ..nextTypesGate = refreshGate
-      ..activationGate = activationGate;
+    final communicator = _SlotCommunicator()..activationGate = activationGate;
     final appState = _connectedState(communicator);
+    addTearDown(appState.dispose);
 
     await _pumpPage(tester, appState, const HomePage());
+    await tester.pumpAndSettle();
+
+    final initialTypeReads = communicator.slotTypeReads;
+    communicator.nextTypesGate = refreshGate;
+    final refresh = appState.connectedDeviceStatus!.refreshSlots();
     await tester.pump();
+    expect(communicator.slotTypeReads, initialTypeReads + 1);
 
     await tester.tap(find.byKey(const Key('home-slot-2')));
     await tester.pump();
@@ -964,6 +969,7 @@ void main() {
     );
 
     refreshGate.complete();
+    await refresh;
     await tester.pump();
     await tester.pump();
 

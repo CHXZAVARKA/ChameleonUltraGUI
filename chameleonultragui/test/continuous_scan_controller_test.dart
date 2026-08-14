@@ -16,6 +16,7 @@ void main() {
   ) async {
     final fixture = _connectedAppState();
     addTearDown(fixture.logger.close);
+    addTearDown(fixture.appState.dispose);
     final controller = ContinuousScanController(
       interval: const Duration(minutes: 5),
       maxDuration: const Duration(minutes: 20),
@@ -53,6 +54,7 @@ void main() {
   test('late scan result cannot stop its replacement handle', () async {
     final fixture = _connectedAppState();
     addTearDown(fixture.logger.close);
+    addTearDown(fixture.appState.dispose);
     final controller = ContinuousScanController(
       interval: const Duration(minutes: 5),
       maxDuration: const Duration(minutes: 20),
@@ -85,6 +87,7 @@ void main() {
   ) async {
     final fixture = _connectedAppState();
     addTearDown(fixture.logger.close);
+    addTearDown(fixture.appState.dispose);
     final controller = ContinuousScanController(
       interval: const Duration(minutes: 5),
       maxDuration: const Duration(minutes: 20),
@@ -125,6 +128,7 @@ void main() {
   ) async {
     final fixture = _connectedAppState();
     addTearDown(fixture.logger.close);
+    addTearDown(fixture.appState.dispose);
     final controller = ContinuousScanController(
       interval: const Duration(minutes: 5),
       maxDuration: const Duration(minutes: 20),
@@ -176,6 +180,7 @@ void main() {
   ) async {
     final fixture = _connectedAppState();
     addTearDown(fixture.logger.close);
+    addTearDown(fixture.appState.dispose);
     final controller = ContinuousScanController(
       interval: const Duration(minutes: 5),
       maxDuration: const Duration(minutes: 20),
@@ -216,12 +221,16 @@ void main() {
   Logger logger,
 }) _connectedAppState() {
   final logger = Logger(output: MemoryOutput());
-  final connector = _TestSerial(log: logger)..connected = true;
+  final connector = _TestSerial(log: logger);
   final communicator = ChameleonCommunicator(logger, port: connector);
   final appState = ChameleonGUIState(SharedPreferencesProvider())
     ..log = logger
     ..connector = connector
     ..communicator = communicator;
+  // This unit fixture exercises only ConnectedDeviceSession capture. Keep the
+  // connected status initializer out of the test so it cannot add unrelated
+  // protocol retries and timers.
+  connector.connected = true;
   return (
     appState: appState,
     connector: connector,
