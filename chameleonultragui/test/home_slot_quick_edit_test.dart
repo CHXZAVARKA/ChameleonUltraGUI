@@ -33,7 +33,7 @@ void main() {
   testWidgets(
     'inactive tap activates immediately and repeat active tap opens Slot Settings',
     (tester) async {
-      final fixture = _fixture();
+      final fixture = await _fixture(tester);
       addTearDown(fixture.appState.dispose);
       await fixture.appState.sharedPreferencesProvider.load();
       await fixture.status.refreshSlots();
@@ -62,7 +62,7 @@ void main() {
   testWidgets(
     'E and F2 edit the focused slot without changing arrow contracts',
     (tester) async {
-      final fixture = _fixture();
+      final fixture = await _fixture(tester);
       addTearDown(fixture.appState.dispose);
       await fixture.appState.sharedPreferencesProvider.load();
       await fixture.status.refreshSlots();
@@ -90,7 +90,7 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -116,7 +116,7 @@ void main() {
     'stale screen reader action explains why editing is unavailable',
     (tester) async {
       final semantics = tester.ensureSemantics();
-      final fixture = _fixture();
+      final fixture = await _fixture(tester);
       addTearDown(fixture.appState.dispose);
       await fixture.appState.sharedPreferencesProvider.load();
       await fixture.status.refreshSlots();
@@ -153,7 +153,7 @@ void main() {
   testWidgets('secondary click exposes Edit, Move, Clear, and Export', (
     tester,
   ) async {
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -175,7 +175,7 @@ void main() {
   testWidgets('context actions reuse settings, export, and atomic move flows', (
     tester,
   ) async {
-    final fixture = _fixture(supportsSwap: true);
+    final fixture = await _fixture(tester, supportsSwap: true);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -215,7 +215,7 @@ void main() {
   testWidgets('stale slot facts block quick edit with an explanation', (
     tester,
   ) async {
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -236,7 +236,7 @@ void main() {
   testWidgets('pending activation blocks keyboard edit with an explanation', (
     tester,
   ) async {
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -262,7 +262,7 @@ void main() {
   testWidgets('stale active-slot fact cannot open the old active editor', (
     tester,
   ) async {
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -283,7 +283,7 @@ void main() {
   testWidgets(
     'replacement session disables Home slot dialog without commands',
     (tester) async {
-      final fixture = _fixture();
+      final fixture = await _fixture(tester);
       addTearDown(fixture.appState.dispose);
       await fixture.appState.sharedPreferencesProvider.load();
       await fixture.status.refreshSlots();
@@ -312,7 +312,7 @@ void main() {
   testWidgets('nested export stays pinned to the quick-opened device session', (
     tester,
   ) async {
-    final fixture = _fixture();
+    final fixture = await _fixture(tester);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -342,7 +342,7 @@ void main() {
   testWidgets(
     'nested editor disables immediately when its session disconnects',
     (tester) async {
-      final fixture = _fixture();
+      final fixture = await _fixture(tester);
       addTearDown(fixture.appState.dispose);
       await fixture.appState.sharedPreferencesProvider.load();
       fixture.communicator.slotTypes[0] =
@@ -371,7 +371,7 @@ void main() {
   testWidgets('touch long press remains drag-only and never quick-edits', (
     tester,
   ) async {
-    final fixture = _fixture(supportsSwap: true);
+    final fixture = await _fixture(tester, supportsSwap: true);
     addTearDown(fixture.appState.dispose);
     await fixture.appState.sharedPreferencesProvider.load();
     await fixture.status.refreshSlots();
@@ -426,7 +426,7 @@ void main() {
 
       for (final testCase in cases) {
         SharedPreferences.setMockInitialValues({});
-        final fixture = _fixture();
+        final fixture = await _fixture(tester);
         await fixture.appState.sharedPreferencesProvider.load();
         fixture.appState.sharedPreferencesProvider.setSlotLayout(
           testCase.layout,
@@ -466,7 +466,10 @@ void main() {
         }
         expect(tester.takeException(), isNull);
 
-        await tester.tap(find.byKey(const Key('home-slot-1')));
+        final slotOne = find.byKey(const Key('home-slot-1'));
+        await tester.ensureVisible(slotOne);
+        await tester.pumpAndSettle();
+        await tester.tap(slotOne);
         await tester.pump();
         expect(find.byType(SlotSettings), findsOneWidget);
 
@@ -570,9 +573,16 @@ class _Fixture {
   }
 }
 
-_Fixture _fixture({bool supportsSwap = false}) {
+Future<_Fixture> _fixture(
+  WidgetTester tester, {
+  bool supportsSwap = false,
+}) async {
   final communicator = _QuickEditCommunicator()..supportsSwap = supportsSwap;
-  return _Fixture(ConnectedDeviceTestHarness(communicator: communicator));
+  final fixture = _Fixture(
+    ConnectedDeviceTestHarness(communicator: communicator),
+  );
+  await fixture.harness.settleReadiness(tester: tester);
+  return fixture;
 }
 
 class _QuickEditCommunicator extends ChameleonCommunicator {
@@ -636,8 +646,10 @@ class _QuickEditCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<List<int>> getDeviceCapabilities() async =>
-      supportsSwap ? [ChameleonCommand.swapSlots.value] : const [];
+  Future<List<int>> getDeviceCapabilities() async => [
+        ChameleonCommand.setIdteckEmulatorID.value,
+        if (supportsSwap) ChameleonCommand.swapSlots.value,
+      ];
 
   @override
   Future<void> swapSlots(int source, int target) async {

@@ -23,6 +23,9 @@ void main() {
     expect(find.byIcon(Icons.usb), findsOneWidget);
     expect(find.text('--%'), findsOneWidget);
     expect(find.byIcon(Icons.link_off), findsOneWidget);
+
+    communicator.completePending(BatteryCharge(percent: 60, voltage: 3900));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Home renders status placeholders while legacy reads are pending',
@@ -41,6 +44,9 @@ void main() {
     );
     expect(find.text('8'), findsOneWidget);
     expect(find.byIcon(Icons.settings), findsOneWidget);
+
+    communicator.completePending(BatteryCharge(percent: 60, voltage: 3900));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('mode status failure keeps the Home shell usable',
@@ -107,14 +113,18 @@ void main() {
     final communicator = _BatteryCommunicator.withValues([
       BatteryCharge(percent: 61, voltage: 3910),
       BatteryCharge(percent: 60, voltage: 3900),
-    ])
-      ..nextSlotTypesGate = slotGate;
+    ]);
     final appState = _connectedState(communicator);
+
+    await _settleReadiness(tester, appState);
+    communicator.nextSlotTypesGate = slotGate;
+    unawaited(appState.connectedDeviceStatus!.refreshSlots());
+    await tester.pump();
 
     await pumpHome(tester, appState);
     await tester.pump();
 
-    expect(communicator.slotTypeReads, 1);
+    expect(communicator.slotTypeReads, 2);
     expect(communicator.batteryReads, 1);
     expect(find.text('61%'), findsOneWidget);
 
@@ -310,7 +320,7 @@ void main() {
       BatteryCharge(percent: 61, voltage: 3910),
       BatteryCharge(percent: 60, voltage: 3900),
     ]);
-    final appState = _connectedState(communicator);
+    final appState = _connectedState(communicator, autoDispose: false);
 
     await pumpHome(tester, appState);
     await tester.pump();
@@ -361,28 +371,45 @@ void _replaceConnection(
     ..communicator = communicator;
 }
 
-ChameleonGUIState _connectedState(ChameleonCommunicator communicator) {
-  return ConnectedDeviceTestHarness(
+ChameleonGUIState _connectedState(
+  ChameleonCommunicator communicator, {
+  bool autoDispose = true,
+}) {
+  final harness = ConnectedDeviceTestHarness(
     communicator: communicator,
     firmwareCatalog: const CurrentFirmwareCatalogStub(),
     portName: 'USB device with a very long port name',
     activeDevicePort: 'test-port',
-  )
-      .appState;
+  );
+  if (autoDispose) {
+    addTearDown(harness.dispose);
+  }
+  return harness.appState;
+}
+
+Future<void> _settleReadiness(
+  WidgetTester tester,
+  ChameleonGUIState appState,
+) async {
+  for (var attempt = 0; attempt < 200; attempt++) {
+    if (appState.connectionReadiness.snapshot.isTerminal) {
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+  fail('Connected-device readiness did not settle');
 }
 
 class _BatteryCommunicator extends ChameleonCommunicator {
   _BatteryCommunicator.pending()
       : _pendingBattery = Completer<BatteryCharge>(),
         _batteryValues = const [],
-        _completeLegacyStatus = false,
         _batteryError = null,
         _modeError = null,
         super(Logger());
 
   _BatteryCommunicator.withValues(this._batteryValues)
       : _pendingBattery = null,
-        _completeLegacyStatus = false,
         _batteryError = null,
         _modeError = null,
         super(Logger());
@@ -390,7 +417,6 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   _BatteryCommunicator.complete(BatteryCharge battery)
       : _pendingBattery = null,
         _batteryValues = [battery],
-        _completeLegacyStatus = true,
         _batteryError = null,
         _modeError = null,
         super(Logger());
@@ -398,7 +424,6 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   _BatteryCommunicator.failing()
       : _pendingBattery = null,
         _batteryValues = const [],
-        _completeLegacyStatus = false,
         _batteryError = StateError('battery unavailable'),
         _modeError = null,
         super(Logger());
@@ -406,15 +431,12 @@ class _BatteryCommunicator extends ChameleonCommunicator {
   _BatteryCommunicator.failingLegacyStatus()
       : _pendingBattery = null,
         _batteryValues = [BatteryCharge(percent: 61, voltage: 3910)],
-        _completeLegacyStatus = true,
         _batteryError = null,
         _modeError = StateError('legacy status unavailable'),
         super(Logger());
 
   final Completer<BatteryCharge>? _pendingBattery;
   final List<BatteryCharge> _batteryValues;
-  final Completer<FirmwareVersion> _firmware = Completer<FirmwareVersion>();
-  final bool _completeLegacyStatus;
   final Object? _batteryError;
   final Object? _modeError;
   int batteryReads = 0;
@@ -457,9 +479,8 @@ class _BatteryCommunicator extends ChameleonCommunicator {
       List.generate(8, (_) => SlotNames());
 
   @override
-  Future<FirmwareVersion> getFirmwareVersion() => _completeLegacyStatus
-      ? Future.value(FirmwareVersion(legacyProtocol: false, version: 0x0100))
-      : _firmware.future;
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0100);
 
   @override
   Future<String> getGitCommitHash() async => 'abcdef0';

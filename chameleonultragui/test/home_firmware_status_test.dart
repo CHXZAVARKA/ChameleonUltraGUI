@@ -308,7 +308,7 @@ void main() {
     ]);
   });
 
-  testWidgets('a late result from the previous channel cannot replace Custom',
+  testWidgets('channel change waits for the initial firmware lookup',
       (tester) async {
     final officialLookup = Completer<FirmwareCatalogRelease>();
     final catalog = _FakeFirmwareCatalog([
@@ -333,7 +333,7 @@ void main() {
     await tester.tap(find.byKey(const Key('firmware-channel-custom')));
     await tester.pump();
     expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
-        FirmwareChannel.custom);
+        FirmwareChannel.official);
 
     officialLookup.complete(
       const FirmwareCatalogRelease(
@@ -343,8 +343,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(catalog.channels, [FirmwareChannel.official]);
+    expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
+        FirmwareChannel.official);
+
+    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+    await tester.pumpAndSettle();
+
     expect(
         catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
+    expect(appState.connectedDeviceStatus!.snapshot.firmware.channel,
+        FirmwareChannel.custom);
     expect(
       appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
       'custom5678',
@@ -379,7 +388,8 @@ void main() {
     expect(communicator.firmwareReads, 1);
     expect(communicator.commitReads, 1);
     expect(communicator.capabilityReads, 1);
-    expect(catalog.channels, [FirmwareChannel.custom]);
+    expect(
+        catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
   });
 
   testWidgets('firmware channel remains reachable at 360px and 2.5x text',
