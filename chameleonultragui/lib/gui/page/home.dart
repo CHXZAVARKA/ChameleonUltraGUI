@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
@@ -198,29 +200,93 @@ class HomePageState extends State<HomePage> {
   }
 }
 
-class _HomeConnectionReadiness extends StatelessWidget {
+class _HomeConnectionReadiness extends StatefulWidget {
   const _HomeConnectionReadiness({required this.readiness});
 
   final ConnectionReadinessTracker readiness;
 
   @override
+  State<_HomeConnectionReadiness> createState() =>
+      _HomeConnectionReadinessState();
+}
+
+class _HomeConnectionReadinessState extends State<_HomeConnectionReadiness> {
+  static const _degradedDisclosureDelay = Duration(milliseconds: 600);
+
+  Timer? _degradedTimer;
+  ConnectionReadinessStage? _observedStage;
+  bool _showDegraded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.readiness.addListener(_onReadinessChanged);
+    _syncStage();
+  }
+
+  @override
+  void didUpdateWidget(_HomeConnectionReadiness oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.readiness, widget.readiness)) {
+      return;
+    }
+    oldWidget.readiness.removeListener(_onReadinessChanged);
+    _degradedTimer?.cancel();
+    _observedStage = null;
+    _showDegraded = false;
+    widget.readiness.addListener(_onReadinessChanged);
+    _syncStage();
+  }
+
+  @override
+  void dispose() {
+    widget.readiness.removeListener(_onReadinessChanged);
+    _degradedTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onReadinessChanged() {
+    _syncStage();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _syncStage() {
+    final stage = widget.readiness.snapshot.stage;
+    if (stage == _observedStage) {
+      return;
+    }
+    _observedStage = stage;
+    _degradedTimer?.cancel();
+    _showDegraded = false;
+    if (stage != ConnectionReadinessStage.degraded) {
+      return;
+    }
+    _degradedTimer = Timer(_degradedDisclosureDelay, () {
+      if (!mounted ||
+          widget.readiness.snapshot.stage !=
+              ConnectionReadinessStage.degraded) {
+        return;
+      }
+      setState(() => _showDegraded = true);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: readiness,
-      builder: (context, _) {
-        final stage = readiness.snapshot.stage;
-        if (stage == ConnectionReadinessStage.ready ||
-            stage == ConnectionReadinessStage.disconnected) {
-          return const SizedBox.shrink();
-        }
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ConnectionReadinessCard(
-            readiness: readiness,
-            compact: true,
-          ),
-        );
-      },
+    final stage = widget.readiness.snapshot.stage;
+    if (stage == ConnectionReadinessStage.ready ||
+        stage == ConnectionReadinessStage.disconnected ||
+        (stage == ConnectionReadinessStage.degraded && !_showDegraded)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ConnectionReadinessCard(
+        readiness: widget.readiness,
+        compact: true,
+      ),
     );
   }
 }

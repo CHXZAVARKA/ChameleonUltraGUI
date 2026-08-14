@@ -864,6 +864,9 @@ void main() {
       final status = fixture.appState.connectedDeviceStatus!.snapshot;
       expect(readiness.stage, ConnectionReadinessStage.degraded);
       expect(readiness.errorCategory, ConnectionReadinessErrorCategory.status);
+      expect(find.text('Connected with limited status'), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 750));
       expect(find.text('Connected with limited status'), findsOneWidget);
       expect(find.text('--%'), findsOneWidget);
       expect(status.slots.availability, SlotsAvailability.available);
@@ -897,6 +900,11 @@ void main() {
       expect(
         fixture.appState.connectionReadiness.snapshot.errorCategory,
         ConnectionReadinessErrorCategory.timeout,
+      );
+      expect(find.text('Connected with limited status'), findsNothing);
+      expect(
+        find.byKey(const Key('connection-readiness-icon')),
+        findsNothing,
       );
 
       slots.complete();
