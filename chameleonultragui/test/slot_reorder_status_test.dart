@@ -96,7 +96,7 @@ void main() {
     );
     expect(fixture.communicator.capabilityReads, 0);
     expect(fixture.communicator.swapCalls, 1);
-    expect(fixture.communicator.events, ['swap:0:0']);
+    expect(fixture.communicator.events.last, 'swap:0:0');
   });
 
   test('BLE maps a rejected no-op probe to unsupported firmware', () async {
@@ -112,7 +112,7 @@ void main() {
     );
     expect(fixture.communicator.capabilityReads, 0);
     expect(fixture.communicator.swapCalls, 1);
-    expect(fixture.communicator.events, ['swap:0:0']);
+    expect(fixture.communicator.events.last, 'swap:0:0');
   });
 
   test(
@@ -145,7 +145,6 @@ void main() {
     expect(await reorder, SlotReorderOutcome.confirmed);
 
     expect(fixture.communicator.events, [
-      'capabilities',
       'swap:0:1',
       'types',
       'enabled',
@@ -170,7 +169,7 @@ void main() {
       SlotReorderOutcome.unsupported,
     );
 
-    expect(fixture.communicator.events, ['capabilities']);
+    expect(fixture.communicator.events, isEmpty);
     expect(fixture.communicator.swapCalls, 0);
     expect(
       fixture.status.snapshot.slots.reorderCapability,
@@ -216,7 +215,7 @@ void main() {
       SlotReorderOutcome.failed,
     );
 
-    expect(fixture.communicator.events, ['capabilities', 'swap:0:1']);
+    expect(fixture.communicator.events, ['swap:0:1']);
     expect(fixture.communicator.swapCalls, 1);
     expect(fixture.status.snapshot.slots.slots, before.slots);
     expect(fixture.status.snapshot.slots.activeSlot, before.activeSlot);
@@ -623,7 +622,7 @@ void main() {
     gate.complete();
 
     expect(await reorder, SlotReorderOutcome.connectionChanged);
-    expect(fixture.communicator.events, ['capabilities', 'swap:0:1']);
+    expect(fixture.communicator.events, ['swap:0:1']);
     expect(fixture.communicator.slotTypeReads, 1);
     expect(fixture.communicator.enabledSlotReads, 1);
     expect(fixture.communicator.slotNameReads, 1);
@@ -649,7 +648,7 @@ void main() {
     gate.complete();
 
     expect(await reorder, SlotReorderOutcome.connectionChanged);
-    expect(fixture.communicator.events, ['capabilities', 'swap:0:1']);
+    expect(fixture.communicator.events, ['swap:0:1']);
     expect(latePublications, 0);
     expect(fixture.appState.connectedDeviceStatus, isNull);
   });
@@ -786,6 +785,20 @@ class _ReorderCommunicator extends ChameleonCommunicator {
   late List<SlotTypes> slotTypes;
   late List<EnabledSlotInfo> enabledSlots;
   late List<SlotNames> slotNames;
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0202);
+
+  @override
+  Future<String> getGitCommitHash() async => 'abc1234';
+
+  @override
+  Future<bool> isReaderDeviceMode() async => false;
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() async =>
+      BatteryCharge(percent: 61, voltage: 3910);
 
   void makeSlotsVisiblyIdentical(int source, int target) {
     slotTypes[target] = SlotTypes(

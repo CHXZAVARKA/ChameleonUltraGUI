@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_android.dart';
-import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
-import 'package:chameleonultragui/gui/component/error_page.dart';
+import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/manual_connect.dart';
 import 'package:chameleonultragui/helpers/flash.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/main.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -32,7 +32,7 @@ class _ConnectPageState extends State<ConnectPage> {
   final Map<String, _DiscoveredChameleon> _deviceCache = {};
   Timer? _scanTimer;
   int _scanGeneration = 0;
-  Object? _error;
+  bool _showReadinessFailure = false;
   bool _scanInProgress = false;
   bool _connectionInProgress = false;
   bool _showedPermissionsSnackbar = false;
@@ -44,7 +44,14 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scanNow());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_appState.connectionReadiness.snapshot.stage ==
+          ConnectionReadinessStage.failed) {
+        _scheduleNextScan();
+      } else {
+        _scanNow();
+      }
+    });
   }
 
   @override
@@ -146,12 +153,22 @@ class _ConnectPageState extends State<ConnectPage> {
 
     setState(() {
       _scanInProgress = true;
-      _error = null;
+      _showReadinessFailure = false;
     });
 
+    final connector = appState.connector!;
+    final readiness = appState.connectionReadiness;
+    final readinessAttempt = readiness.beginDiscovery();
+
     try {
-      final devices =
-          _mergeDevices(await appState.connector!.availableChameleons(false));
+      final discovered = await connector
+          .availableChameleons(false)
+          .timeout(readiness.timeouts.discovery);
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
+      final devices = _mergeDevices(discovered);
       if (!mounted) {
         return;
       }
@@ -172,13 +189,29 @@ class _ConnectPageState extends State<ConnectPage> {
       _showPermissionsWarningIfNeeded(devices);
       await _maybeAutoConnect(devices);
     } catch (error) {
-      await appState.connector!.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt) ||
+          connector.connected ||
+          connector.pendingConnection) {
+        return;
+      }
+      await connector.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
+      readiness.fail(
+        readinessAttempt,
+        error is TimeoutException
+            ? ConnectionReadinessErrorCategory.timeout
+            : ConnectionReadinessErrorCategory.transport,
+      );
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _error = error;
+        _showReadinessFailure = true;
       });
     } finally {
       if (mounted) {
@@ -236,6 +269,10 @@ class _ConnectPageState extends State<ConnectPage> {
     }
 
     _scanTimer?.cancel();
+    final connector = appState.connector!;
+    final communicator = appState.communicator;
+    final readiness = appState.connectionReadiness;
+    final readinessAttempt = readiness.beginTransport(chameleonDevice.type);
     if (mounted) {
       setState(() {
         _connectionInProgress = true;
@@ -243,27 +280,54 @@ class _ConnectPageState extends State<ConnectPage> {
     }
 
     try {
-      appState.connector!.pendingConnection = true;
+      connector.pendingConnection = true;
       appState.changesMade();
 
-      final connected =
-          await appState.connector!.connectDiscoveredDevice(chameleonDevice);
+      final connected = await connector
+          .connectDiscoveredDevice(chameleonDevice)
+          .timeout(readiness.timeouts.transport);
+      if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
       if (connected) {
-        appState.connector!.pendingConnection = false;
+        connector.pendingConnection = false;
         appState.clearAutoReconnectSuppression(chameleonDevice.port);
         appState.communicator =
-            ChameleonCommunicator(appState.log!, port: appState.connector);
+            ChameleonCommunicator(appState.log!, port: connector);
       } else {
-        appState.connector!.pendingConnection = false;
+        connector.pendingConnection = false;
+        readiness.fail(
+          readinessAttempt,
+          ConnectionReadinessErrorCategory.transport,
+        );
       }
 
       appState.changesMade();
     } catch (error) {
-      appState.connector!.pendingConnection = false;
+      if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
+      connector.pendingConnection = false;
+      await connector.performDisconnect();
+      if (!identical(appState.connector, connector) ||
+          !identical(appState.communicator, communicator) ||
+          !readiness.isCurrent(readinessAttempt)) {
+        return;
+      }
+      readiness.fail(
+        readinessAttempt,
+        error is TimeoutException
+            ? ConnectionReadinessErrorCategory.timeout
+            : ConnectionReadinessErrorCategory.transport,
+      );
       appState.changesMade();
       if (mounted) {
         setState(() {
-          _error = error;
+          _showReadinessFailure = true;
         });
       }
     } finally {
@@ -418,12 +482,16 @@ class _ConnectPageState extends State<ConnectPage> {
     final appState = context.watch<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
 
-    if (_error != null) {
+    if (_showReadinessFailure) {
       return Scaffold(
         appBar: AppBar(
           title: Text(localizations.connect),
         ),
-        body: ErrorPage(errorMessage: _error.toString()),
+        body: Center(
+          child: ConnectionReadinessCard(
+            readiness: appState.connectionReadiness,
+          ),
+        ),
       );
     }
 
@@ -438,8 +506,8 @@ class _ConnectPageState extends State<ConnectPage> {
             Expanded(
               child: _devices.isEmpty
                   ? Center(
-                      child: ChameleonLoadingIndicator(
-                        semanticLabel: localizations.loading,
+                      child: ConnectionReadinessCard(
+                        readiness: appState.connectionReadiness,
                       ),
                     )
                   : _buildDeviceGrid(localizations),

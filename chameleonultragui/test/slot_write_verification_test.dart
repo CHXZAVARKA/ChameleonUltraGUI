@@ -408,7 +408,9 @@ void main() {
       );
       final communicator = _UploadCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final result = await const SlotWriteWorkflow().upload(
         status: fixture.appState.connectedDeviceStatus!,
@@ -444,7 +446,9 @@ void main() {
     testWidgets('shows the localized verification result', (tester) async {
       final communicator = _UploadCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness(tester: tester);
+      communicator.events.clear();
       await tester.pumpWidget(
         ChangeNotifierProvider.value(
           value: fixture.appState,
@@ -473,13 +477,17 @@ void main() {
       await tester.pump();
 
       expect(find.text('Slot write verified against the device.'), findsOne);
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     test('writes, persists, verifies, and reconciles in one foreground lease',
         () async {
       final communicator = _UploadCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final status = fixture.appState.connectedDeviceStatus!;
 
       final result = await const SlotWriteWorkflow().upload(
@@ -523,7 +531,9 @@ void main() {
       for (final failure in [_UploadFailure.write, _UploadFailure.save]) {
         final communicator = _UploadCommunicator(failure: failure);
         final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-        addTearDown(fixture.appState.dispose);
+        addTearDown(fixture.dispose);
+        await fixture.settleReadiness();
+        communicator.events.clear();
 
         final result = await const SlotWriteWorkflow().upload(
           status: fixture.appState.connectedDeviceStatus!,
@@ -552,9 +562,14 @@ void main() {
         () async {
       for (final transition in _SessionTransition.values) {
         final gate = Completer<void>();
-        final communicator = _UploadCommunicator(readGate: gate);
+        final communicator = _UploadCommunicator();
         final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-        addTearDown(fixture.appState.dispose);
+        addTearDown(fixture.dispose);
+        await fixture.settleReadiness();
+        communicator.events.clear();
+        communicator
+          ..readGate = gate
+          ..readStarted = Completer<void>();
         final upload = const SlotWriteWorkflow().upload(
           status: fixture.appState.connectedDeviceStatus!,
           position: 0,
@@ -790,15 +805,14 @@ enum _UploadFailure { none, write, save }
 
 enum _SessionTransition { disconnect, dfu, replacement }
 
-final class _UploadCommunicator extends ChameleonCommunicator {
+final class _UploadCommunicator extends ReadinessTestCommunicator {
   _UploadCommunicator({
     this.failure = _UploadFailure.none,
-    this.readGate,
   }) : super(Logger(output: MemoryOutput()));
 
   final _UploadFailure failure;
-  final Completer<void>? readGate;
-  final Completer<void> readStarted = Completer<void>();
+  Completer<void>? readGate;
+  Completer<void> readStarted = Completer<void>();
   final List<String> events = [];
   final List<SlotTypes> types = List.generate(8, (_) => SlotTypes());
   final List<EnabledSlotInfo> enabled =

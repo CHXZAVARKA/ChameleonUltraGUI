@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
@@ -32,7 +31,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness(tester: tester);
+      communicator.events.clear();
       await tester.pumpWidget(
         ChangeNotifierProvider<ChameleonGUIState>.value(
           value: fixture.appState,
@@ -59,6 +60,8 @@ void main() {
       expect(backup.hf.state, SlotBackupCompleteness.complete);
       expect(backup.lf.state, SlotBackupCompleteness.complete);
       expect(find.text('Slot backup saved.'), findsOneWidget);
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('Slot Settings previews and confirms restore into its slot',
@@ -74,7 +77,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness(tester: tester);
+      communicator.events.clear();
       await tester.pumpWidget(
         ChangeNotifierProvider<ChameleonGUIState>.value(
           value: fixture.appState,
@@ -117,6 +122,8 @@ void main() {
       expect(communicator.events, contains('activate:3'));
       expect(communicator.events, contains('lf:em410X:0102030405'));
       expect(find.text('Slot restored.'), findsOneWidget);
+      fixture.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     test('round-trips a complete Classic HF and LF bundle to another slot',
@@ -132,7 +139,9 @@ void main() {
         ),
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final status = fixture.appState.connectedDeviceStatus!;
       final files = _MemoryBackupFiles();
       final workflow = SingleSlotBackupWorkflow(files: files);
@@ -204,7 +213,9 @@ void main() {
         ),
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final workflow = SingleSlotBackupWorkflow(files: _MemoryBackupFiles());
 
       final backup = await workflow.capture(
@@ -245,7 +256,9 @@ void main() {
         shortClassicRead: true,
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final backup = await SingleSlotBackupWorkflow(
         files: _MemoryBackupFiles(),
@@ -265,7 +278,9 @@ void main() {
         failPrngRead: true,
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final backup = await SingleSlotBackupWorkflow(
         files: _MemoryBackupFiles(),
@@ -290,7 +305,9 @@ void main() {
         ),
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final backup = await SingleSlotBackupWorkflow(
         files: _MemoryBackupFiles(),
@@ -317,7 +334,9 @@ void main() {
         ),
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final workflow = SingleSlotBackupWorkflow(files: _MemoryBackupFiles());
 
       final captured = await workflow.capture(
@@ -360,7 +379,9 @@ void main() {
     test('picker cancellation performs no device work', () async {
       final communicator = _BackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final workflow = SingleSlotBackupWorkflow(
         files: _MemoryBackupFiles(cancelSave: true),
       );
@@ -385,7 +406,9 @@ void main() {
         () async {
       final communicator = _BackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final files = _MemoryBackupFiles();
       final workflow = SingleSlotBackupWorkflow(files: files);
       final valid = _lfBackup(device: ChameleonDevice.ultra);
@@ -413,7 +436,9 @@ void main() {
         () async {
       final communicator = _BackupCommunicator(failAfterLfWrite: true);
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final workflow = SingleSlotBackupWorkflow(files: _MemoryBackupFiles());
 
       expect(
@@ -435,9 +460,14 @@ void main() {
     test('communicator replacement stops capture and publishes no file',
         () async {
       final gate = Completer<void>();
-      final communicator = _BackupCommunicator(readGate: gate);
+      final communicator = _BackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
+      communicator
+        ..readGate = gate
+        ..readStarted = Completer<void>();
       final files = _MemoryBackupFiles();
       final workflow = SingleSlotBackupWorkflow(files: files);
       final export = workflow.export(
@@ -460,7 +490,9 @@ void main() {
         payloadReadGate: gate,
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final files = _MemoryBackupFiles();
       final export = SingleSlotBackupWorkflow(files: files).export(
         status: fixture.appState.connectedDeviceStatus!,
@@ -478,9 +510,14 @@ void main() {
 
     test('DFU transition stops capture and publishes no file', () async {
       final gate = Completer<void>();
-      final communicator = _BackupCommunicator(readGate: gate);
+      final communicator = _BackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
+      communicator
+        ..readGate = gate
+        ..readStarted = Completer<void>();
       final files = _MemoryBackupFiles();
       final export = SingleSlotBackupWorkflow(files: files).export(
         status: fixture.appState.connectedDeviceStatus!,
@@ -547,12 +584,11 @@ final class _MemorySaveTarget implements SlotBackupSaveTarget {
   }
 }
 
-final class _BackupCommunicator extends ChameleonCommunicator {
+final class _BackupCommunicator extends ReadinessTestCommunicator {
   _BackupCommunicator({
     this.hfType = TagType.unknown,
     this.lfType = TagType.unknown,
     this.failAfterLfWrite = false,
-    this.readGate,
     this.payloadReadGate,
     this.antiCollisionRead,
     this.shortClassicRead = false,
@@ -563,13 +599,13 @@ final class _BackupCommunicator extends ChameleonCommunicator {
   final TagType hfType;
   final TagType lfType;
   final bool failAfterLfWrite;
-  final Completer<void>? readGate;
+  Completer<void>? readGate;
   final Completer<void>? payloadReadGate;
   final CardData? antiCollisionRead;
   final bool shortClassicRead;
   final bool failPrngRead;
   final List<bool> ultralightTearingStates;
-  final Completer<void> readStarted = Completer<void>();
+  Completer<void> readStarted = Completer<void>();
   final Completer<void> payloadReadStarted = Completer<void>();
   final List<String> events = [];
   int ultralightPagesWritten = 0;

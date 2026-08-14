@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/full_device_backup.dart';
@@ -22,7 +21,9 @@ void main() {
         () async {
       final communicator = _FullBackupCommunicator();
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final progress = <FullDeviceBackupProgress>[];
 
       final capture = await fixture.appState.fullDeviceBackupWorkflow.capture(
@@ -88,7 +89,9 @@ void main() {
         ],
       );
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final result = await fixture.appState.fullDeviceBackupWorkflow.capture(
         status: fixture.appState.connectedDeviceStatus!,
@@ -110,7 +113,9 @@ void main() {
         () async {
       final communicator = _FullBackupCommunicator(metadataPositionCount: 7);
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final result = await fixture.appState.fullDeviceBackupWorkflow.capture(
         status: fixture.appState.connectedDeviceStatus!,
@@ -127,7 +132,9 @@ void main() {
     test('progress separates processed and confirmed positions', () async {
       final communicator = _FullBackupCommunicator(failActivationAt: 1);
       final fixture = ConnectedDeviceTestHarness(communicator: communicator);
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       final progress = <FullDeviceBackupProgress>[];
 
       await fixture.appState.fullDeviceBackupWorkflow.capture(
@@ -154,7 +161,9 @@ void main() {
         communicator: communicator,
         device: ChameleonDevice.lite,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final result = await fixture.appState.fullDeviceBackupWorkflow.capture(
         status: fixture.appState.connectedDeviceStatus!,
@@ -172,7 +181,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final outcome = await fixture.appState.fullDeviceBackupWorkflow.export(
         status: fixture.appState.connectedDeviceStatus!,
@@ -191,7 +202,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
       FullDeviceBackup? report;
 
       final declined = await fixture.appState.fullDeviceBackupWorkflow.export(
@@ -227,7 +240,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
 
       final outcome = await fixture.appState.fullDeviceBackupWorkflow.export(
         status: fixture.appState.connectedDeviceStatus!,
@@ -245,13 +260,18 @@ void main() {
     test('communicator replacement stops capture and publishes no file',
         () async {
       final gate = Completer<void>();
-      final communicator = _FullBackupCommunicator(metadataGate: gate);
+      final communicator = _FullBackupCommunicator();
       final files = _MemoryDeviceBackupFiles();
       final fixture = ConnectedDeviceTestHarness(
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
+      await fixture.settleReadiness();
+      communicator.events.clear();
+      communicator
+        ..metadataGate = gate
+        ..metadataStarted = Completer<void>();
 
       final export = fixture.appState.fullDeviceBackupWorkflow.export(
         status: fixture.appState.connectedDeviceStatus!,
@@ -308,10 +328,9 @@ final class _MemoryDeviceBackupTarget implements SlotBackupSaveTarget {
 
 // This workflow fake exposes command ordering and failure injection. It stays
 // separate from the mounted-UI fake, whose synchronization points serve pumps.
-final class _FullBackupCommunicator extends ChameleonCommunicator {
+final class _FullBackupCommunicator extends ReadinessTestCommunicator {
   _FullBackupCommunicator({
     this.failActivationAt,
-    this.metadataGate,
     this.failModeRead = false,
     this.metadataPositionCount = 8,
     List<int>? supportedCommands,
@@ -325,11 +344,11 @@ final class _FullBackupCommunicator extends ChameleonCommunicator {
         super(Logger(output: MemoryOutput()));
 
   final int? failActivationAt;
-  final Completer<void>? metadataGate;
+  Completer<void>? metadataGate;
   final bool failModeRead;
   final int metadataPositionCount;
   final List<int> supportedCommands;
-  final Completer<void> metadataStarted = Completer<void>();
+  Completer<void> metadataStarted = Completer<void>();
   final List<String> events = [];
 
   @override

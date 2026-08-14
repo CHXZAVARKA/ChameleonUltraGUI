@@ -1,4 +1,4 @@
-import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
+import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:flutter/material.dart';
 
@@ -21,9 +21,8 @@ class PendingConnectionPage extends StatelessWidget {
         body: Center(
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          ChameleonLoadingIndicator(
-            size: 64,
-            semanticLabel: localizations.loading,
+          ConnectionReadinessCard(
+            readiness: appState.connectionReadiness,
           ),
           const SizedBox(height: 25),
           Text(

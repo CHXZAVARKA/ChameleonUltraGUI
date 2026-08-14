@@ -20,7 +20,10 @@ void main() {
         (tester) async {
       final fixture = await _pumpSettings(tester, device: device);
 
-      expect(fixture.communicator.events, ['capabilities', 'read:full']);
+      expect(
+        fixture.communicator.events,
+        containsAllInOrder(['capabilities', 'read:full']),
+      );
       expect(_dropdown(tester).value, AnimationSetting.full);
 
       await _chooseMode(tester, 'Symmetric');
@@ -28,13 +31,12 @@ void main() {
 
       expect(
         fixture.communicator.events,
-        [
-          'capabilities',
+        containsAllInOrder([
           'read:full',
           'set:symmetric',
           'save',
           'read:symmetric',
-        ],
+        ]),
       );
       expect(_dropdown(tester).value, AnimationSetting.symmetric);
       expect(fixture.serial.disconnects, 0);
@@ -287,6 +289,35 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   Completer<void>? nextCapabilitiesGate;
   Object? nextSetError;
   bool ignoreSets = false;
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0100);
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() async =>
+      BatteryCharge(percent: 60, voltage: 3900);
+
+  @override
+  Future<bool> isReaderDeviceMode() async => false;
+
+  @override
+  Future<List<SlotTypes>> getSlotTagTypes() async =>
+      List.generate(8, (_) => SlotTypes());
+
+  @override
+  Future<List<EnabledSlotInfo>> getEnabledSlots() async =>
+      List.generate(8, (_) => EnabledSlotInfo());
+
+  @override
+  Future<List<SlotNames>> getSlotTagNames() async =>
+      List.generate(8, (_) => SlotNames());
+
+  @override
+  Future<int> getActiveSlot() async => 0;
+
+  @override
+  Future<String> getGitCommitHash() async => 'abcdef0';
 
   @override
   Future<DeviceSettings> getDeviceSettings() async =>

@@ -6,12 +6,14 @@ class _ModeStatusMachine {
     required RfOperationCoordinator rfOperations,
     required Object operationGroup,
     required bool Function() canPublish,
+    required bool Function() canStartAction,
     required ModeStatus Function() currentStatus,
     required void Function(ModeStatus status) publish,
   })  : _session = session,
         _rfOperations = rfOperations,
         _operationGroup = operationGroup,
         _canPublish = canPublish,
+        _canStartAction = canStartAction,
         _currentStatus = currentStatus,
         _publish = publish;
 
@@ -19,6 +21,7 @@ class _ModeStatusMachine {
   final RfOperationCoordinator _rfOperations;
   final Object _operationGroup;
   final bool Function() _canPublish;
+  final bool Function() _canStartAction;
   final ModeStatus Function() _currentStatus;
   final void Function(ModeStatus status) _publish;
 
@@ -83,6 +86,9 @@ class _ModeStatusMachine {
   Future<ModeActionOutcome> switchTo(ConnectedDeviceMode target) async {
     if (!_canPublish()) {
       return ModeActionOutcome.connectionChanged;
+    }
+    if (!_canStartAction()) {
+      return ModeActionOutcome.busy;
     }
     if (_session.connector.device == ChameleonDevice.lite) {
       return target == ConnectedDeviceMode.emulator

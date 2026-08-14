@@ -16,6 +16,7 @@ import 'package:chameleonultragui/helpers/read_card_session.dart';
 import 'package:chameleonultragui/helpers/rf_operation_coordinator.dart';
 import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:chameleonultragui/status/connected_device_status.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -82,13 +83,19 @@ class ChameleonGUIState extends ChangeNotifier {
     this.firmwareCatalog = const GitHubFirmwareCatalog(),
     this.firmwareInstaller,
     this.slotBackupFiles = const NativeSlotBackupFileAdapter(),
+    ConnectionReadinessTimeouts connectionReadinessTimeouts =
+        const ConnectionReadinessTimeouts(),
   })  : singleSlotBackupWorkflow =
             SingleSlotBackupWorkflow(files: slotBackupFiles),
         fullDeviceBackupWorkflow =
-            FullDeviceBackupWorkflow(files: slotBackupFiles);
+            FullDeviceBackupWorkflow(files: slotBackupFiles),
+        connectionReadiness = ConnectionReadinessTracker(
+          timeouts: connectionReadinessTimeouts,
+        );
 
   final SingleSlotBackupWorkflow singleSlotBackupWorkflow;
   final FullDeviceBackupWorkflow fullDeviceBackupWorkflow;
+  final ConnectionReadinessTracker connectionReadiness;
 
   RfOperationCoordinator _rfOperations = RfOperationCoordinator();
   RfOperationCoordinator get rfOperations => _rfOperations;
@@ -120,6 +127,7 @@ class ChameleonGUIState extends ChangeNotifier {
       return;
     }
     _disposeConnectedDeviceStatus();
+    connectionReadiness.markDisconnected();
     _rfOperations = RfOperationCoordinator();
     _communicator = null;
     _connector = value;
@@ -190,6 +198,12 @@ class ChameleonGUIState extends ChangeNotifier {
     if (connector == null || !connector!.connected || connector!.isDFU) {
       communicator = null;
       progress = null;
+      final stage = connectionReadiness.snapshot.stage;
+      if (connector?.isDFU == true ||
+          (stage != ConnectionReadinessStage.discovering &&
+              stage != ConnectionReadinessStage.connectingTransport)) {
+        connectionReadiness.markDisconnected();
+      }
     } else {
       _attachConnectedDeviceStatusIfPossible();
     }
@@ -303,6 +317,7 @@ class ChameleonGUIState extends ChangeNotifier {
     }
     communicator = null;
     progress = null;
+    connectionReadiness.markDisconnected();
     notifyListeners();
   }
 
@@ -325,9 +340,14 @@ class ChameleonGUIState extends ChangeNotifier {
     if (session == null) {
       return;
     }
+    final readinessAttempt = connectionReadiness.attachSession(
+      session.connector.connectionType,
+    );
     _connectedDeviceStatus = ConnectedDeviceStatus(
       session: session,
       rfOperations: rfOperations,
+      connectionReadiness: connectionReadiness,
+      readinessAttempt: readinessAttempt,
       firmwareCatalog: firmwareCatalog,
       firmwareInstaller: firmwareInstaller,
       firmwareChannel: sharedPreferencesProvider.getFirmwareChannel(),
@@ -345,6 +365,7 @@ class ChameleonGUIState extends ChangeNotifier {
     _sessionWakelockOwners.clear();
     _flashingWakelock = false;
     _updateWakelock();
+    connectionReadiness.dispose();
     super.dispose();
   }
 }

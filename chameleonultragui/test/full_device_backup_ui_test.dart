@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/page/slot_manager.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
@@ -27,8 +26,8 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
-      await _pumpSlotManager(tester, fixture.appState);
+      addTearDown(fixture.dispose);
+      await _pumpSlotManager(tester, fixture);
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
       await tester.pumpAndSettle();
@@ -70,8 +69,8 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
-      await _pumpSlotManager(tester, fixture.appState);
+      addTearDown(fixture.dispose);
+      await _pumpSlotManager(tester, fixture);
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
       await tester.pumpAndSettle();
@@ -95,8 +94,8 @@ void main() {
         communicator: _UiBackupCommunicator(metadataPositionCount: 7),
         slotBackupFiles: _UiBackupFiles(),
       );
-      addTearDown(fixture.appState.dispose);
-      await _pumpSlotManager(tester, fixture.appState);
+      addTearDown(fixture.dispose);
+      await _pumpSlotManager(tester, fixture);
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
       await tester.pumpAndSettle();
@@ -123,9 +122,9 @@ void main() {
         communicator: communicator,
         slotBackupFiles: _UiBackupFiles(),
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
       final semantics = tester.ensureSemantics();
-      await _pumpSlotManager(tester, fixture.appState);
+      await _pumpSlotManager(tester, fixture);
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
       await communicator.heldActivationStarted.future;
@@ -176,11 +175,11 @@ void main() {
         communicator: communicator,
         slotBackupFiles: _UiBackupFiles(),
       );
-      addTearDown(fixture.appState.dispose);
+      addTearDown(fixture.dispose);
       final semantics = tester.ensureSemantics();
       await _pumpSlotManager(
         tester,
-        fixture.appState,
+        fixture,
         textScaler: const TextScaler.linear(2),
         disableAnimations: true,
       );
@@ -261,8 +260,8 @@ void main() {
         communicator: communicator,
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
-      await _pumpSlotManager(tester, fixture.appState);
+      addTearDown(fixture.dispose);
+      await _pumpSlotManager(tester, fixture);
       final before = communicator.events.length;
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
@@ -280,8 +279,8 @@ void main() {
         communicator: _UiBackupCommunicator(),
         slotBackupFiles: files,
       );
-      addTearDown(fixture.appState.dispose);
-      await _pumpSlotManager(tester, fixture.appState);
+      addTearDown(fixture.dispose);
+      await _pumpSlotManager(tester, fixture);
 
       await tester.tap(find.byKey(const Key('slot-manager-backup-all')));
       await tester.pumpAndSettle();
@@ -300,13 +299,15 @@ void main() {
 
 Future<void> _pumpSlotManager(
   WidgetTester tester,
-  ChameleonGUIState appState, {
+  ConnectedDeviceTestHarness<_UiBackupCommunicator> fixture, {
   TextScaler textScaler = TextScaler.noScaling,
   bool disableAnimations = false,
 }) async {
+  await fixture.settleReadiness(tester: tester);
+  fixture.communicator.events.clear();
   await tester.pumpWidget(
     ChangeNotifierProvider<ChameleonGUIState>.value(
-      value: appState,
+      value: fixture.appState,
       child: MaterialApp(
         locale: const Locale('en'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -358,7 +359,7 @@ final class _UiBackupTarget implements SlotBackupSaveTarget {
 
 // This UI fake exposes pump-safe activation gates. The workflow fake instead
 // records the wider command contract and would couple unrelated scenarios.
-final class _UiBackupCommunicator extends ChameleonCommunicator {
+final class _UiBackupCommunicator extends ReadinessTestCommunicator {
   _UiBackupCommunicator({
     this.failActivationAt,
     this.holdActivationAt,

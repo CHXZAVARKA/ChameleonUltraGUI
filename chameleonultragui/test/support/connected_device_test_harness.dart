@@ -5,9 +5,11 @@ import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/helpers/single_slot_backup_workflow.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:chameleonultragui/status/firmware_catalog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +59,29 @@ final class TestSerial extends AbstractSerial {
   Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }
 
+/// Immediate protocol facts for test communicators that are not exercising
+/// staged connection readiness themselves.
+abstract class ReadinessTestCommunicator extends ChameleonCommunicator {
+  ReadinessTestCommunicator(super.log);
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() async =>
+      FirmwareVersion(legacyProtocol: false, version: 0x0202);
+
+  @override
+  Future<String> getGitCommitHash() async => 'test-ready';
+
+  @override
+  Future<List<int>> getDeviceCapabilities() async => const [];
+
+  @override
+  Future<BatteryCharge> getBatteryCharge() async =>
+      BatteryCharge(percent: 60, voltage: 3900);
+
+  @override
+  Future<bool> isReaderDeviceMode() async => false;
+}
+
 final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
   ConnectedDeviceTestHarness({
     required this.communicator,
@@ -97,6 +122,41 @@ final class ConnectedDeviceTestHarness<T extends ChameleonCommunicator> {
   final Logger logger;
   late final TestSerial serial;
   late final ChameleonGUIState appState;
+  bool _disposed = false;
+
+  Future<void> settleReadiness({WidgetTester? tester}) async {
+    const terminalStages = {
+      ConnectionReadinessStage.ready,
+      ConnectionReadinessStage.degraded,
+    };
+    for (var attempt = 0; attempt < 200; attempt++) {
+      if (terminalStages
+          .contains(appState.connectionReadiness.snapshot.stage)) {
+        return;
+      }
+      if (const {
+        ConnectionReadinessStage.failed,
+        ConnectionReadinessStage.disconnected,
+      }.contains(appState.connectionReadiness.snapshot.stage)) {
+        fail(
+          'Connected-device readiness ended in '
+          '${appState.connectionReadiness.snapshot.stage.name}',
+        );
+      }
+      if (tester == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      } else {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+    }
+    fail('Connected-device readiness did not settle');
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    appState.dispose();
+  }
 }
 
 ConnectedDeviceTestHarness<ChameleonCommunicator> connectedDeviceSessionHarness(

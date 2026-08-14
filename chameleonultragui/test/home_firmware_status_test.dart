@@ -43,6 +43,9 @@ void main() {
           .colorScheme
           .onSurfaceVariant,
     );
+
+    appState.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('BLE Home avoids the multi-packet capabilities response',
@@ -814,7 +817,7 @@ void main() {
     await tester.pump();
     expect(oldCommunicator.firmwareReads, 1);
     final oldCapabilityReadsBeforeReplacement = oldCommunicator.capabilityReads;
-    expect(oldCapabilityReadsBeforeReplacement, 1);
+    expect(oldCapabilityReadsBeforeReplacement, 0);
 
     _replaceConnection(appState, newCommunicator);
     appState.changesMade();
@@ -857,8 +860,7 @@ ChameleonGUIState _connectedState(
     activeDevicePort: 'firmware-test-port',
     installFirmware: channelInstaller ??
         (installer == null ? null : (appState, _) => installer(appState)),
-  )
-      .appState;
+  ).appState;
 }
 
 class _FirmwareCommunicator extends ChameleonCommunicator {

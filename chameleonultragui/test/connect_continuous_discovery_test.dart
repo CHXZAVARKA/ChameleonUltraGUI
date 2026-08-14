@@ -2,16 +2,19 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/connector/serial_emulator.dart';
 import 'package:chameleonultragui/connector/serial_native.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
-import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart';
+import 'package:chameleonultragui/gui/component/connection_readiness_card.dart';
 import 'package:chameleonultragui/gui/page/connect.dart';
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/gui/page/pending_connection.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:chameleonultragui/status/connection_readiness.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,7 +72,7 @@ void main() {
 
         expect(serial.connectCalls, 1);
         expect(find.byType(PendingConnectionPage), findsOneWidget);
-        expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+        expect(find.byType(ConnectionReadinessCard), findsOneWidget);
         expect(serial.receivedSelection, same(selectedDevice));
 
         connectGate.complete();
@@ -140,6 +143,11 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.byType(ConnectPage), findsOneWidget);
         expect(serial.connectCalls, 1);
+        expect(
+          appState.connectionReadiness.snapshot.stage,
+          ConnectionReadinessStage.failed,
+        );
+        expect(find.text('Connection failed'), findsOneWidget);
 
         await tester.pump(const Duration(milliseconds: 500));
         appState.dispose();
@@ -149,7 +157,7 @@ void main() {
   }
 
   testWidgets(
-    'loader replaces refresh until discovery finds a device',
+    'readiness stage replaces refresh until discovery finds a device',
     (tester) async {
       SharedPreferences.setMockInitialValues({
         'auto_connect_first_found': false,
@@ -189,9 +197,7 @@ void main() {
           child: const MaterialApp(
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            home: ConnectPage(
-              autoScanInterval: Duration(milliseconds: 20),
-            ),
+            home: ConnectPage(autoScanInterval: Duration(milliseconds: 20)),
           ),
         ),
       );
@@ -200,20 +206,20 @@ void main() {
 
       expect(serial.scanCalls, 1);
       expect(find.byIcon(Icons.refresh), findsNothing);
-      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+      expect(find.byType(ConnectionReadinessCard), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 2);
-      expect(find.byType(ChameleonLoadingIndicator), findsOneWidget);
+      expect(find.byType(ConnectionReadinessCard), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
 
       expect(serial.scanCalls, 3);
       expect(find.text('device-a'), findsOneWidget);
-      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+      expect(find.byType(ConnectionReadinessCard), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
@@ -221,31 +227,180 @@ void main() {
       expect(serial.scanCalls, 4);
       expect(find.text('device-a'), findsOneWidget);
       expect(find.text('device-b'), findsOneWidget);
-      expect(find.byType(ChameleonLoadingIndicator), findsNothing);
+      expect(find.byType(ConnectionReadinessCard), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
-  test('native discovery keeps FFI-bound probing on the caller isolate',
-      () async {
-    final callerIsolate = Isolate.current;
-    final serial = NativeSerial(
+  testWidgets('discovery failures use the redacted readiness surface', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'auto_connect_first_found': false});
+    const sensitiveError = 'private-device-path-/dev/cu.secret';
+    final serial = _FailingDiscoverySerial(
       log: Logger(output: MemoryOutput()),
-      discoveryCallback: (onlyDFU) {
-        expect(Isolate.current, same(callerIsolate));
-        return const [];
-      },
+      error: StateError(sensitiveError),
     );
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final appState = ChameleonGUIState(preferences)
+      ..connector = serial
+      ..log = serial.log;
 
-    expect(await serial.availableChameleons(false), isEmpty);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: ConnectPage(autoScanInterval: Duration(seconds: 10)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      appState.connectionReadiness.snapshot.stage,
+      ConnectionReadinessStage.failed,
+    );
+    expect(find.byType(ConnectionReadinessCard), findsOneWidget);
+    expect(find.text('Connection failed'), findsOneWidget);
+    expect(find.textContaining(sensitiveError), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    appState.dispose();
   });
 
+  testWidgets(
+    'a late discovery error cannot disconnect a replacement connector',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auto_connect_first_found': false,
+      });
+      final discovery = Completer<List<Chameleon>>();
+      final origin = _ControlledDiscoverySerial(
+        log: Logger(output: MemoryOutput()),
+        discovery: discovery.future,
+      );
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      final appState = ChameleonGUIState(preferences)
+        ..connector = origin
+        ..log = origin.log;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: const MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: ConnectPage(autoScanInterval: Duration(seconds: 10)),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(origin.scanCalls, 1);
+
+      final replacement = _ReplacementSerial(
+        log: Logger(output: MemoryOutput()),
+      );
+      appState.connector = replacement;
+      discovery.completeError(StateError('late origin discovery failure'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(replacement.disconnectCalls, 0);
+      expect(replacement.connected, isTrue);
+      expect(appState.connector, same(replacement));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      appState.dispose();
+    },
+  );
+
+  testWidgets(
+    'a late connect error cannot disconnect a same-connector replacement session',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'auto_connect_first_found': false,
+      });
+      final connectGate = Completer<void>();
+      final logger = Logger(output: MemoryOutput());
+      final selectedDevice = Chameleon(
+        port: 'ble-device-a',
+        device: ChameleonDevice.ultra,
+        type: ConnectionType.ble,
+        dfu: false,
+      );
+      final serial = _DelayedConnectSerial(
+        log: logger,
+        gate: connectGate,
+        selectedDevice: selectedDevice,
+      );
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      final appState = ChameleonGUIState(
+        preferences,
+        firmwareCatalog: const CurrentFirmwareCatalogStub(),
+      )
+        ..connector = serial
+        ..log = logger;
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: MainPage(sharedPreferencesProvider: preferences),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Chameleon Ultra'));
+      await tester.pump();
+
+      serial
+        ..connected = true
+        ..pendingConnection = false
+        ..connectionType = ConnectionType.ble
+        ..device = ChameleonDevice.ultra
+        ..portName = 'ble-device-a'
+        ..activeDevicePort = 'ble-device-a';
+      final replacementCommunicator = _PendingProtocolCommunicator(logger);
+      appState.communicator = replacementCommunicator;
+      connectGate.completeError(StateError('late connect failure'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(serial.disconnectCalls, 0);
+      expect(serial.connected, isTrue);
+      expect(appState.communicator, same(replacementCommunicator));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      appState.dispose();
+      logger.close();
+    },
+  );
+
+  test(
+    'native discovery keeps FFI-bound probing on the caller isolate',
+    () async {
+      final callerIsolate = Isolate.current;
+      final serial = NativeSerial(
+        log: Logger(output: MemoryOutput()),
+        discoveryCallback: (onlyDFU) {
+          expect(Isolate.current, same(callerIsolate));
+          return const [];
+        },
+      );
+
+      expect(await serial.availableChameleons(false), isEmpty);
+    },
+  );
+
   test('native USB uses stock firmware serial flow control', () {
-    expect(
-      NativeSerial.flowControlForTesting,
-      SerialPortFlowControl.none,
-    );
+    expect(NativeSerial.flowControlForTesting, SerialPortFlowControl.none);
   });
 }
 
@@ -263,6 +418,14 @@ class _DelayedConnectSerial extends EmulatorSerial {
   final Completer<bool> statusWriteGate = Completer<bool>();
   dynamic receivedSelection;
   int connectCalls = 0;
+  int disconnectCalls = 0;
+
+  @override
+  Future<bool> performDisconnect() async {
+    disconnectCalls++;
+    resetConnectionState();
+    return true;
+  }
 
   @override
   Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => [
@@ -301,6 +464,15 @@ class _DelayedConnectSerial extends EmulatorSerial {
       statusWriteGate.future;
 }
 
+class _PendingProtocolCommunicator extends ChameleonCommunicator {
+  _PendingProtocolCommunicator(super.log);
+
+  final Completer<FirmwareVersion> protocol = Completer<FirmwareVersion>();
+
+  @override
+  Future<FirmwareVersion> getFirmwareVersion() => protocol.future;
+}
+
 class _DiscoverySerial extends AbstractSerial {
   _DiscoverySerial({required super.log, required this.scans});
 
@@ -322,4 +494,81 @@ class _DiscoverySerial extends AbstractSerial {
 
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async => false;
+}
+
+class _FailingDiscoverySerial extends AbstractSerial {
+  _FailingDiscoverySerial({required super.log, required this.error});
+
+  final Object error;
+
+  @override
+  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async =>
+      throw error;
+
+  @override
+  Future<bool> performDisconnect() async => true;
+
+  @override
+  bool isManualConnectionSupported() => false;
+
+  @override
+  Future<bool> connectSpecificDevice(dynamic devicePort) async => false;
+
+  @override
+  Future<bool> write(Uint8List command, {bool firmware = false}) async => false;
+}
+
+class _ControlledDiscoverySerial extends AbstractSerial {
+  _ControlledDiscoverySerial({required super.log, required this.discovery});
+
+  final Future<List<Chameleon>> discovery;
+  int scanCalls = 0;
+
+  @override
+  Future<List<Chameleon>> availableChameleons(bool onlyDFU) {
+    scanCalls++;
+    return discovery;
+  }
+
+  @override
+  Future<bool> performDisconnect() async => true;
+
+  @override
+  bool isManualConnectionSupported() => false;
+
+  @override
+  Future<bool> connectSpecificDevice(dynamic devicePort) async => false;
+
+  @override
+  Future<bool> write(Uint8List command, {bool firmware = false}) async => false;
+}
+
+class _ReplacementSerial extends AbstractSerial {
+  _ReplacementSerial({required super.log}) {
+    connected = true;
+    device = ChameleonDevice.ultra;
+    connectionType = ConnectionType.usb;
+    portName = '/dev/replacement';
+    activeDevicePort = portName;
+  }
+
+  int disconnectCalls = 0;
+
+  @override
+  Future<bool> performDisconnect() async {
+    disconnectCalls++;
+    return true;
+  }
+
+  @override
+  Future<List<Chameleon>> availableChameleons(bool onlyDFU) async => const [];
+
+  @override
+  bool isManualConnectionSupported() => false;
+
+  @override
+  Future<bool> connectSpecificDevice(dynamic devicePort) async => true;
+
+  @override
+  Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
 }
