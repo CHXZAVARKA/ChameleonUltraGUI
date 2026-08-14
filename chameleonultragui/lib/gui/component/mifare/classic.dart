@@ -508,6 +508,18 @@ class CardReaderState extends State<MifareClassicHelper> {
               style: customCardButtonStyle(appState),
               child: Text(localizations.recover_keys),
             ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
+                  ? () {
+                      setState(() {
+                        widget.mfcInfo.state = MifareClassicState.checkKeys;
+                      });
+                    }
+                  : null,
+              style: customCardButtonStyle(appState),
+              child: Text(localizations.check_keys_dict),
+            ),
             if (widget.allowSave) ...[
               const SizedBox(width: 8),
               ElevatedButton(

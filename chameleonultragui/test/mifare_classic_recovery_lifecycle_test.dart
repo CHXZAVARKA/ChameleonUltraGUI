@@ -161,6 +161,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+      'incomplete profile pass can continue with the ordinary dictionary',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = SharedPreferencesProvider();
+    await preferences.load();
+    final appState = ChameleonGUIState(preferences)
+      ..connector = (_TestSerial(log: Logger())..connected = true)
+      ..communicator = _RecordingCommunicator()
+      ..log = Logger();
+    final localizations =
+        await AppLocalizations.delegate.load(const Locale('en'));
+    final recovery = _DelayedRecovery(
+      appState: appState,
+      localizations: localizations,
+    );
+    final info = MifareClassicInfo(
+      type: MifareClassicType.m1k,
+      state: MifareClassicState.recovery,
+    )..recovery = recovery;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChameleonGUIState>.value(
+        value: appState,
+        child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: MifareClassicHelper(
+              hfInfo: HFCardInfo(uid: '01 02 03 04'),
+              mfcInfo: info,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text(localizations.check_keys_dict), findsOneWidget);
+    await tester.tap(find.text(localizations.check_keys_dict));
+    await tester.pump();
+
+    expect(info.state, MifareClassicState.checkKeys);
+    expect(info.recovery, same(recovery));
+    expect(find.text(localizations.additional_key_dict), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('queued key check does not cross a reconnect', (tester) async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
