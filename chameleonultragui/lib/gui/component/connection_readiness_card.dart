@@ -23,7 +23,7 @@ class ConnectionReadinessCard extends StatelessWidget {
         final localizations = AppLocalizations.of(context)!;
         final label = _stageLabel(localizations, snapshot);
         final error = _errorLabel(localizations, snapshot.errorCategory);
-        if (!compact && _stageIsInProgress(snapshot.stage)) {
+        if (_stageIsInProgress(snapshot.stage)) {
           return Semantics(
             key: const Key('connection-readiness'),
             container: true,
