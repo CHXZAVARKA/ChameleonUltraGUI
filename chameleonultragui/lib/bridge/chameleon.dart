@@ -837,41 +837,33 @@ class ChameleonCommunicator {
   }
 
   Future<List<SlotNames>> getSlotTagNames() async {
-    var resp = await sendCmd(ChameleonCommand.getAllSlotNicks);
-    List<SlotNames> slots = List.generate(
-      8,
-      (_) => SlotNames(),
-    );
-
-    int i = 0;
-    int index = 0;
-
-    while (i < resp!.data.length && index < 8) {
-      int hfLen = resp.data[i];
-      i++;
-      if (hfLen > 0) {
-        slots[index].hf =
-            utf8.decode(resp.data.sublist(i, i + hfLen), allowMalformed: true);
-        i += hfLen;
-      } else {
-        slots[index].hf = '';
-        i += hfLen;
+    final response = await sendCmd(ChameleonCommand.getAllSlotNicks);
+    if (response == null || response.status != ChameleonStatus.success) {
+      throw StateError('Unable to read slot names: status ${response?.status}');
+    }
+    final data = response.data;
+    var cursor = 0;
+    String readName() {
+      if (cursor >= data.length) {
+        throw const FormatException('Incomplete slot-name response');
       }
-
-      int lfLen = resp.data[i];
-      i++;
-      if (lfLen > 0) {
-        slots[index].lf =
-            utf8.decode(resp.data.sublist(i, i + lfLen), allowMalformed: true);
-        i += lfLen;
-      } else {
-        slots[index].lf = '';
-        i += lfLen;
+      final length = data[cursor++];
+      final end = cursor + length;
+      if (end > data.length) {
+        throw const FormatException('Truncated slot name');
       }
-
-      index++;
+      final name = utf8.decode(data.sublist(cursor, end));
+      cursor = end;
+      return name;
     }
 
+    final slots = List.generate(
+      8,
+      (_) => SlotNames(hf: readName(), lf: readName()),
+    );
+    if (cursor != data.length) {
+      throw const FormatException('Unexpected data after slot names');
+    }
     return slots;
   }
 
