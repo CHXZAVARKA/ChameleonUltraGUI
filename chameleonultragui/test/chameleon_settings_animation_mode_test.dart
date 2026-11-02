@@ -203,6 +203,25 @@ void main() {
     );
     expect(fixture.serial.disconnects, 0);
   });
+
+  testWidgets(
+      'flash-save rejection stays visible even if RAM read-back matches',
+      (tester) async {
+    final fixture = await _pumpSettings(tester);
+    fixture.communicator.saveStatus = 0x70;
+
+    await _chooseMode(tester, 'Minimal');
+    await tester.pumpAndSettle();
+
+    expect(fixture.communicator.saves, 1);
+    expect(fixture.communicator.animationReads, 2);
+    expect(_dropdown(tester).value, AnimationSetting.minimal);
+    expect(
+      find.text('The LED animation mode could not be saved or confirmed.'),
+      findsOneWidget,
+    );
+    expect(fixture.serial.disconnects, 0);
+  });
 }
 
 DropdownButton<AnimationSetting> _dropdown(WidgetTester tester) {
@@ -285,6 +304,7 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   final List<Object> scriptedReads = [];
   int animationReads = 0;
   int saves = 0;
+  int saveStatus = ChameleonStatus.success;
   Completer<void>? nextSetGate;
   Completer<void>? nextCapabilitiesGate;
   Object? nextSetError;
@@ -338,6 +358,18 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   Future<void> saveSettings() async {
     saves++;
     events.add('save');
+    await super.saveSettings();
+  }
+
+  @override
+  Future<ChameleonMessage?> sendCmd(ChameleonCommand cmd,
+      {Uint8List? data,
+      Duration timeout = const Duration(seconds: 5),
+      bool skipReceive = false,
+      bool firstRun = false}) async {
+    expect(cmd, ChameleonCommand.saveSettings);
+    return ChameleonMessage(
+        command: cmd.value, status: saveStatus, data: Uint8List(0));
   }
 }
 
