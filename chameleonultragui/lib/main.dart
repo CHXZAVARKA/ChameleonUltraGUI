@@ -317,6 +317,7 @@ class ChameleonGUIState extends ChangeNotifier {
   bool hasConnectedCommunicator(ChameleonCommunicator candidate) {
     return connector?.connected == true &&
         connector?.isDFU != true &&
+        !candidate.isInvalidated &&
         identical(communicator, candidate);
   }
 
@@ -345,6 +346,8 @@ class ChameleonGUIState extends ChangeNotifier {
   @override
   void dispose() {
     _communicator?.invalidate();
+    _readCardSession = ReadCardSession();
+    _standardWriteActivity = null;
     _disposeConnectedDeviceStatus();
     _sessionWakelockOwners.clear();
     _flashingWakelock = false;

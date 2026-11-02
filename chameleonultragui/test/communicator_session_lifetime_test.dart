@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:chameleonultragui/bridge/chameleon.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
+import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,20 @@ import 'package:logger/logger.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('disposal invalidates both captured sessions and download tokens', () {
+    final logger = Logger(level: Level.off);
+    addTearDown(logger.close);
+    final serial = _GatedSerial(log: logger)..connected = true;
+    final app = ChameleonGUIState(SharedPreferencesProvider())
+      ..connector = serial
+      ..communicator = ChameleonCommunicator(logger, port: serial);
+    final session = ConnectedDeviceSession.capture(app)!;
+    final token = app.connectedDeviceSessionToken;
+    app.dispose();
+    expect(session.isCurrent, isFalse);
+    expect(app.connectedDeviceSessionToken, isNot(same(token)));
+  });
 
   for (final replacement in [
     'communicator',
