@@ -23,6 +23,8 @@ class ChameleonCommunicator {
   List<ChameleonMessage> messageQueue = [];
   List<int> commandQueue = [];
   Future<void> _commandTail = Future<void>.value();
+  int _connectionGeneration = 0;
+  bool _invalidated = false;
 
   final Logger log;
 
@@ -33,7 +35,25 @@ class ChameleonCommunicator {
   }
 
   dynamic open(AbstractSerial port) {
+    _connectionGeneration++;
+    _invalidated = false;
     _serialInstance = port;
+  }
+
+  /// Permanently rejects work queued for the connection this instance owned.
+  void invalidate() {
+    _invalidated = true;
+    _connectionGeneration++;
+    dataBuffer.clear();
+    dataPosition = 0;
+    messageQueue.clear();
+    commandQueue.clear();
+  }
+
+  void _requireConnection(int generation) {
+    if (_invalidated || generation != _connectionGeneration) {
+      throw StateError('Communicator connection is no longer current');
+    }
   }
 
   int lrcCalc(List<int> array) {
@@ -66,6 +86,7 @@ class ChameleonCommunicator {
   }
 
   Future<void> onSerialMessage(List<int> message) async {
+    if (_invalidated) return;
     log.t("Received ${message.length} raw byte(s)");
 
     for (var byte in message) {
@@ -133,35 +154,48 @@ class ChameleonCommunicator {
   }
 
   Future<ChameleonMessage?> sendCmd(ChameleonCommand cmd,
-          {Uint8List? data,
-          Duration timeout = const Duration(seconds: 5),
-          bool skipReceive = false,
-          bool firstRun = false}) =>
-      _runSerialized(
-        () => _sendCmd(
-          cmd,
-          data: data,
-          timeout: timeout,
-          skipReceive: skipReceive,
-          firstRun: firstRun,
-        ),
-      );
+      {Uint8List? data,
+      Duration timeout = const Duration(seconds: 5),
+      bool skipReceive = false,
+      bool firstRun = false}) {
+    final generation = _connectionGeneration;
+    return _runSerialized(
+      () => _sendCmd(
+        cmd,
+        generation: generation,
+        data: data,
+        timeout: timeout,
+        skipReceive: skipReceive,
+        firstRun: firstRun,
+      ),
+    );
+  }
 
   Future<ChameleonMessage?> _sendCmd(ChameleonCommand cmd,
-      {Uint8List? data,
+      {required int generation,
+      Uint8List? data,
       Duration timeout = const Duration(seconds: 5),
       bool skipReceive = false,
       bool firstRun = false}) async {
     var startTime = DateTime.now();
     var dataFrame = makeDataFrameBytes(cmd, 0x00, data);
+    _requireConnection(generation);
+    final serial = _serialInstance!;
 
-    if (!_serialInstance!.isOpen) {
-      await _serialInstance!.open();
-      await _serialInstance!.registerCallback(onSerialMessage);
-      _serialInstance!.isOpen = true;
+    if (!serial.isOpen) {
+      await serial.open();
+      _requireConnection(generation);
+      await serial.registerCallback((List<int> data) async {
+        if (!_invalidated && generation == _connectionGeneration) {
+          await onSerialMessage(data);
+        }
+      });
+      _requireConnection(generation);
+      serial.isOpen = true;
     }
 
     while (commandQueue.contains(cmd.value)) {
+      _requireConnection(generation);
       if (startTime.millisecondsSinceEpoch + (timeout.inMilliseconds * 2) <
           DateTime.now().millisecondsSinceEpoch) {
         throw ("Timeout waiting for queue for command ${cmd.value}");
@@ -170,50 +204,59 @@ class ChameleonCommunicator {
       await asyncSleep(1);
     }
 
+    _requireConnection(generation);
     commandQueue.add(cmd.value);
+    try {
+      final logData = data != null && data.isNotEmpty
+          ? "<redacted ${data.length} byte(s)>"
+          : "<empty>";
+      log.t(
+          "Sending command ${cmd.value} with ${data?.length ?? 0} payload byte(s)");
+      log.d("Sending message: command = ${cmd.value}, data = $logData");
 
-    final logData = data != null && data.isNotEmpty
-        ? "<redacted ${data.length} byte(s)>"
-        : "<empty>";
-    log.t(
-        "Sending command ${cmd.value} with ${data?.length ?? 0} payload byte(s)");
-    log.d("Sending message: command = ${cmd.value}, data = $logData");
+      if (skipReceive) {
+        try {
+          _requireConnection(generation);
+          await serial.write(Uint8List.fromList(dataFrame));
+        } catch (_) {}
+        return null;
+      }
 
-    if (skipReceive) {
-      try {
-        await _serialInstance!.write(Uint8List.fromList(dataFrame));
-      } catch (_) {}
-      return null;
-    }
+      _requireConnection(generation);
+      await serial.write(Uint8List.fromList(dataFrame));
+      _requireConnection(generation);
 
-    await _serialInstance!.write(Uint8List.fromList(dataFrame));
+      while (true) {
+        _requireConnection(generation);
+        for (var message in messageQueue) {
+          if (message.command == cmd.value) {
+            messageQueue.remove(message);
+            commandQueue.remove(cmd.value);
+            return message;
+          }
+        }
 
-    while (true) {
-      for (var message in messageQueue) {
-        if (message.command == cmd.value) {
-          messageQueue.remove(message);
+        if (startTime.millisecondsSinceEpoch + timeout.inMilliseconds <
+            DateTime.now().millisecondsSinceEpoch) {
           commandQueue.remove(cmd.value);
-          return message;
+          if (firstRun) {
+            return _sendCmd(
+              cmd,
+              generation: generation,
+              data: data,
+              timeout: timeout,
+              firstRun: false,
+            );
+          } else {
+            // no luck
+            throw ("Timeout waiting for response for command ${cmd.value}");
+          }
         }
-      }
 
-      if (startTime.millisecondsSinceEpoch + timeout.inMilliseconds <
-          DateTime.now().millisecondsSinceEpoch) {
-        commandQueue.remove(cmd.value);
-        if (firstRun) {
-          return _sendCmd(
-            cmd,
-            data: data,
-            timeout: timeout,
-            firstRun: false,
-          );
-        } else {
-          // no luck
-          throw ("Timeout waiting for response for command ${cmd.value}");
-        }
+        await asyncSleep(1);
       }
-
-      await asyncSleep(1);
+    } finally {
+      commandQueue.remove(cmd.value);
     }
   }
 

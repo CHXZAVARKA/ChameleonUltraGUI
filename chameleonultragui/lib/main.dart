@@ -109,6 +109,7 @@ class ChameleonGUIState extends ChangeNotifier {
     if (identical(_connector, value)) {
       return;
     }
+    _communicator?.invalidate();
     _disposeConnectedDeviceStatus();
     _rfOperations = RfOperationCoordinator();
     _communicator = null;
@@ -123,6 +124,7 @@ class ChameleonGUIState extends ChangeNotifier {
       _attachConnectedDeviceStatusIfPossible();
       return;
     }
+    _communicator?.invalidate();
     _disposeConnectedDeviceStatus();
     _rfOperations = RfOperationCoordinator();
     _communicator = value;
@@ -192,6 +194,9 @@ class ChameleonGUIState extends ChangeNotifier {
     final communicator = _communicator;
     final connected = connector?.connected == true;
     final isDfu = connector?.isDFU == true;
+    if (!connected || isDfu) {
+      communicator?.invalidate();
+    }
     final bindingChanged = !_readCardSessionBindingInitialized ||
         !identical(_readCardSessionConnector, connector) ||
         !identical(_readCardSessionCommunicator, communicator) ||
@@ -285,9 +290,17 @@ class ChameleonGUIState extends ChangeNotifier {
   }
 
   Future<void> disconnect({bool manual = false}) async {
+    final disconnectingConnector = connector;
+    final disconnectingCommunicator = communicator;
     final suppressedPort = manual ? connector?.activeDevicePort : null;
+    disconnectingCommunicator?.invalidate();
     _disposeConnectedDeviceStatus();
-    await connector?.performDisconnect();
+    await disconnectingConnector?.performDisconnect();
+    if (!identical(connector, disconnectingConnector) ||
+        !identical(communicator, disconnectingCommunicator) &&
+            communicator != null) {
+      return;
+    }
     if (manual && suppressedPort != null) {
       _suppressedAutoReconnectPort = suppressedPort;
     }
@@ -331,6 +344,7 @@ class ChameleonGUIState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _communicator?.invalidate();
     _disposeConnectedDeviceStatus();
     _sessionWakelockOwners.clear();
     _flashingWakelock = false;
