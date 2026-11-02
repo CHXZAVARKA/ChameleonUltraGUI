@@ -624,17 +624,65 @@
   "trademarks_em": "EM Microelectronic-Marin, EM Microelectronic, EM and all product designations beginning with “EM” are registered trademarks of EM Microelectronic",
   "create_card": "Create card",
   "generate_card_data": "Generate valid card data",
+  "@generate_card_data": {
+    "description": "Create/Edit Card action that generates valid identity fields and a blank dump for the selected card type."
+  },
   "generate_field_value": "Generate a valid value",
+  "@generate_field_value": {
+    "description": "Create/Edit Card action that generates a valid value for one identity field of the selected card type."
+  },
   "required_bytes": "Required · {bytes}",
-  "@required_bytes": {"placeholders": {"bytes": {"type": "String"}}},
+  "@required_bytes": {
+    "placeholders": {
+      "bytes": {
+        "type": "String",
+        "example": "4 bytes"
+      }
+    },
+    "description": "Create/Edit Card hint for a required identity field; bytes describes its accepted byte length."
+  },
   "optional_bytes": "Optional · {bytes}",
-  "@optional_bytes": {"placeholders": {"bytes": {"type": "String"}}},
+  "@optional_bytes": {
+    "placeholders": {
+      "bytes": {
+        "type": "String",
+        "example": "4 bytes"
+      }
+    },
+    "description": "Create/Edit Card hint for an optional identity field; bytes describes its accepted byte length."
+  },
   "any_byte_length": "any length",
+  "@any_byte_length": {
+    "description": "Create/Edit Card hint when the card protocol does not impose a fixed length on this optional byte field."
+  },
   "bytes_count": "{count, plural, one {{count} byte} other {{count} bytes}}",
-  "@bytes_count": {"placeholders": {"count": {"type": "int"}}},
+  "@bytes_count": {
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "4"
+      }
+    },
+    "description": "Create/Edit Card field length expressed in bytes, with singular and plural forms."
+  },
   "bytes_count_either": "{first} or {second} bytes",
-  "@bytes_count_either": {"placeholders": {"first": {"type": "int"}, "second": {"type": "int"}}},
+  "@bytes_count_either": {
+    "placeholders": {
+      "first": {
+        "type": "int",
+        "example": "4"
+      },
+      "second": {
+        "type": "int",
+        "example": "7"
+      }
+    },
+    "description": "Create/Edit Card field length when exactly one of two byte counts is accepted."
+  },
   "generated_fields_note": "The dice generates values valid for this card type. Manufacturer signature and ATS stay empty when they cannot be generated honestly.",
+  "@generated_fields_note": {
+    "description": "Create/Edit Card explanation that generated values match the selected card type, while unavailable manufacturer signatures and ATS remain empty."
+  },
   "update_data_title": "Update card data?",
   "update_data_message": "You have changed the UID, SAK, or ATQA. Do you want to update the card data accordingly?",
   "create": "Create",
@@ -894,34 +942,121 @@
   "lf_sniff_loaded": "Loaded {count} sample(s) from file.",
   "sniff_device_required_hint": "No device connected. Connect a Chameleon to capture, or load a saved file.",
   "firmware": "Firmware",
+  "@firmware": {
+    "description": "Home status pill label identifying the firmware installed on the connected Chameleon device."
+  },
   "firmware_checking": "Checking",
+  "@firmware_checking": {
+    "description": "Home firmware status while installed firmware is being compared with the selected update channel."
+  },
   "firmware_up_to_date": "Up to date",
+  "@firmware_up_to_date": {
+    "description": "Home firmware status when the installed version or commit matches the available firmware."
+  },
   "firmware_update_available": "Update available",
+  "@firmware_update_available": {
+    "description": "Home firmware status when the selected channel offers a different installable firmware version or commit."
+  },
   "firmware_update_required": "Update required",
+  "@firmware_update_required": {
+    "description": "Home firmware status when the installed firmware protocol is incompatible with this application."
+  },
   "firmware_check_unavailable": "Check unavailable",
+  "@firmware_check_unavailable": {
+    "description": "Home firmware status when the update check could not be completed; this does not mean the device is up to date."
+  },
   "firmware_demo": "Demo",
+  "@firmware_demo": {
+    "description": "Home firmware status for the simulated device; no update check or physical firmware installation is offered."
+  },
   "firmware_details": "Firmware details",
+  "@firmware_details": {
+    "description": "Home dialog title for installed firmware facts, update availability, and installation actions."
+  },
   "model": "Model",
+  "@model": {
+    "description": "Firmware details label for the connected hardware model, Chameleon Ultra or Chameleon Lite."
+  },
   "installed_version": "Installed version",
+  "@installed_version": {
+    "description": "Firmware details label for the firmware version confirmed by the connected device."
+  },
   "installed_commit": "Installed commit",
+  "@installed_commit": {
+    "description": "Firmware details label for the source commit reported by the installed device firmware."
+  },
   "protocol": "Protocol",
+  "@protocol": {
+    "description": "Firmware details label for the command protocol supported by the installed firmware."
+  },
   "current_protocol": "Current",
+  "@current_protocol": {
+    "description": "Firmware details value indicating that the installed firmware uses the current command protocol."
+  },
   "legacy_protocol": "Legacy",
+  "@legacy_protocol": {
+    "description": "Firmware details value indicating that the installed firmware uses an older command protocol."
+  },
   "latest_version_or_commit": "Latest version or commit",
+  "@latest_version_or_commit": {
+    "description": "Firmware details label for the newest available version or source commit in the selected update channel."
+  },
   "last_check_result": "Last check result",
+  "@last_check_result": {
+    "description": "Firmware details label for the outcome of the most recent firmware update check."
+  },
   "retry": "Retry",
+  "@retry": {
+    "description": "Action to repeat a failed operation, such as a firmware check, firmware installation, or device-setting read."
+  },
   "emulator": "Emulator",
+  "@emulator": {
+    "description": "Home operating-mode choice in which Chameleon emulates stored HF and LF tags."
+  },
   "reader": "Reader",
+  "@reader": {
+    "description": "Home operating-mode choice in which Chameleon reads or writes physical tags; unavailable on Chameleon Lite."
+  },
   "active_slot": "Active slot",
+  "@active_slot": {
+    "description": "Home slot tooltip or accessibility label identifying the device-confirmed active physical slot."
+  },
   "activating": "Activating",
+  "@activating": {
+    "description": "Home slot tooltip or accessibility label while a slot activation command is pending device confirmation."
+  },
   "loading": "Loading",
+  "@loading": {
+    "description": "Status or accessibility label while requested data is being loaded."
+  },
   "enabled_status_unknown": "Enabled status unknown",
+  "@enabled_status_unknown": {
+    "description": "Home slot tooltip or accessibility label when a tag type is known but its enabled state could not be confirmed."
+  },
   "dashed_outline": "Dashed outline",
+  "@dashed_outline": {
+    "description": "Home slot tooltip explaining the dashed frequency mark used for an unknown enabled state."
+  },
   "refresh_slot_status": "Refresh slot status",
+  "@refresh_slot_status": {
+    "description": "Home action and accessibility label for re-reading the physical device slot configuration."
+  },
   "slot_grid_description": "Eight device slots. HF is the top row and LF is the bottom row.",
+  "@slot_grid_description": {
+    "description": "Home accessibility description of the eight physical slots and the vertical order of their HF and LF marks."
+  },
   "slot_layout": "Slot layout",
+  "@slot_layout": {
+    "description": "Home control label for the application-wide presentation layout of the eight physical slots."
+  },
   "slot_layout_eight_across": "Eight slots in one row",
+  "@slot_layout_eight_across": {
+    "description": "Home layout choice displaying all eight physical slots in one horizontal row."
+  },
   "slot_layout_two_by_four": "Two rows of four slots",
+  "@slot_layout_two_by_four": {
+    "description": "Home layout choice displaying the eight physical slots in two rows of four."
+  },
   "slot_reorder_unsupported_firmware": "Slot reordering is not supported by this firmware.",
   "@slot_reorder_unsupported_firmware": {
     "description": "Short explanation shown when connected firmware lacks atomic whole-slot reordering"
@@ -941,32 +1076,62 @@
   "slot_reorder_source_with_destination": "Reorder source, destination slot {slot}",
   "@slot_reorder_source_with_destination": {
     "description": "Screen-reader state for a dragged source with a current destination",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_destination": "Reorder destination, source slot {slot}",
   "@slot_reorder_destination": {
     "description": "Screen-reader state for a drag destination",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_pending_source": "Reorder pending: source, destination slot {slot}",
   "@slot_reorder_pending_source": {
     "description": "Screen-reader state for the source of a pending whole-slot swap",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_pending_destination": "Reorder pending: destination, source slot {slot}",
   "@slot_reorder_pending_destination": {
     "description": "Screen-reader state for the destination of a pending whole-slot swap",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_move_before": "Move before slot {slot}",
   "@slot_reorder_move_before": {
     "description": "Screen-reader action that swaps a slot bundle with its preceding visual neighbor",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_move_after": "Move after slot {slot}",
   "@slot_reorder_move_after": {
     "description": "Screen-reader action that swaps a slot bundle with its following visual neighbor",
-    "placeholders": {"slot": {"type": "int", "example": "2"}}
+    "placeholders": {
+      "slot": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "slot_reorder_ambiguous": "The slot swap could not be confirmed. Check the slot contents before retrying.",
   "@slot_reorder_ambiguous": {
