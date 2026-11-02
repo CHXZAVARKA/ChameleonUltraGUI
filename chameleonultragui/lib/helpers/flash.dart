@@ -100,11 +100,40 @@ void validateFiles(Uint8List dat, Uint8List bin) {
   }
 }
 
+/// The connection selected before a download or file dialog starts.
+class _FirmwareTarget {
+  _FirmwareTarget(this.appState)
+      : connector = appState.connector!,
+        communicator = appState.communicator,
+        sessionToken = appState.connectedDeviceSessionToken,
+        connected = appState.connector!.connected,
+        isDfu = appState.connector!.isDFU;
+
+  final ChameleonGUIState appState;
+  final AbstractSerial connector;
+  final ChameleonCommunicator? communicator;
+  final Object sessionToken;
+  final bool connected;
+  final bool isDfu;
+
+  void requireCurrent() {
+    if (!identical(appState.connector, connector) ||
+        !identical(appState.communicator, communicator) ||
+        !identical(appState.connectedDeviceSessionToken, sessionToken) ||
+        connector.connected != connected ||
+        connector.isDFU != isDfu) {
+      throw StateError('Firmware target connection changed');
+    }
+  }
+}
+
 Future<void> flashFirmware(ChameleonGUIState appState,
     {ScaffoldMessengerState? scaffoldMessenger,
     ChameleonDevice? device,
     FirmwareChannel? channel,
     bool enterDFU = true}) async {
+  final target = _FirmwareTarget(appState);
+  target.requireCurrent();
   Uint8List applicationDat, applicationBin;
   final selectedChannel = resolveFirmwareChannel(
     appState.sharedPreferencesProvider,
@@ -112,14 +141,16 @@ Future<void> flashFirmware(ChameleonGUIState appState,
   );
 
   Uint8List content = await fetchFirmware(
-    (device != null) ? device : appState.connector!.device,
+    device ?? target.connector.device,
     channel: selectedChannel,
   );
+  target.requireCurrent();
 
   (applicationDat, applicationBin) = await unpackFirmware(content);
+  target.requireCurrent();
 
-  await flashFile(appState.communicator, appState, applicationDat,
-      applicationBin, (progress) => appState.setProgressBar(progress / 100),
+  await flashFile(target.communicator, appState, applicationDat, applicationBin,
+      (progress) => appState.setProgressBar(progress / 100),
       firmwareZip: content,
       scaffoldMessenger: scaffoldMessenger,
       enterDFU: enterDFU);
@@ -127,19 +158,23 @@ Future<void> flashFirmware(ChameleonGUIState appState,
 
 Future<void> flashFirmwareZip(ChameleonGUIState appState,
     {ScaffoldMessengerState? scaffoldMessenger, bool enterDFU = true}) async {
+  final target = _FirmwareTarget(appState);
   Uint8List applicationDat, applicationBin;
 
   PlatformFile? result = await FilePicker.pickFile();
+  target.requireCurrent();
 
   if (result != null) {
     File file = File(result.path!);
 
-    (applicationDat, applicationBin) =
-        await unpackFirmware(await file.readAsBytes());
+    final content = await file.readAsBytes();
+    target.requireCurrent();
+    (applicationDat, applicationBin) = await unpackFirmware(content);
+    target.requireCurrent();
 
-    await flashFile(appState.communicator, appState, applicationDat,
+    await flashFile(target.communicator, appState, applicationDat,
         applicationBin, (progress) => appState.setProgressBar(progress / 100),
-        firmwareZip: await file.readAsBytes(),
+        firmwareZip: content,
         scaffoldMessenger: scaffoldMessenger,
         enterDFU: enterDFU);
   }
@@ -154,6 +189,22 @@ Future<void> flashFile(
     {bool enterDFU = true,
     List<int> firmwareZip = const [],
     ScaffoldMessengerState? scaffoldMessenger}) async {
+  final target = _FirmwareTarget(appState);
+  target.requireCurrent();
+  if (!identical(connection, target.communicator) ||
+      (enterDFU && (!target.connected || target.isDfu || connection == null))) {
+    throw StateError('Firmware target is not ready for DFU');
+  }
+  final connector = target.connector;
+  void requireOwner() {
+    if (!identical(appState.connector, connector) ||
+        (appState.communicator != null &&
+            !identical(appState.communicator, connection)) ||
+        connector.pendingConnection) {
+      throw StateError('Firmware target connection changed');
+    }
+  }
+
   validateFiles(applicationDat, applicationBin);
 
   // Flashing easter egg
@@ -166,23 +217,42 @@ Future<void> flashFile(
 
   if (enterDFU) {
     await connection?.enterDFUMode();
-    await appState.connector?.performDisconnect();
+    requireOwner();
+    if (connector.connected &&
+        !connector.isDFU &&
+        !identical(appState.communicator, connection)) {
+      throw StateError('Firmware target connection changed');
+    }
+    await connector.performDisconnect();
+    requireOwner();
   }
 
-  if (appState.connector!.isOpen) {
-    await appState.connector!.performDisconnect();
+  if (connector.isOpen) {
+    await connector.performDisconnect();
+    requireOwner();
+  }
+
+  final discoveryToken = appState.connectedDeviceSessionToken;
+  void requireDiscoverySession() {
+    requireOwner();
+    if (!identical(appState.connectedDeviceSessionToken, discoveryToken)) {
+      throw StateError('Firmware discovery connection changed');
+    }
   }
 
   if (Platform.isAndroid) {
     // BLE appears bit earlier than USB
     await asyncSleep(1000);
+    requireDiscoverySession();
   }
 
   List<Chameleon> chameleons = [];
 
   while (chameleons.isEmpty) {
     await asyncSleep(250);
-    chameleons = await appState.connector!.availableChameleons(true);
+    requireDiscoverySession();
+    chameleons = await connector.availableChameleons(true);
+    requireDiscoverySession();
   }
 
   var toFlash = chameleons[0];
@@ -208,21 +278,45 @@ Future<void> flashFile(
     }
   }
 
-  await appState.connector!.connectDiscoveredDevice(toFlash);
+  requireDiscoverySession();
+  final connected = await connector.connectDiscoveredDevice(toFlash);
+  requireOwner();
+  if (!connected ||
+      !connector.connected ||
+      !connector.isDFU ||
+      connector.activeDevicePort != toFlash.port) {
+    throw StateError('Unable to connect to the selected DFU device');
+  }
+  final dfuToken = appState.connectedDeviceSessionToken;
+  bool isDfuCurrent() =>
+      identical(appState.connector, connector) &&
+      identical(appState.connectedDeviceSessionToken, dfuToken) &&
+      connector.connected &&
+      connector.isDFU &&
+      connector.activeDevicePort == toFlash.port;
 
   if (scaffoldMessenger != null) {
     scaffoldMessenger.removeCurrentSnackBar();
   }
 
   var dfu = DFUCommunicator(appState.log!,
-      port: appState.connector, viaBLE: toFlash.type == ConnectionType.ble);
+      port: connector,
+      viaBLE: toFlash.type == ConnectionType.ble,
+      isConnectionCurrent: isDfuCurrent);
   appState.changesMade();
   await dfu.setPRN();
   await dfu.getMTU();
-  await dfu.flashFirmware(0x01, applicationDat, callback);
-  await dfu.flashFirmware(0x02, applicationBin, callback);
+  void reportProgress(int progress) {
+    if (isDfuCurrent()) callback(progress);
+  }
+
+  await dfu.flashFirmware(0x01, applicationDat, reportProgress);
+  await dfu.flashFirmware(0x02, applicationBin, reportProgress);
+  if (!isDfuCurrent()) throw StateError('Firmware connection changed');
   appState.log!.i("Firmware flashed!");
-  appState.connector!.performDisconnect();
+  await connector.performDisconnect();
   await asyncSleep(500); // allow exit DFU mode
-  appState.changesMade();
+  if (identical(appState.connector, connector) && !connector.connected) {
+    appState.changesMade();
+  }
 }

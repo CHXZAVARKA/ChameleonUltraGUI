@@ -137,7 +137,13 @@ class DFUCommunicator {
 
   final Logger log;
 
-  DFUCommunicator(this.log, {AbstractSerial? port, bool viaBLE = false}) {
+  final bool Function()? _isConnectionCurrent;
+
+  DFUCommunicator(this.log,
+      {AbstractSerial? port,
+      bool viaBLE = false,
+      bool Function()? isConnectionCurrent})
+      : _isConnectionCurrent = isConnectionCurrent {
     isBLE = viaBLE;
     if (port != null) {
       open(port);
@@ -148,7 +154,14 @@ class DFUCommunicator {
     _serialInstance = port;
   }
 
+  void _requireConnection() {
+    if (_isConnectionCurrent?.call() == false) {
+      throw StateError('DFU connection is no longer current');
+    }
+  }
+
   Future<Uint8List?> sendCmd(DFUCommand cmd, Uint8List data) async {
+    _requireConnection();
     var packet = Uint8List.fromList([cmd.value, ...data]);
     if (!isBLE) {
       packet = Slip.encode(packet);
@@ -162,16 +175,20 @@ class DFUCommunicator {
 
     if (!_serialInstance!.isOpen) {
       await _serialInstance!.open();
+      _requireConnection();
       _serialInstance!.isOpen = true;
     }
 
     // we initialize completer each time in DFU, because it being recreated on each message
     await _serialInstance!.registerCallback(responseCompleter?.complete);
+    _requireConnection();
 
     log.d("Sending: ${bytesToHex(packet)}");
     await _serialInstance!.write(packet);
+    _requireConnection();
 
     List<int>? readBuffer = await responseCompleter?.future;
+    _requireConnection();
 
     if (readBuffer == null || readBuffer.isEmpty) {
       return null;
@@ -341,6 +358,7 @@ class DFUCommunicator {
   }
 
   Future<void> delayedSend(Uint8List packet) async {
+    _requireConnection();
     // Windows has some issues with transmitting data
     // We work around it by sending message by parts with delay
     var offsetSize = 128;
@@ -350,18 +368,22 @@ class DFUCommunicator {
 
     if (Platform.isWindows || Platform.isMacOS || isBLE) {
       for (var offset = 0; offset < packet.length; offset += offsetSize) {
+        _requireConnection();
         await _serialInstance!.write(
             packet.sublist(
                 offset, offset + min(offsetSize, packet.length - offset)),
             firmware: true);
+        _requireConnection();
       }
 
       if (isBLE && (Platform.isIOS || Platform.isMacOS)) {
         await asyncSleep(250);
+        _requireConnection();
       }
     } else {
       // Other OS: send as is
       await _serialInstance!.write(packet, firmware: true);
+      _requireConnection();
     }
   }
 }
