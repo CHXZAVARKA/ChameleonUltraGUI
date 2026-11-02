@@ -202,7 +202,8 @@ class _StandardMifareClassicWritePanelState
       if (!mounted) {
         return;
       }
-      final imported = importMifareClassicImage(contents);
+      final imported =
+          importMifareClassicImage(contents, fileName: picked.name);
       _selectImage(
         imported.bytes,
         picked.name,
