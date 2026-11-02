@@ -26,6 +26,8 @@ class ChameleonCommunicator {
   int _connectionGeneration = 0;
   bool _invalidated = false;
 
+  bool get isInvalidated => _invalidated;
+
   final Logger log;
 
   ChameleonCommunicator(this.log, {AbstractSerial? port}) {
