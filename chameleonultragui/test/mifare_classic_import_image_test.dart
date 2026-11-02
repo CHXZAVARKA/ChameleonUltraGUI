@@ -80,6 +80,19 @@ void main() {
 
   Uint8List text(String source) => Uint8List.fromList(utf8.encode(source));
 
+  test('raw BIN accepts JSON-like UID prefixes for every supported geometry',
+      () {
+    for (final size in [320, 1024, 1152, 2048, 4096]) {
+      for (final firstByte in [0x7b, 0x5b]) {
+        final raw = Uint8List(size)
+          ..setRange(0, 8, [firstByte, 1, 2, 3, firstByte, 0x18, 0, 2]);
+        final imported = importMifareClassicImage(raw);
+        expect(imported.bytes, orderedEquals(raw));
+        expect(imported.geometry.imageSize, size);
+      }
+    }
+  });
+
   test('imports every existing single-card MIFARE Classic format', () {
     final sources = <String, Uint8List>{
       'raw BIN': Uint8List.fromList(blocks.expand((block) => block).toList()),
@@ -109,6 +122,30 @@ void main() {
       () => importMifareClassicImage(text(paddedFolder)),
       throwsFormatException,
     );
+  });
+
+  test('an explicit BIN file is binary even when all bytes look like JSON', () {
+    final raw = text('{"format":"chameleon-ultra-gui-folder"}'.padRight(320));
+    final imported = importMifareClassicImage(raw, fileName: 'backup.BIN');
+    expect(imported.bytes, orderedEquals(raw));
+    expect(
+      () => importMifareClassicImage(raw.sublist(1), fileName: 'backup.bin'),
+      throwsFormatException,
+    );
+  });
+
+  test('declared text files never fall back to raw BIN on malformed input', () {
+    for (final name in ['broken.json', 'broken.nfc', 'broken.txt']) {
+      for (final raw in [
+        Uint8List(320)..[0] = 0x7b,
+        Uint8List(320)..[0] = 0xff
+      ]) {
+        expect(
+          () => importMifareClassicImage(raw, fileName: name),
+          throwsFormatException,
+        );
+      }
+    }
   });
 
   test('native JSON requires proven completeness and exact Classic data', () {

@@ -15,7 +15,26 @@ class MifareClassicImportedImage {
   }) : bytes = Uint8List.fromList(bytes);
 }
 
-MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
+MifareClassicImportedImage importMifareClassicImage(
+  Uint8List contents, {
+  String? fileName,
+}) {
+  final geometry = MifareClassicGeometry.fromImageSize(contents.length);
+  final normalizedName = fileName?.toLowerCase();
+  final explicitBinary = normalizedName?.endsWith('.bin') ?? false;
+  final explicitText = ['.json', '.nfc', '.txt']
+      .any((extension) => normalizedName?.endsWith(extension) ?? false);
+  // Binary UIDs can begin with '{' or '[' and still be valid UTF8. A declared
+  // BIN is never text; control bytes also identify binary data in auto mode.
+  final binaryControlBytes = contents.any(
+      (byte) => byte < 0x20 && byte != 0x09 && byte != 0x0a && byte != 0x0d);
+  if (explicitBinary ||
+      (!explicitText && geometry != null && binaryControlBytes)) {
+    if (geometry == null) {
+      throw const FormatException('Unsupported binary card dump size');
+    }
+    return MifareClassicImportedImage(bytes: contents, geometry: geometry);
+  }
   String? source;
   dynamic decodedJson;
   var isJson = false;
@@ -67,8 +86,7 @@ MifareClassicImportedImage importMifareClassicImage(Uint8List contents) {
     }
   }
 
-  final geometry = MifareClassicGeometry.fromImageSize(contents.length);
-  if (geometry == null) {
+  if (explicitText || geometry == null) {
     throw const FormatException('Unsupported card dump format');
   }
   return MifareClassicImportedImage(bytes: contents, geometry: geometry);
