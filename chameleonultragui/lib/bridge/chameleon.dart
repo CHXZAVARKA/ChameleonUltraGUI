@@ -893,7 +893,10 @@ class ChameleonCommunicator {
   }
 
   Future<void> saveSettings() async {
-    await sendCmd(ChameleonCommand.saveSettings);
+    final response = await sendCmd(ChameleonCommand.saveSettings);
+    if (response == null || response.status != ChameleonStatus.success) {
+      throw StateError('Settings were not saved: status ${response?.status}');
+    }
   }
 
   Future<void> resetSettings() async {
