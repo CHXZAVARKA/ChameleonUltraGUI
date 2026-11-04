@@ -1,3 +1,8 @@
+import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+export 'package:chameleonultragui/helpers/slot_dump.dart'
+    show MifareClassicSlotDump, readMifareClassicSlotDump;
+
 import 'dart:convert';
 
 import 'package:chameleonultragui/bridge/chameleon.dart';
@@ -5,8 +10,7 @@ import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/toggle_buttons.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
-import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
-import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/slot_dump.dart';
 import 'package:flutter/material.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -17,60 +21,6 @@ import 'package:file_picker/file_picker.dart';
 // Localizations
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
-class MifareClassicSlotDump {
-  final List<Uint8List> blocks;
-  final bool complete;
-
-  const MifareClassicSlotDump({
-    required this.blocks,
-    required this.complete,
-  });
-}
-
-Future<MifareClassicSlotDump> readMifareClassicSlotDump({
-  required int blockCount,
-  required Future<Uint8List> Function(int firstBlock, int blockCount)
-      readBlocks,
-  int maxBlocksPerRead = 16,
-}) async {
-  if (blockCount <= 0 || maxBlocksPerRead <= 0) {
-    throw ArgumentError('Block counts must be positive');
-  }
-
-  final binData = Uint8List(blockCount * 16);
-  var complete = true;
-
-  for (var firstBlock = 0;
-      firstBlock < blockCount;
-      firstBlock += maxBlocksPerRead) {
-    final remainingBlocks = blockCount - firstBlock;
-    final requestedBlocks =
-        remainingBlocks < maxBlocksPerRead ? remainingBlocks : maxBlocksPerRead;
-    final result = await readBlocks(firstBlock, requestedBlocks);
-    final expectedLength = requestedBlocks * 16;
-
-    if (result.length != expectedLength) {
-      complete = false;
-    }
-
-    final copyLength =
-        result.length < expectedLength ? result.length : expectedLength;
-    final destinationOffset = firstBlock * 16;
-    binData.setRange(
-      destinationOffset,
-      destinationOffset + copyLength,
-      result,
-    );
-  }
-
-  final blocks = <Uint8List>[];
-  for (var offset = 0; offset < binData.length; offset += 16) {
-    blocks.add(Uint8List.fromList(binData.sublist(offset, offset + 16)));
-  }
-
-  return MifareClassicSlotDump(blocks: blocks, complete: complete);
-}
-
 void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
   target.uid = source.uid;
   target.tag = source.tag;
@@ -80,7 +30,7 @@ void overwriteCardSaveFromSlot(CardSave target, CardSave source) {
   target.data = source.data;
   target.extraData.mifareClassicDumpComplete = isMifareClassic(source.tag)
       ? source.extraData.mifareClassicDumpComplete == true &&
-          MifareClassicGeometry.fromSavedCardData(source) != null
+            MifareClassicGeometry.fromSavedCardData(source) != null
       : null;
 }
 
@@ -94,12 +44,13 @@ class SlotExportMenu extends StatefulWidget {
   final EnabledSlotInfo enabledSlotInfo;
   final SlotTypes slotTypes;
 
-  const SlotExportMenu(
-      {super.key,
-      required this.slot,
-      required this.names,
-      required this.enabledSlotInfo,
-      required this.slotTypes});
+  const SlotExportMenu({
+    super.key,
+    required this.slot,
+    required this.names,
+    required this.enabledSlotInfo,
+    required this.slotTypes,
+  });
 
   @override
   SlotExportMenuState createState() => SlotExportMenuState();
@@ -172,6 +123,16 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           name: widget.names.lf,
           tag: widget.slotTypes.lf,
         );
+      } else if (widget.slotTypes.lf == TagType.jablotron) {
+        final uid = await read(communicator.getJablotronEmulatorID);
+        if (uid == null) {
+          return null;
+        }
+        return CardSave(
+          uid: uid.toString(),
+          name: widget.names.lf,
+          tag: widget.slotTypes.lf,
+        );
       } else if (widget.slotTypes.lf == TagType.pac) {
         final uid = await read(communicator.getPacEmulatorID);
         if (uid == null) {
@@ -209,13 +170,25 @@ class SlotExportMenuState extends State<SlotExportMenu> {
         return null;
       }
 
+      if (widget.slotTypes.hf == TagType.hf14a4) {
+        return CardSave(
+          uid: bytesToHexSpace(data.uid),
+          name: widget.names.hf,
+          sak: data.sak,
+          atqa: data.atqa,
+          ats: data.ats,
+          tag: TagType.hf14a4,
+          data: const [],
+        );
+      }
       if (isMifareUltralight(widget.slotTypes.hf)) {
         int pageCount = mfUltralightGetPagesCount(widget.slotTypes.hf);
         List<Uint8List> pages = [];
 
         for (int page = 0; page < pageCount; page++) {
-          final pageData =
-              await read(() => communicator.mf0EmulatorReadPages(page, 1));
+          final pageData = await read(
+            () => communicator.mf0EmulatorReadPages(page, 1),
+          );
           if (pageData == null) {
             return null;
           }
@@ -245,8 +218,9 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           int counterCount = mfUltralightGetCounterCount(widget.slotTypes.hf);
 
           for (int i = 0; i < counterCount; i++) {
-            final counterData =
-                await read(() => communicator.mf0EmulatorGetCounterData(i));
+            final counterData = await read(
+              () => communicator.mf0EmulatorGetCounterData(i),
+            );
             if (counterData == null) {
               return null;
             }
@@ -270,7 +244,8 @@ class SlotExportMenuState extends State<SlotExportMenu> {
         );
       } else {
         int blockCount = mfClassicGetBlockCount(
-            chameleonTagTypeGetMfClassicType(widget.slotTypes.hf));
+          chameleonTagTypeGetMfClassicType(widget.slotTypes.hf),
+        );
         late final MifareClassicSlotDump dump;
         try {
           dump = await readMifareClassicSlotDump(
@@ -300,9 +275,7 @@ class SlotExportMenuState extends State<SlotExportMenu> {
           ats: data.ats,
           tag: widget.slotTypes.hf,
           data: dump.blocks,
-          extraData: CardSaveExtra(
-            mifareClassicDumpComplete: dump.complete,
-          ),
+          extraData: CardSaveExtra(mifareClassicDumpComplete: dump.complete),
         );
       }
     }
@@ -311,13 +284,17 @@ class SlotExportMenuState extends State<SlotExportMenu> {
   }
 
   Future<void> onTap(
-      CardSave card, dynamic close, AppLocalizations localizations) async {
+    CardSave card,
+    dynamic close,
+    AppLocalizations localizations,
+  ) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
     close(context, card.name);
 
     CardSave modify = card;
-    CardSave? newCard =
-        await rebuildCardSaveFromSlot(chameleonTagToFrequency(card.tag));
+    CardSave? newCard = await rebuildCardSaveFromSlot(
+      chameleonTagToFrequency(card.tag),
+    );
 
     if (newCard == null) {
       return;
@@ -355,19 +332,20 @@ class SlotExportMenuState extends State<SlotExportMenu> {
 
     if (exportFrequency == TagFrequency.unknown) {
       setState(() {
-        exportFrequency =
-            buttons[0] == localizations.hf ? TagFrequency.hf : TagFrequency.lf;
+        exportFrequency = buttons[0] == localizations.hf
+            ? TagFrequency.hf
+            : TagFrequency.lf;
       });
     }
 
     return AlertDialog(
       title: Text(localizations.export_slot_data),
       content: SingleChildScrollView(
-          child: Column(
-        children: [
-          Text(localizations.frequency_to_export),
-          const SizedBox(height: 8),
-          ToggleButtonsWrapper(
+        child: Column(
+          children: [
+            Text(localizations.frequency_to_export),
+            const SizedBox(height: 8),
+            ToggleButtonsWrapper(
               items: buttons,
               selectedValue: 0,
               onChange: (int index) async {
@@ -376,9 +354,11 @@ class SlotExportMenuState extends State<SlotExportMenu> {
                       ? TagFrequency.hf
                       : TagFrequency.lf;
                 });
-              }),
-        ],
-      )),
+              },
+            ),
+          ],
+        ),
+      ),
       actions: [
         ElevatedButton(
           onPressed: () async {
@@ -407,8 +387,9 @@ class SlotExportMenuState extends State<SlotExportMenu> {
               await showDialog(
                 context: context,
                 builder: (BuildContext dialogContext) {
-                  TextEditingController controller =
-                      TextEditingController(text: tag.name);
+                  TextEditingController controller = TextEditingController(
+                    text: tag.name,
+                  );
                   return AlertDialog(
                     title: Text(localizations.enter_name_of_card),
                     content: TextField(controller: controller),
@@ -416,8 +397,8 @@ class SlotExportMenuState extends State<SlotExportMenu> {
                       ElevatedButton(
                         onPressed: () async {
                           tag.name = controller.text;
-                          var tags =
-                              appState.sharedPreferencesProvider.getCards();
+                          var tags = appState.sharedPreferencesProvider
+                              .getCards();
                           tags.add(tag);
                           appState.sharedPreferencesProvider.setCards(tags);
                           if (dialogContext.mounted) {
@@ -451,11 +432,12 @@ class SlotExportMenuState extends State<SlotExportMenu> {
             showSearch<String>(
               context: context,
               delegate: CardSearchDelegate(
-                  cards: tags,
-                  onTap: onTap,
-                  filter: exportFrequency == TagFrequency.hf
-                      ? SearchFilter.hf
-                      : SearchFilter.lf),
+                cards: tags,
+                onTap: onTap,
+                filter: exportFrequency == TagFrequency.hf
+                    ? SearchFilter.hf
+                    : SearchFilter.lf,
+              ),
             );
           },
           child: Text(localizations.update_saved_card),

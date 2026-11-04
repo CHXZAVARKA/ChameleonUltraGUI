@@ -24,14 +24,15 @@ class SlotEditMenu extends StatefulWidget {
   final TagFrequency frequency;
   final int slot;
 
-  const SlotEditMenu(
-      {super.key,
-      this.status,
-      required this.name,
-      required this.isEnabled,
-      required this.slotType,
-      required this.frequency,
-      required this.slot});
+  const SlotEditMenu({
+    super.key,
+    this.status,
+    required this.name,
+    required this.isEnabled,
+    required this.slotType,
+    required this.frequency,
+    required this.slot,
+  });
 
   @override
   SlotEditMenuState createState() => SlotEditMenuState();
@@ -75,7 +76,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     if (_statusCaptured) {
       return;
     }
-    _status = widget.status ??
+    _status =
+        widget.status ??
         context.read<ChameleonGUIState>().connectedDeviceStatus;
     _statusCaptured = true;
   }
@@ -140,6 +142,13 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           );
           uidController.text = bytesToHexSpace(vikingCard.uid);
         } catch (_) {}
+      } else if (selectedType! == TagType.jablotron) {
+        try {
+          JablotronCard jablotronCard = await mutation.run(
+            (communicator) => communicator.getJablotronEmulatorID(),
+          );
+          uidController.text = bytesToHexSpace(jablotronCard.uid);
+        } catch (_) {}
       } else if (selectedType! == TagType.pac) {
         try {
           PacCard pacCard = await mutation.run(
@@ -162,7 +171,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           uidController.text = bytesToHexSpace(idteckCard.uid);
         } catch (_) {}
       } else if (isMifareClassic(selectedType!) ||
-          isMifareUltralight(selectedType!)) {
+          isMifareUltralight(selectedType!) ||
+          selectedType == TagType.hf14a4) {
         try {
           CardData data = await mutation.run(
             (communicator) => communicator.mf1GetAntiCollData(),
@@ -190,7 +200,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
             } catch (_) {
               mf1PrngType = null;
             }
-          } else if (isMifareUltralight(selectedType!)) {
+          } else if (isMifareUltralight(selectedType!) ||
+              selectedType == TagType.hf14a4) {
             Uint8List version = await mutation.run(
               (communicator) => communicator.mf0EmulatorGetVersionData(),
             );
@@ -264,9 +275,8 @@ class SlotEditMenuState extends State<SlotEditMenu> {
 
       if (isEM410X(selectedType!)) {
         await mutation.run(
-          (communicator) => communicator.setEM410XEmulatorID(
-            hexToBytes(uidController.text),
-          ),
+          (communicator) =>
+              communicator.setEM410XEmulatorID(hexToBytes(uidController.text)),
         );
       } else if (selectedType! == TagType.hidProx) {
         try {
@@ -291,6 +301,10 @@ class SlotEditMenuState extends State<SlotEditMenu> {
             ),
           );
         } catch (_) {}
+      } else if (selectedType == TagType.jablotron) {
+        await mutation.run(
+          (c) => c.setJablotronEmulatorID(hexToBytes(uidController.text)),
+        );
       } else if (selectedType! == TagType.pac) {
         await mutation.run(
           (communicator) => communicator.setPacEmulatorID(
@@ -310,17 +324,20 @@ class SlotEditMenuState extends State<SlotEditMenu> {
           ),
         );
       } else if (isMifareClassic(selectedType!) ||
-          isMifareUltralight(selectedType!)) {
+          isMifareUltralight(selectedType!) ||
+          selectedType == TagType.hf14a4) {
         var cardData = CardData(
-            uid: hexToBytes(uidController.text),
-            atqa: hexToBytes(atqaController.text),
-            sak: bytesToU8(hexToBytes(sakController.text)),
-            ats: hexToBytes(atsController.text));
+          uid: hexToBytes(uidController.text),
+          atqa: hexToBytes(atqaController.text),
+          sak: bytesToU8(hexToBytes(sakController.text)),
+          ats: hexToBytes(atsController.text),
+        );
         await mutation.run(
           (communicator) => communicator.setMf1AntiCollision(cardData),
         );
 
-        if (isMifareUltralight(selectedType!)) {
+        if (isMifareUltralight(selectedType!) ||
+            selectedType == TagType.hf14a4) {
           await mutation.run(
             (communicator) => communicator.mf0EmulatorSetVersionData(
               hexToBytes(ultralightVersionController.text),
@@ -363,9 +380,7 @@ class SlotEditMenuState extends State<SlotEditMenu> {
     Future<void> Function(ChameleonCommunicator communicator) command,
   ) async {
     final status = _requireCurrentStatus();
-    await status.mutateSlots(
-      (mutation) => mutation.run(command),
-    );
+    await status.mutateSlots((mutation) => mutation.run(command));
   }
 
   @override
@@ -390,17 +405,16 @@ class SlotEditMenuState extends State<SlotEditMenu> {
               const SizedBox(height: 8),
               DropdownButton<TagType>(
                 value: selectedType,
-                items: [
-                  ...getTagTypesByFrequency(widget.frequency),
-                  TagType.unknown
-                ].map<DropdownMenuItem<TagType>>((TagType type) {
-                  return DropdownMenuItem<TagType>(
-                    value: type,
-                    child: Text(
-                      chameleonTagToString(type, localizations),
-                    ),
-                  );
-                }).toList(),
+                items:
+                    [
+                      ...getTagTypesByFrequency(widget.frequency),
+                      TagType.unknown,
+                    ].map<DropdownMenuItem<TagType>>((TagType type) {
+                      return DropdownMenuItem<TagType>(
+                        value: type,
+                        child: Text(chameleonTagToString(type, localizations)),
+                      );
+                    }).toList(),
                 onChanged: (TagType? newValue) {
                   if (newValue! != TagType.unknown) {
                     setState(() {
@@ -410,406 +424,467 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                 },
               ),
               FutureBuilder(
-                  future: connectionChanged ? null : updateInfo(),
-                  builder: (BuildContext context, AsyncSnapshot snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting &&
-                        !(previousTagType == selectedType ||
-                            isMifareClassic(previousTagType) &&
-                                isMifareClassic(selectedType!))) {
-                      return const Column(
-                          children: [CircularProgressIndicator()]);
-                    } else if (snapshot.hasError) {
-                      return ErrorPage(errorMessage: snapshot.error.toString());
-                    } else {
-                      return Visibility(
-                          visible: selectedType != TagType.unknown,
-                          child: Column(children: [
-                            Column(children: [
+                future: connectionChanged ? null : updateInfo(),
+                builder: (BuildContext context, AsyncSnapshot snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !(previousTagType == selectedType ||
+                          isMifareClassic(previousTagType) &&
+                              isMifareClassic(selectedType!))) {
+                    return const Column(
+                      children: [CircularProgressIndicator()],
+                    );
+                  } else if (snapshot.hasError) {
+                    return ErrorPage(errorMessage: snapshot.error.toString());
+                  } else {
+                    return Visibility(
+                      visible: selectedType != TagType.unknown,
+                      child: Column(
+                        children: [
+                          Column(
+                            children: [
                               const SizedBox(height: 8),
                               TextFormField(
                                 controller: uidController,
                                 decoration: InputDecoration(
-                                    labelText: localizations.uid,
-                                    hintText: localizations
-                                        .enter_something(localizations.uid)),
+                                  labelText: localizations.uid,
+                                  hintText: localizations.enter_something(
+                                    localizations.uid,
+                                  ),
+                                ),
                                 inputFormatters: hexFormatter,
                                 validator: (value) => validateUid(
-                                    value,
-                                    localizations,
-                                    selectedType ?? widget.slotType),
+                                  value,
+                                  localizations,
+                                  selectedType ?? widget.slotType,
+                                ),
                               ),
                               Visibility(
-                                  visible: chameleonTagToFrequency(
-                                          selectedType ?? widget.slotType) !=
-                                      TagFrequency.lf,
-                                  child: Column(
-                                    children: [
-                                      const SizedBox(height: 20),
-                                      TextFormField(
-                                        controller: sakController,
-                                        decoration: InputDecoration(
-                                            labelText: localizations.sak,
-                                            hintText:
-                                                localizations.enter_something(
-                                                    localizations.sak)),
-                                        inputFormatters: hexFormatter,
-                                        validator: (value) =>
-                                            chameleonTagToFrequency(
-                                                        selectedType ??
-                                                            widget.slotType) ==
-                                                    TagFrequency.lf
-                                                ? null
-                                                : validateHex(
-                                                    value, localizations,
-                                                    exactBytes: 1,
-                                                    fieldName:
-                                                        localizations.sak,
-                                                    required: true),
+                                visible:
+                                    chameleonTagToFrequency(
+                                      selectedType ?? widget.slotType,
+                                    ) !=
+                                    TagFrequency.lf,
+                                child: Column(
+                                  children: [
+                                    const SizedBox(height: 20),
+                                    TextFormField(
+                                      controller: sakController,
+                                      decoration: InputDecoration(
+                                        labelText: localizations.sak,
+                                        hintText: localizations.enter_something(
+                                          localizations.sak,
+                                        ),
                                       ),
-                                      const SizedBox(height: 20),
-                                      TextFormField(
-                                        controller: atqaController,
-                                        decoration: InputDecoration(
-                                            labelText: localizations.atqa,
-                                            hintText:
-                                                localizations.enter_something(
-                                                    localizations.atqa)),
-                                        inputFormatters: hexFormatter,
-                                        validator: (value) =>
-                                            chameleonTagToFrequency(
-                                                        selectedType ??
-                                                            widget.slotType) ==
-                                                    TagFrequency.lf
-                                                ? null
-                                                : validateHex(
-                                                    value, localizations,
-                                                    exactBytes: 2,
-                                                    fieldName:
-                                                        localizations.atqa,
-                                                    required: true),
+                                      inputFormatters: hexFormatter,
+                                      validator: (value) =>
+                                          chameleonTagToFrequency(
+                                                selectedType ?? widget.slotType,
+                                              ) ==
+                                              TagFrequency.lf
+                                          ? null
+                                          : validateHex(
+                                              value,
+                                              localizations,
+                                              exactBytes: 1,
+                                              fieldName: localizations.sak,
+                                              required: true,
+                                            ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextFormField(
+                                      controller: atqaController,
+                                      decoration: InputDecoration(
+                                        labelText: localizations.atqa,
+                                        hintText: localizations.enter_something(
+                                          localizations.atqa,
+                                        ),
                                       ),
+                                      inputFormatters: hexFormatter,
+                                      validator: (value) =>
+                                          chameleonTagToFrequency(
+                                                selectedType ?? widget.slotType,
+                                              ) ==
+                                              TagFrequency.lf
+                                          ? null
+                                          : validateHex(
+                                              value,
+                                              localizations,
+                                              exactBytes: 2,
+                                              fieldName: localizations.atqa,
+                                              required: true,
+                                            ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextFormField(
+                                      controller: atsController,
+                                      decoration: InputDecoration(
+                                        labelText: localizations.ats,
+                                        hintText: localizations.enter_something(
+                                          localizations.ats,
+                                        ),
+                                      ),
+                                      inputFormatters: hexFormatter,
+                                      validator: (value) =>
+                                          validateHex(value, localizations),
+                                    ),
+                                    if (isMifareUltralight(selectedType!)) ...[
                                       const SizedBox(height: 20),
                                       TextFormField(
-                                          controller: atsController,
-                                          decoration: InputDecoration(
-                                              labelText: localizations.ats,
-                                              hintText:
-                                                  localizations.enter_something(
-                                                      localizations.ats)),
-                                          inputFormatters: hexFormatter,
-                                          validator: (value) => validateHex(
-                                              value, localizations)),
-                                      if (isMifareUltralight(
-                                          selectedType!)) ...[
-                                        const SizedBox(height: 20),
-                                        TextFormField(
-                                            controller:
-                                                ultralightVersionController,
-                                            decoration: InputDecoration(
-                                                labelText: localizations
+                                        controller: ultralightVersionController,
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              localizations.ultralight_version,
+                                          hintText: localizations
+                                              .enter_something(
+                                                localizations
                                                     .ultralight_version,
-                                                hintText: localizations
-                                                    .enter_something(localizations
-                                                        .ultralight_version)),
-                                            validator: (value) => validateHex(
-                                                value, localizations)),
-                                        const SizedBox(height: 20),
-                                        TextFormField(
-                                            controller:
-                                                ultralightSignatureController,
-                                            decoration: InputDecoration(
-                                                labelText: localizations
+                                              ),
+                                        ),
+                                        validator: (value) =>
+                                            validateHex(value, localizations),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      TextFormField(
+                                        controller:
+                                            ultralightSignatureController,
+                                        decoration: InputDecoration(
+                                          labelText: localizations
+                                              .ultralight_signature,
+                                          hintText: localizations
+                                              .enter_something(
+                                                localizations
                                                     .ultralight_signature,
-                                                hintText: localizations
-                                                    .enter_something(localizations
-                                                        .ultralight_signature)),
-                                            validator: (value) => validateHex(
-                                                value, localizations)),
-                                        if (mfUltralightHasCounters(
-                                            selectedType!)) ...[
-                                          const SizedBox(height: 20),
-                                          ...ultralightCounterControllers
-                                              .asMap()
-                                              .entries
-                                              .map((entry) {
-                                            int index = entry.key;
-                                            TextEditingController controller =
-                                                entry.value;
-                                            return Padding(
-                                              padding: const EdgeInsets.only(
-                                                  bottom: 10),
-                                              child: TextFormField(
-                                                controller: controller,
-                                                decoration: InputDecoration(
+                                              ),
+                                        ),
+                                        validator: (value) =>
+                                            validateHex(value, localizations),
+                                      ),
+                                      if (mfUltralightHasCounters(
+                                        selectedType!,
+                                      )) ...[
+                                        const SizedBox(height: 20),
+                                        ...ultralightCounterControllers
+                                            .asMap()
+                                            .entries
+                                            .map((entry) {
+                                              int index = entry.key;
+                                              TextEditingController controller =
+                                                  entry.value;
+                                              return Padding(
+                                                padding: const EdgeInsets.only(
+                                                  bottom: 10,
+                                                ),
+                                                child: TextFormField(
+                                                  controller: controller,
+                                                  decoration: InputDecoration(
                                                     labelText: localizations
                                                         .ultralight_counter(
-                                                            index),
+                                                          index,
+                                                        ),
                                                     hintText: localizations
-                                                        .ultralight_counter_value),
-                                                validator: (value) =>
-                                                    validateIntRange(
-                                                        value, localizations,
+                                                        .ultralight_counter_value,
+                                                  ),
+                                                  validator: (value) =>
+                                                      validateIntRange(
+                                                        value,
+                                                        localizations,
                                                         min: 0,
                                                         max: 16777215,
                                                         emptyMessage: localizations
-                                                            .counter_value_empty),
-                                              ),
-                                            );
-                                          }),
-                                        ],
+                                                            .counter_value_empty,
+                                                      ),
+                                                ),
+                                              );
+                                            }),
                                       ],
-                                      if (isMifareClassic(selectedType!) &&
-                                          emulatorSettings != null)
-                                        Column(children: [
+                                    ],
+                                    if (isMifareClassic(selectedType!) &&
+                                        emulatorSettings != null)
+                                      Column(
+                                        children: [
                                           const SizedBox(height: 20),
                                           Text(
                                             localizations
                                                 .mifare_classic_emulator_settings,
-                                            textScaler:
-                                                const TextScaler.linear(1.1),
+                                            textScaler: const TextScaler.linear(
+                                              1.1,
+                                            ),
                                           ),
                                           const SizedBox(height: 8),
                                           Text(localizations.mode_gen1a),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              key: const Key(
-                                                  'slot-edit-setting-gen1a'),
-                                              items: [
-                                                localizations.yes,
-                                                localizations.no
-                                              ],
-                                              selectedValue:
-                                                  emulatorSettings!.isGen1a
-                                                      ? 0
-                                                      : 1,
-                                              onChange: (int index) async {
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .setMf1Gen1aMode(
-                                                    index == 0,
-                                                  ),
-                                                );
-                                              }),
+                                            key: const Key(
+                                              'slot-edit-setting-gen1a',
+                                            ),
+                                            items: [
+                                              localizations.yes,
+                                              localizations.no,
+                                            ],
+                                            selectedValue:
+                                                emulatorSettings!.isGen1a
+                                                ? 0
+                                                : 1,
+                                            onChange: (int index) async {
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .setMf1Gen1aMode(
+                                                      index == 0,
+                                                    ),
+                                              );
+                                            },
+                                          ),
                                           const SizedBox(height: 8),
                                           Text(localizations.mode_gen2),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              key: const Key(
-                                                  'slot-edit-setting-gen2'),
-                                              items: [
-                                                localizations.yes,
-                                                localizations.no
-                                              ],
-                                              selectedValue:
-                                                  emulatorSettings!.isGen2
-                                                      ? 0
-                                                      : 1,
-                                              onChange: (int index) async {
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .setMf1Gen2Mode(
-                                                    index == 0,
-                                                  ),
-                                                );
-                                              }),
+                                            key: const Key(
+                                              'slot-edit-setting-gen2',
+                                            ),
+                                            items: [
+                                              localizations.yes,
+                                              localizations.no,
+                                            ],
+                                            selectedValue:
+                                                emulatorSettings!.isGen2
+                                                ? 0
+                                                : 1,
+                                            onChange: (int index) async {
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .setMf1Gen2Mode(index == 0),
+                                              );
+                                            },
+                                          ),
                                           if (mf1PrngType != null) ...[
                                             const SizedBox(height: 8),
                                             Text(localizations.prng_type),
                                             const SizedBox(height: 8),
                                             ToggleButtonsWrapper(
-                                                key: const Key(
-                                                    'slot-edit-setting-prng'),
-                                                items: Mf1PrngType.values
-                                                    .map((type) =>
-                                                        getMf1PrngLabel(type,
-                                                            localizations))
-                                                    .toList(),
-                                                selectedValue:
-                                                    mf1PrngType!.value,
-                                                onChange: (int index) async {
-                                                  Mf1PrngType nextType =
-                                                      Mf1PrngType.values[index];
-                                                  setState(() {
-                                                    mf1PrngType = nextType;
-                                                  });
-                                                  await _mutateSetting(
-                                                    (communicator) =>
-                                                        communicator
-                                                            .setMf1PrngType(
-                                                      nextType,
+                                              key: const Key(
+                                                'slot-edit-setting-prng',
+                                              ),
+                                              items: Mf1PrngType.values
+                                                  .map(
+                                                    (type) => getMf1PrngLabel(
+                                                      type,
+                                                      localizations,
                                                     ),
-                                                  );
-                                                }),
+                                                  )
+                                                  .toList(),
+                                              selectedValue: mf1PrngType!.value,
+                                              onChange: (int index) async {
+                                                Mf1PrngType nextType =
+                                                    Mf1PrngType.values[index];
+                                                setState(() {
+                                                  mf1PrngType = nextType;
+                                                });
+                                                await _mutateSetting(
+                                                  (communicator) => communicator
+                                                      .setMf1PrngType(nextType),
+                                                );
+                                              },
+                                            ),
                                           ],
                                           const SizedBox(height: 8),
                                           Text(localizations.use_from_block),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              key: const Key(
-                                                  'slot-edit-setting-anticollision'),
-                                              items: [
-                                                localizations.yes,
-                                                localizations.no
-                                              ],
-                                              selectedValue:
-                                                  emulatorSettings!.isAntiColl
-                                                      ? 0
-                                                      : 1,
-                                              onChange: (int index) async {
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .setMf1UseFirstBlockColl(
-                                                    index == 0,
-                                                  ),
-                                                );
-                                              }),
+                                            key: const Key(
+                                              'slot-edit-setting-anticollision',
+                                            ),
+                                            items: [
+                                              localizations.yes,
+                                              localizations.no,
+                                            ],
+                                            selectedValue:
+                                                emulatorSettings!.isAntiColl
+                                                ? 0
+                                                : 1,
+                                            onChange: (int index) async {
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .setMf1UseFirstBlockColl(
+                                                      index == 0,
+                                                    ),
+                                              );
+                                            },
+                                          ),
                                           const SizedBox(height: 8),
-                                          Text(localizations
-                                              .collect_nonces('Mfkey32')),
+                                          Text(
+                                            localizations.collect_nonces(
+                                              'Mfkey32',
+                                            ),
+                                          ),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              key: const Key(
-                                                  'slot-edit-setting-detection'),
-                                              items: [
-                                                localizations.yes,
-                                                localizations.no
-                                              ],
-                                              selectedValue: emulatorSettings!
-                                                      .isDetectionEnabled
-                                                  ? 0
-                                                  : 1,
-                                              onChange: (int index) async {
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .setMf1DetectionStatus(
-                                                    index == 0,
-                                                  ),
-                                                );
-                                              }),
+                                            key: const Key(
+                                              'slot-edit-setting-detection',
+                                            ),
+                                            items: [
+                                              localizations.yes,
+                                              localizations.no,
+                                            ],
+                                            selectedValue:
+                                                emulatorSettings!
+                                                    .isDetectionEnabled
+                                                ? 0
+                                                : 1,
+                                            onChange: (int index) async {
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .setMf1DetectionStatus(
+                                                      index == 0,
+                                                    ),
+                                              );
+                                            },
+                                          ),
                                           ...(emulatorSettings!
                                                   .isDetectionEnabled)
                                               ? [
                                                   ...(detectionCount == 0)
                                                       ? [
                                                           const SizedBox(
-                                                              height: 8),
+                                                            height: 8,
+                                                          ),
                                                           Text(
-                                                              localizations
-                                                                  .present_cham_reader_keys,
-                                                              textScaler:
-                                                                  const TextScaler
-                                                                      .linear(
-                                                                      0.8))
+                                                            localizations
+                                                                .present_cham_reader_keys,
+                                                            textScaler:
+                                                                const TextScaler.linear(
+                                                                  0.8,
+                                                                ),
+                                                          ),
                                                         ]
                                                       : [
                                                           const SizedBox(
-                                                              height: 8),
+                                                            height: 8,
+                                                          ),
                                                           Row(
-                                                              mainAxisAlignment:
-                                                                  MainAxisAlignment
-                                                                      .center,
-                                                              children: [
-                                                                TextButton(
-                                                                    onPressed:
-                                                                        () {
-                                                                      Navigator.pop(
-                                                                          context);
-                                                                      Navigator
-                                                                          .push(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .center,
+                                                            children: [
+                                                              TextButton(
+                                                                onPressed: () {
+                                                                  Navigator.pop(
+                                                                    context,
+                                                                  );
+                                                                  Navigator.push(
+                                                                    context,
+                                                                    MaterialPageRoute(
+                                                                      builder: (
                                                                         context,
-                                                                        MaterialPageRoute(
-                                                                          builder: (context) =>
-                                                                              const Mfkey32Menu(),
-                                                                        ),
-                                                                      );
-                                                                    },
-                                                                    child: Row(
-                                                                      children: [
-                                                                        const Icon(
-                                                                            Icons.lock_open),
-                                                                        Text(localizations
-                                                                            .recover_keys),
-                                                                      ],
-                                                                    )),
-                                                              ]),
+                                                                      ) => const Mfkey32Menu(),
+                                                                    ),
+                                                                  );
+                                                                },
+                                                                child: Row(
+                                                                  children: [
+                                                                    const Icon(
+                                                                      Icons
+                                                                          .lock_open,
+                                                                    ),
+                                                                    Text(
+                                                                      localizations
+                                                                          .recover_keys,
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
                                                         ],
                                                 ]
                                               : [
                                                   const SizedBox(height: 8),
                                                   Text(
-                                                      localizations
-                                                          .ena_coll_recover_keys,
-                                                      textScaler:
-                                                          const TextScaler
-                                                              .linear(0.8))
+                                                    localizations
+                                                        .ena_coll_recover_keys,
+                                                    textScaler:
+                                                        const TextScaler.linear(
+                                                          0.8,
+                                                        ),
+                                                  ),
                                                 ],
                                           const SizedBox(height: 8),
                                           Text(localizations.write_mode),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              key: const Key(
-                                                  'slot-edit-setting-write-mode'),
-                                              items: [
-                                                localizations.normal,
-                                                localizations.decline,
-                                                localizations.deceive,
-                                                localizations.shadow
-                                              ],
-                                              selectedValue: emulatorSettings!
-                                                  .writeMode.value,
-                                              onChange: (int index) async {
-                                                final mode = [
-                                                  MifareWriteMode.normal,
-                                                  MifareWriteMode.denied,
-                                                  MifareWriteMode.deceive,
-                                                  MifareWriteMode.shadow,
-                                                ][index];
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .setMf1WriteMode(mode),
-                                                );
-                                              }),
-                                        ]),
-                                      if (isMifareUltralight(selectedType!) &&
-                                          emulatorSettings != null)
-                                        Column(children: [
+                                            key: const Key(
+                                              'slot-edit-setting-write-mode',
+                                            ),
+                                            items: [
+                                              localizations.normal,
+                                              localizations.decline,
+                                              localizations.deceive,
+                                              localizations.shadow,
+                                            ],
+                                            selectedValue: emulatorSettings!
+                                                .writeMode
+                                                .value,
+                                            onChange: (int index) async {
+                                              final mode = [
+                                                MifareWriteMode.normal,
+                                                MifareWriteMode.denied,
+                                                MifareWriteMode.deceive,
+                                                MifareWriteMode.shadow,
+                                              ][index];
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .setMf1WriteMode(mode),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    if (isMifareUltralight(selectedType!) &&
+                                        emulatorSettings != null)
+                                      Column(
+                                        children: [
                                           const SizedBox(height: 20),
                                           Text(
                                             localizations
                                                 .mifare_ultralight_emulator_settings,
-                                            textScaler:
-                                                const TextScaler.linear(1.1),
+                                            textScaler: const TextScaler.linear(
+                                              1.1,
+                                            ),
                                           ),
                                           const SizedBox(height: 8),
                                           Text(localizations.mode_gen2),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
+                                            items: [
+                                              localizations.yes,
+                                              localizations.no,
+                                            ],
+                                            selectedValue:
+                                                emulatorSettings!.isGen2
+                                                ? 0
+                                                : 1,
+                                            onChange: (int index) async {
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .mf0SetMagicMode(
+                                                      index == 0,
+                                                    ),
+                                              );
+                                            },
+                                          ),
+                                          if (selectedType !=
+                                              TagType.ultralightC) ...[
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              localizations.password_detection,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            ToggleButtonsWrapper(
                                               items: [
                                                 localizations.yes,
-                                                localizations.no
+                                                localizations.no,
                                               ],
                                               selectedValue:
-                                                  emulatorSettings!.isGen2
-                                                      ? 0
-                                                      : 1,
-                                              onChange: (int index) async {
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .mf0SetMagicMode(
-                                                    index == 0,
-                                                  ),
-                                                );
-                                              }),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                              localizations.password_detection),
-                                          const SizedBox(height: 8),
-                                          ToggleButtonsWrapper(
-                                              items: [
-                                                localizations.yes,
-                                                localizations.no
-                                              ],
-                                              selectedValue: emulatorSettings!
+                                                  emulatorSettings!
                                                       .isDetectionEnabled
                                                   ? 0
                                                   : 1,
@@ -817,160 +892,190 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                                 await _mutateSetting(
                                                   (communicator) => communicator
                                                       .mf0NtagSetDetectionEnable(
-                                                    index == 0,
-                                                  ),
+                                                        index == 0,
+                                                      ),
                                                 );
-                                              }),
-                                          ...(emulatorSettings!
-                                                  .isDetectionEnabled)
-                                              ? [
-                                                  ...(detectionCount == 0)
-                                                      ? [
-                                                          const SizedBox(
-                                                              height: 8),
-                                                          Text(
+                                              },
+                                            ),
+                                            ...(emulatorSettings!
+                                                    .isDetectionEnabled)
+                                                ? [
+                                                    ...(detectionCount == 0)
+                                                        ? [
+                                                            const SizedBox(
+                                                              height: 8,
+                                                            ),
+                                                            Text(
                                                               localizations
                                                                   .present_cham_reader_keys,
                                                               textScaler:
-                                                                  const TextScaler
-                                                                      .linear(
-                                                                      0.8))
-                                                        ]
-                                                      : [
-                                                          const SizedBox(
-                                                              height: 8),
-                                                          Text(
+                                                                  const TextScaler.linear(
+                                                                    0.8,
+                                                                  ),
+                                                            ),
+                                                          ]
+                                                        : [
+                                                            const SizedBox(
+                                                              height: 8,
+                                                            ),
+                                                            Text(
                                                               '${localizations.passwords_detected}: $detectionCount',
                                                               textScaler:
-                                                                  const TextScaler
-                                                                      .linear(
-                                                                      0.9)),
-                                                          const SizedBox(
-                                                              height: 8),
-                                                          Row(
+                                                                  const TextScaler.linear(
+                                                                    0.9,
+                                                                  ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 8,
+                                                            ),
+                                                            Row(
                                                               mainAxisAlignment:
                                                                   MainAxisAlignment
                                                                       .center,
                                                               children: [
                                                                 TextButton(
-                                                                    onPressed:
-                                                                        () async {
-                                                                      List<String>
-                                                                          passwords =
-                                                                          await appState
-                                                                              .communicator!
-                                                                              .mf0NtagGetDetectionLog(0);
+                                                                  onPressed: () async {
+                                                                    List<String>
+                                                                    passwords = await appState
+                                                                        .communicator!
+                                                                        .mf0NtagGetDetectionLog(
+                                                                          0,
+                                                                        );
 
-                                                                      if (!context
-                                                                          .mounted) {
-                                                                        return;
-                                                                      }
+                                                                    if (!context
+                                                                        .mounted) {
+                                                                      return;
+                                                                    }
 
-                                                                      showDialog(
-                                                                        context:
-                                                                            context,
-                                                                        builder:
-                                                                            (BuildContext
-                                                                                context) {
-                                                                          TextEditingController
-                                                                              passwordController =
-                                                                              TextEditingController();
-                                                                          passwordController.text = passwords
-                                                                              .join('\n')
-                                                                              .toUpperCase();
+                                                                    showDialog(
+                                                                      context:
+                                                                          context,
+                                                                      builder: (BuildContext context) {
+                                                                        TextEditingController
+                                                                        passwordController =
+                                                                            TextEditingController();
+                                                                        passwordController
+                                                                            .text = passwords
+                                                                            .join(
+                                                                              '\n',
+                                                                            )
+                                                                            .toUpperCase();
 
-                                                                          return AlertDialog(
-                                                                            title:
-                                                                                Text(localizations.detected_passwords),
-                                                                            content:
-                                                                                SizedBox(
-                                                                              width: double.maxFinite,
-                                                                              child: TextFormField(
-                                                                                maxLines: null,
-                                                                                controller: passwordController,
-                                                                                readOnly: true,
-                                                                                style: const TextStyle(fontFamily: 'RobotoMono', fontSize: 16.0),
+                                                                        return AlertDialog(
+                                                                          title: Text(
+                                                                            localizations.detected_passwords,
+                                                                          ),
+                                                                          content: SizedBox(
+                                                                            width:
+                                                                                double.maxFinite,
+                                                                            child: TextFormField(
+                                                                              maxLines: null,
+                                                                              controller: passwordController,
+                                                                              readOnly: true,
+                                                                              style: const TextStyle(
+                                                                                fontFamily: 'RobotoMono',
+                                                                                fontSize: 16.0,
                                                                               ),
                                                                             ),
-                                                                            actions: [
-                                                                              TextButton(
-                                                                                onPressed: () {
-                                                                                  Navigator.of(context).pop();
-                                                                                },
-                                                                                child: Text(localizations.close),
+                                                                          ),
+                                                                          actions: [
+                                                                            TextButton(
+                                                                              onPressed: () {
+                                                                                Navigator.of(context).pop();
+                                                                              },
+                                                                              child: Text(
+                                                                                localizations.close,
                                                                               ),
-                                                                            ],
-                                                                          );
-                                                                        },
-                                                                      );
-                                                                    },
-                                                                    child: Row(
-                                                                      children: [
-                                                                        const Icon(
-                                                                            Icons.visibility),
-                                                                        Text(localizations
-                                                                            .view_passwords),
-                                                                      ],
-                                                                    )),
-                                                              ]),
-                                                        ],
-                                                ]
-                                              : [
-                                                  const SizedBox(height: 8),
-                                                  Text(
+                                                                            ),
+                                                                          ],
+                                                                        );
+                                                                      },
+                                                                    );
+                                                                  },
+                                                                  child: Row(
+                                                                    children: [
+                                                                      const Icon(
+                                                                        Icons
+                                                                            .visibility,
+                                                                      ),
+                                                                      Text(
+                                                                        localizations
+                                                                            .view_passwords,
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
+                                                  ]
+                                                : [
+                                                    const SizedBox(height: 8),
+                                                    Text(
                                                       localizations
                                                           .enable_password_detection,
                                                       textScaler:
-                                                          const TextScaler
-                                                              .linear(0.8))
-                                                ],
+                                                          const TextScaler.linear(
+                                                            0.8,
+                                                          ),
+                                                    ),
+                                                  ],
+                                          ],
                                           const SizedBox(height: 8),
                                           Text(localizations.write_mode),
                                           const SizedBox(height: 8),
                                           ToggleButtonsWrapper(
-                                              items: [
-                                                localizations.normal,
-                                                localizations.decline,
-                                                localizations.deceive,
-                                                localizations.shadow
-                                              ],
-                                              selectedValue: emulatorSettings!
-                                                  .writeMode.value,
-                                              onChange: (int index) async {
-                                                final mode = [
-                                                  MifareWriteMode.normal,
-                                                  MifareWriteMode.denied,
-                                                  MifareWriteMode.deceive,
-                                                  MifareWriteMode.shadow,
-                                                ][index];
-                                                await _mutateSetting(
-                                                  (communicator) => communicator
-                                                      .mf0NtagSetWriteMode(
-                                                          mode),
-                                                );
-                                              }),
-                                        ]),
-                                    ],
-                                  )),
-                            ]),
-                            if (selectedType == TagType.hidProx)
-                              Column(children: [
+                                            items: [
+                                              localizations.normal,
+                                              localizations.decline,
+                                              localizations.deceive,
+                                              localizations.shadow,
+                                            ],
+                                            selectedValue: emulatorSettings!
+                                                .writeMode
+                                                .value,
+                                            onChange: (int index) async {
+                                              final mode = [
+                                                MifareWriteMode.normal,
+                                                MifareWriteMode.denied,
+                                                MifareWriteMode.deceive,
+                                                MifareWriteMode.shadow,
+                                              ][index];
+                                              await _mutateSetting(
+                                                (communicator) => communicator
+                                                    .mf0NtagSetWriteMode(mode),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (selectedType == TagType.hidProx)
+                            Column(
+                              children: [
                                 const SizedBox(height: 20),
                                 DropdownButton<int>(
                                   value:
                                       int.tryParse(hidTypeController.text) ?? 1,
-                                  items: List.generate(30, (index) => index + 1)
+                                  items: hidProxFormats.keys
                                       .map<DropdownMenuItem<int>>((int type) {
-                                    return DropdownMenuItem<int>(
-                                      value: type,
-                                      child: Text(getNameForHIDProxType(type)),
-                                    );
-                                  }).toList(),
+                                        return DropdownMenuItem<int>(
+                                          value: type,
+                                          child: Text(
+                                            getNameForHIDProxType(type),
+                                          ),
+                                        );
+                                      })
+                                      .toList(),
                                   onChanged: (int? newValue) {
                                     if (newValue != null) {
                                       setState(() {
-                                        hidTypeController.text =
-                                            newValue.toString();
+                                        hidTypeController.text = newValue
+                                            .toString();
                                       });
                                     }
                                   },
@@ -980,48 +1085,67 @@ class SlotEditMenuState extends State<SlotEditMenu> {
                                 TextFormField(
                                   controller: facilityCodeController,
                                   decoration: InputDecoration(
-                                      labelText: localizations.facility_code,
-                                      hintText: localizations.enter_something(
-                                          localizations.facility_code)),
+                                    labelText: localizations.facility_code,
+                                    hintText: localizations.enter_something(
+                                      localizations.facility_code,
+                                    ),
+                                  ),
                                   inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly
+                                    FilteringTextInputFormatter.digitsOnly,
                                   ],
                                   validator: (value) => validateIntRange(
-                                      value, localizations,
-                                      min: 0, max: 4294967295),
+                                    value,
+                                    localizations,
+                                    min: 0,
+                                    max: 4294967295,
+                                  ),
                                 ),
                                 const SizedBox(height: 20),
                                 TextFormField(
                                   controller: issueLevelController,
                                   decoration: InputDecoration(
-                                      labelText: localizations.issue_level,
-                                      hintText: localizations.enter_something(
-                                          localizations.issue_level)),
+                                    labelText: localizations.issue_level,
+                                    hintText: localizations.enter_something(
+                                      localizations.issue_level,
+                                    ),
+                                  ),
                                   inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly
+                                    FilteringTextInputFormatter.digitsOnly,
                                   ],
                                   validator: (value) => validateIntRange(
-                                      value, localizations,
-                                      min: 0, max: 255),
+                                    value,
+                                    localizations,
+                                    min: 0,
+                                    max: 255,
+                                  ),
                                 ),
                                 const SizedBox(height: 20),
                                 TextFormField(
                                   controller: oemController,
                                   decoration: InputDecoration(
-                                      labelText: "OEM",
-                                      hintText:
-                                          localizations.enter_something('OEM')),
+                                    labelText: "OEM",
+                                    hintText: localizations.enter_something(
+                                      'OEM',
+                                    ),
+                                  ),
                                   inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly
+                                    FilteringTextInputFormatter.digitsOnly,
                                   ],
                                   validator: (value) => validateIntRange(
-                                      value, localizations,
-                                      min: 0, max: 65535),
+                                    value,
+                                    localizations,
+                                    min: 0,
+                                    max: 65535,
+                                  ),
                                 ),
-                              ])
-                          ]));
-                    }
-                  })
+                              ],
+                            ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+              ),
             ],
           ),
         ),

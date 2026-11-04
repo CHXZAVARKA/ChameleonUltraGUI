@@ -10,8 +10,8 @@ List<int> validUidLengthsForTagType(TagType type) {
     TagType.mifareMini || TagType.mifare2K => const [4],
     TagType.mifare1K || TagType.mifare4K => const [4, 7],
     _ when chameleonTagToFrequency(type) == TagFrequency.lf => [
-        uidSizeForLfTag(type),
-      ],
+      uidSizeForLfTag(type),
+    ],
     _ => const [4, 7, 10],
   };
 }
@@ -33,68 +33,187 @@ class HidFormatLimits {
 /// Limits mirrored from the firmware Wiegand format table.
 const _hidFormatLimits = <HidFormatLimits>[
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFF, cardNumber: 0xFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFF,
+    cardNumber: 0xFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x1FFF, cardNumber: 0x3FFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x1FFF,
+    cardNumber: 0x3FFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x1FFF, cardNumber: 0x3FFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x1FFF,
+    cardNumber: 0x3FFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x7FF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x7FF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0x7FFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0x7FFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x1FFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x1FFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xF, cardNumber: 0x7FFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xF,
+    cardNumber: 0x7FFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(facilityCode: 0, cardNumber: 0x3FFF, issueLevel: 0, oem: 0),
   HidFormatLimits(
-      facilityCode: 0xFFF, cardNumber: 0x7FFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFF,
+    cardNumber: 0x7FFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFF, issueLevel: 0x1F, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0x1F,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x7F, cardNumber: 0xFFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x7F,
+    cardNumber: 0xFFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x3FF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x3FF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x3FF, cardNumber: 0xFFFF, issueLevel: 0x7, oem: 0),
+    facilityCode: 0x3FF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0x7,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFF, cardNumber: 0xFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFF,
+    cardNumber: 0xFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0x3FF),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0x3FF,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFF, cardNumber: 0xFFFFFF, issueLevel: 0x3, oem: 0),
+    facilityCode: 0xFF,
+    cardNumber: 0xFFFFFF,
+    issueLevel: 0x3,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x3FFFF, cardNumber: 0xFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x3FFFF,
+    cardNumber: 0xFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(facilityCode: 0, cardNumber: 99999999, issueLevel: 0, oem: 0),
   HidFormatLimits(
-      facilityCode: 0, cardNumber: 0x7FFFFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0,
+    cardNumber: 0x7FFFFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xFFFF, cardNumber: 0x7FFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xFFFF,
+    cardNumber: 0x7FFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0x1FFF, cardNumber: 0x3FFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0x1FFF,
+    cardNumber: 0x3FFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0, cardNumber: 0xFFFFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0,
+    cardNumber: 0xFFFFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
   HidFormatLimits(
-      facilityCode: 0xF, cardNumber: 0x1FFFFFFF, issueLevel: 0, oem: 0),
+    facilityCode: 0xF,
+    cardNumber: 0x1FFFFFFF,
+    issueLevel: 0,
+    oem: 0,
+  ),
 ];
 
-int get hidFormatCount => _hidFormatLimits.length;
-
 HidFormatLimits hidFormatLimits(int hidType) {
+  if (hidType == 42) {
+    // ACTProx packs a 10-bit OEM value, an 8-bit facility code and a 16-bit ID.
+    return const HidFormatLimits(
+      facilityCode: 0xFF,
+      cardNumber: 0xFFFF,
+      issueLevel: 0,
+      oem: 0x3FF,
+    );
+  }
   if (hidType < 1 || hidType > _hidFormatLimits.length) {
     return _hidFormatLimits.first;
   }

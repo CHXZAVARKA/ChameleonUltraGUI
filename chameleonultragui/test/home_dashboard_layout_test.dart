@@ -27,57 +27,51 @@ void main() {
     final demo = EmulatorSerial(log: Logger());
 
     expect(
-      physical.slotEnabledStateCertainty.isConfirmed(
-        6,
-        highFrequency: true,
-      ),
+      physical.slotEnabledStateCertainty.isConfirmed(6, highFrequency: true),
       isTrue,
     );
     expect(
-      demo.slotEnabledStateCertainty.isConfirmed(
-        6,
-        highFrequency: true,
-      ),
+      demo.slotEnabledStateCertainty.isConfirmed(6, highFrequency: true),
       isTrue,
     );
     expect(
-      demo.slotEnabledStateCertainty.isConfirmed(
-        6,
-        highFrequency: false,
-      ),
+      demo.slotEnabledStateCertainty.isConfirmed(6, highFrequency: false),
       isTrue,
     );
 
-    final statusSource =
-        File('lib/status/connected_device_status.dart').readAsStringSync();
+    final statusSource = File('lib/status/connected_device_status.dart')
+        .readAsStringSync();
     expect(statusSource, isNot(contains('connector/serial_emulator.dart')));
     expect(statusSource, isNot(contains('EmulatorSerial')));
   });
 
-  test('Demo device state is stable per session and randomized between them',
-      () async {
-    final firstSerial = EmulatorSerial(log: Logger(), random: Random(11));
-    await firstSerial.connectSpecificDevice('Demo');
-    final firstCommunicator = ChameleonCommunicator(
-      Logger(),
-      port: firstSerial,
-    );
-    final first = await _readDemoState(firstCommunicator);
-    expect(await _readDemoState(firstCommunicator), first);
+  test(
+    'Demo device state is stable per session and randomized between them',
+    () async {
+      final firstSerial = EmulatorSerial(log: Logger(), random: Random(11));
+      await firstSerial.connectSpecificDevice('Demo');
+      final firstCommunicator = ChameleonCommunicator(
+        Logger(),
+        port: firstSerial,
+      );
+      final first = await _readDemoState(firstCommunicator);
+      expect(await _readDemoState(firstCommunicator), first);
 
-    final secondSerial = EmulatorSerial(log: Logger(), random: Random(29));
-    await secondSerial.connectSpecificDevice('Demo');
-    final secondCommunicator = ChameleonCommunicator(
-      Logger(),
-      port: secondSerial,
-    );
-    final second = await _readDemoState(secondCommunicator);
+      final secondSerial = EmulatorSerial(log: Logger(), random: Random(29));
+      await secondSerial.connectSpecificDevice('Demo');
+      final secondCommunicator = ChameleonCommunicator(
+        Logger(),
+        port: secondSerial,
+      );
+      final second = await _readDemoState(secondCommunicator);
 
-    expect(second, isNot(first));
-  });
+      expect(second, isNot(first));
+    },
+  );
 
-  testWidgets('Home uses the approved bottom-anchored dashboard hierarchy',
-      (tester) async {
+  testWidgets('Home uses the approved bottom-anchored dashboard hierarchy', (
+    tester,
+  ) async {
     await _setViewport(tester, const Size(360, 800));
     final fixture = await _mountDashboard(tester);
     await tester.pumpAndSettle();
@@ -127,8 +121,9 @@ void main() {
     fixture.dispose();
   });
 
-  testWidgets('short Home has one vertical scroll surface with every action',
-      (tester) async {
+  testWidgets('short Home has one vertical scroll surface with every action', (
+    tester,
+  ) async {
     await _setViewport(tester, const Size(360, 320));
     final fixture = await _mountDashboard(tester);
     await tester.pumpAndSettle();
@@ -155,8 +150,9 @@ void main() {
     fixture.dispose();
   });
 
-  testWidgets('legacy warning and dashboard fit a narrow viewport',
-      (tester) async {
+  testWidgets('legacy warning and dashboard fit a narrow viewport', (
+    tester,
+  ) async {
     await _setViewport(tester, const Size(360, 800));
     final fixture = await _mountDashboard(
       tester,
@@ -164,8 +160,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('firmware-compatibility-warning')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('firmware-compatibility-warning')),
+      findsOneWidget,
+    );
     expect(_takeExceptions(tester), isEmpty);
     await tester.tap(find.byKey(const Key('firmware-warning-skip')));
     await tester.pumpAndSettle();
@@ -174,8 +172,9 @@ void main() {
     fixture.dispose();
   });
 
-  testWidgets('firmware action honors large system text on narrow Home',
-      (tester) async {
+  testWidgets('firmware action honors large system text on narrow Home', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     try {
       for (final brightness in Brightness.values) {
@@ -220,131 +219,159 @@ void main() {
   });
 
   testWidgets(
-      'large text keeps frequency rows aligned and every Home action reachable',
-      (tester) async {
-    for (final brightness in Brightness.values) {
-      for (final layout in SlotLayout.values) {
-        await _setViewport(tester, const Size(360, 800));
-        final fixture = await _mountDashboard(
-          tester,
-          brightness: brightness,
-          layout: layout,
-          textScaler: TextScaler.linear(2.5),
-        );
-        await tester.pumpAndSettle();
+    'large text keeps frequency rows aligned and every Home action reachable',
+    (tester) async {
+      for (final brightness in Brightness.values) {
+        for (final layout in SlotLayout.values) {
+          await _setViewport(tester, const Size(360, 800));
+          final fixture = await _mountDashboard(
+            tester,
+            brightness: brightness,
+            layout: layout,
+            textScaler: TextScaler.linear(2.5),
+          );
+          await tester.pumpAndSettle();
 
-        final reason = '${brightness.name} ${layout.name}';
-        final rowStarts = layout == SlotLayout.eightAcross ? [0] : [0, 4];
-        for (final rowStart in rowStarts) {
-          for (final frequency in ['hf', 'lf']) {
-            final labelText = find.descendant(
-              of: find.byKey(
+          final reason = '${brightness.name} ${layout.name}';
+          final rowStarts = layout == SlotLayout.eightAcross ? [0] : [0, 4];
+          for (final rowStart in rowStarts) {
+            for (final frequency in ['hf', 'lf']) {
+              final labelText = find.descendant(
+                of: find.byKey(
+                  Key('home-frequency-label-$frequency-box-$rowStart'),
+                ),
+                matching: find.byType(Text),
+              );
+              final labelBox = find.byKey(
                 Key('home-frequency-label-$frequency-box-$rowStart'),
-              ),
-              matching: find.byType(Text),
+              );
+              final mark = find.byKey(
+                Key(
+                  'home-slot-${rowStart + 1}-$frequency-mark-'
+                  '${frequency == 'hf' ? 'enabled' : 'empty'}',
+                ),
+              );
+              expect(labelText, findsOneWidget, reason: reason);
+              final paragraph = tester.renderObject<RenderParagraph>(labelText);
+              final textRect = tester.getRect(labelText);
+              final boxRect = tester.getRect(labelBox);
+              final markRect = tester.getRect(mark);
+              expect(paragraph.hasSize, isTrue, reason: reason);
+              expect(
+                textRect.left,
+                greaterThanOrEqualTo(boxRect.left),
+                reason: reason,
+              );
+              expect(
+                textRect.top,
+                greaterThanOrEqualTo(boxRect.top),
+                reason: reason,
+              );
+              expect(
+                textRect.right,
+                lessThanOrEqualTo(boxRect.right),
+                reason: reason,
+              );
+              expect(
+                textRect.bottom,
+                lessThanOrEqualTo(boxRect.bottom),
+                reason: reason,
+              );
+              expect(textRect.right, lessThan(markRect.left), reason: reason);
+              expect(
+                (textRect.center.dy - markRect.center.dy).abs(),
+                lessThanOrEqualTo(2),
+                reason: reason,
+              );
+            }
+            final hfRect = tester.getRect(
+              find.byKey(Key('home-frequency-label-hf-box-$rowStart')),
             );
-            final labelBox = find.byKey(
-              Key('home-frequency-label-$frequency-box-$rowStart'),
+            final lfRect = tester.getRect(
+              find.byKey(Key('home-frequency-label-lf-box-$rowStart')),
             );
-            final mark = find.byKey(
-              Key(
-                'home-slot-${rowStart + 1}-$frequency-mark-'
-                '${frequency == 'hf' ? 'enabled' : 'empty'}',
-              ),
-            );
-            expect(labelText, findsOneWidget, reason: reason);
-            final paragraph = tester.renderObject<RenderParagraph>(labelText);
-            final textRect = tester.getRect(labelText);
-            final boxRect = tester.getRect(labelBox);
-            final markRect = tester.getRect(mark);
-            expect(paragraph.hasSize, isTrue, reason: reason);
-            expect(textRect.left, greaterThanOrEqualTo(boxRect.left),
-                reason: reason);
-            expect(textRect.top, greaterThanOrEqualTo(boxRect.top),
-                reason: reason);
-            expect(textRect.right, lessThanOrEqualTo(boxRect.right),
-                reason: reason);
-            expect(textRect.bottom, lessThanOrEqualTo(boxRect.bottom),
-                reason: reason);
-            expect(textRect.right, lessThan(markRect.left), reason: reason);
             expect(
-              (textRect.center.dy - markRect.center.dy).abs(),
-              lessThanOrEqualTo(2),
+              hfRect.bottom,
+              lessThanOrEqualTo(lfRect.top),
               reason: reason,
             );
           }
-          final hfRect = tester.getRect(
-            find.byKey(Key('home-frequency-label-hf-box-$rowStart')),
+
+          final controlsSurface = find.byKey(const Key('home-controls-scroll'));
+          final layoutControl = find.byKey(
+            const Key('home-slot-layout-control'),
           );
-          final lfRect = tester.getRect(
-            find.byKey(Key('home-frequency-label-lf-box-$rowStart')),
+          expect(controlsSurface, findsOneWidget, reason: reason);
+          final controlsScrollable = tester.state<ScrollableState>(
+            find.descendant(
+              of: controlsSurface,
+              matching: find.byType(Scrollable),
+            ),
           );
-          expect(hfRect.bottom, lessThanOrEqualTo(lfRect.top), reason: reason);
+          expect(
+            controlsScrollable.position.maxScrollExtent,
+            greaterThan(0),
+            reason: reason,
+          );
+          expect(layoutControl.hitTestable(), findsOneWidget, reason: reason);
+          expect(
+            tester.getSize(layoutControl).height,
+            greaterThanOrEqualTo(48),
+            reason: reason,
+          );
+          final alternateLayout = layout == SlotLayout.eightAcross
+              ? find.byKey(const Key('home-slot-layout-two-by-four'))
+              : find.byKey(const Key('home-slot-layout-eight-across'));
+          await tester.tap(alternateLayout);
+          await tester.pumpAndSettle();
+          expect(
+            fixture.appState.sharedPreferencesProvider.getSlotLayout(),
+            isNot(layout),
+            reason: reason,
+          );
+
+          controlsScrollable.position.jumpTo(
+            controlsScrollable.position.maxScrollExtent,
+          );
+          await tester.pumpAndSettle();
+          final mode = find.byKey(const Key('home-mode-control'));
+          final readerAction = find.text('Reader');
+          final settings = find.byKey(const Key('home-device-settings'));
+          expect(readerAction.hitTestable(), findsOneWidget, reason: reason);
+          expect(settings.hitTestable(), findsOneWidget, reason: reason);
+          expect(
+            tester.getSize(mode).height,
+            greaterThanOrEqualTo(48),
+            reason: reason,
+          );
+          expect(
+            tester.getSize(settings).height,
+            greaterThanOrEqualTo(48),
+            reason: reason,
+          );
+          await tester.tap(readerAction);
+          await tester.pumpAndSettle();
+          expect(fixture.communicator.readerMode, isTrue, reason: reason);
+          await tester.tap(settings);
+          await tester.pumpAndSettle();
+          expect(
+            find.byType(ChameleonSettings),
+            findsOneWidget,
+            reason: reason,
+          );
+          expect(_takeExceptions(tester), isEmpty, reason: reason);
+
+          fixture.dispose();
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
         }
-
-        final controlsSurface = find.byKey(const Key('home-controls-scroll'));
-        final layoutControl = find.byKey(
-          const Key('home-slot-layout-control'),
-        );
-        expect(controlsSurface, findsOneWidget, reason: reason);
-        final controlsScrollable = tester.state<ScrollableState>(
-          find.descendant(
-            of: controlsSurface,
-            matching: find.byType(Scrollable),
-          ),
-        );
-        expect(
-          controlsScrollable.position.maxScrollExtent,
-          greaterThan(0),
-          reason: reason,
-        );
-        expect(layoutControl.hitTestable(), findsOneWidget, reason: reason);
-        expect(
-          tester.getSize(layoutControl).height,
-          greaterThanOrEqualTo(48),
-          reason: reason,
-        );
-        final alternateLayout = layout == SlotLayout.eightAcross
-            ? find.byKey(const Key('home-slot-layout-two-by-four'))
-            : find.byKey(const Key('home-slot-layout-eight-across'));
-        await tester.tap(alternateLayout);
-        await tester.pumpAndSettle();
-        expect(
-          fixture.appState.sharedPreferencesProvider.getSlotLayout(),
-          isNot(layout),
-          reason: reason,
-        );
-
-        controlsScrollable.position.jumpTo(
-          controlsScrollable.position.maxScrollExtent,
-        );
-        await tester.pumpAndSettle();
-        final mode = find.byKey(const Key('home-mode-control'));
-        final readerAction = find.text('Reader');
-        final settings = find.byKey(const Key('home-device-settings'));
-        expect(readerAction.hitTestable(), findsOneWidget, reason: reason);
-        expect(settings.hitTestable(), findsOneWidget, reason: reason);
-        expect(tester.getSize(mode).height, greaterThanOrEqualTo(48),
-            reason: reason);
-        expect(tester.getSize(settings).height, greaterThanOrEqualTo(48),
-            reason: reason);
-        await tester.tap(readerAction);
-        await tester.pumpAndSettle();
-        expect(fixture.communicator.readerMode, isTrue, reason: reason);
-        await tester.tap(settings);
-        await tester.pumpAndSettle();
-        expect(find.byType(ChameleonSettings), findsOneWidget, reason: reason);
-        expect(_takeExceptions(tester), isEmpty, reason: reason);
-
-        fixture.dispose();
-        await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pump();
       }
-    }
-  });
+    },
+  );
 
-  testWidgets('all 96 Home state, width, theme, and layout combinations fit',
-      (tester) async {
+  testWidgets('all 96 Home state, width, theme, and layout combinations fit', (
+    tester,
+  ) async {
     const sizes = [Size(360, 800), Size(700, 800), Size(1200, 800)];
     for (final size in sizes) {
       for (final brightness in Brightness.values) {
@@ -359,7 +386,8 @@ void main() {
             );
             await _prepareScenario(tester, fixture, scenario);
 
-            final reason = '${size.width} ${brightness.name} '
+            final reason =
+                '${size.width} ${brightness.name} '
                 '${layout.name} ${scenario.name}';
             _expectDashboardHierarchy(tester, size, layout, reason);
             _expectScenario(tester, scenario, reason);
@@ -374,98 +402,106 @@ void main() {
     }
   });
 
-  testWidgets('Demo Home exposes complete representative states without errors',
-      (tester) async {
-    await _setViewport(tester, const Size(360, 800));
-    SharedPreferences.setMockInitialValues({});
-    final preferences = SharedPreferencesProvider();
-    await preferences.load();
-    final serial = EmulatorSerial(log: Logger(), random: Random(7));
-    await serial.connectSpecificDevice('Demo');
-    final communicator = ChameleonCommunicator(Logger(), port: serial);
-    final appState = ChameleonGUIState(
-      preferences,
-      firmwareCatalog: const _DashboardFirmwareCatalog(),
-    )
-      ..connector = serial
-      ..communicator = communicator
-      ..log = Logger();
+  testWidgets(
+    'Demo Home exposes complete representative states without errors',
+    (tester) async {
+      await _setViewport(tester, const Size(360, 800));
+      SharedPreferences.setMockInitialValues({});
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
+      final serial = EmulatorSerial(log: Logger(), random: Random(7));
+      await serial.connectSpecificDevice('Demo');
+      final communicator = ChameleonCommunicator(Logger(), port: serial);
+      final appState =
+          ChameleonGUIState(
+              preferences,
+              firmwareCatalog: const _DashboardFirmwareCatalog(),
+            )
+            ..connector = serial
+            ..communicator = communicator
+            ..log = Logger();
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
 
-    final slots = appState.connectedDeviceStatus!.snapshot.slots.slots;
-    var configuredHighFrequency = 0;
-    var configuredLowFrequency = 0;
-    var enabledConfigured = 0;
-    var disabledConfigured = 0;
-    var emptyFrequencies = 0;
-    for (final slot in slots) {
-      for (final frequency in [slot.hf, slot.lf]) {
-        expect(frequency.type.isConfirmed, isTrue);
-        expect(frequency.name.isConfirmed, isTrue);
-        if (frequency.type.value != null &&
-            frequency.type.value != TagType.unknown) {
-          expect(frequency.enabled.isConfirmed, isTrue);
-          expect(frequency.name.value, isNotEmpty);
-          if (frequency.enabled.value == true) {
-            enabledConfigured++;
+      final slots = appState.connectedDeviceStatus!.snapshot.slots.slots;
+      var configuredHighFrequency = 0;
+      var configuredLowFrequency = 0;
+      var enabledConfigured = 0;
+      var disabledConfigured = 0;
+      var emptyFrequencies = 0;
+      for (final slot in slots) {
+        for (final frequency in [slot.hf, slot.lf]) {
+          expect(frequency.type.isConfirmed, isTrue);
+          expect(frequency.name.isConfirmed, isTrue);
+          if (frequency.type.value != null &&
+              frequency.type.value != TagType.unknown) {
+            expect(frequency.enabled.isConfirmed, isTrue);
+            expect(frequency.name.value, isNotEmpty);
+            if (frequency.enabled.value == true) {
+              enabledConfigured++;
+            } else {
+              disabledConfigured++;
+            }
           } else {
-            disabledConfigured++;
+            emptyFrequencies++;
           }
-        } else {
-          emptyFrequencies++;
+        }
+        if (slot.hf.type.value != null &&
+            slot.hf.type.value != TagType.unknown) {
+          configuredHighFrequency++;
+        }
+        if (slot.lf.type.value != null &&
+            slot.lf.type.value != TagType.unknown) {
+          configuredLowFrequency++;
         }
       }
-      if (slot.hf.type.value != null && slot.hf.type.value != TagType.unknown) {
-        configuredHighFrequency++;
+      expect(configuredHighFrequency, greaterThan(0));
+      expect(configuredLowFrequency, greaterThan(0));
+      expect(enabledConfigured, greaterThan(0));
+      expect(disabledConfigured, greaterThan(0));
+      expect(emptyFrequencies, greaterThan(0));
+      expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
+      for (var slot = 1; slot <= 8; slot++) {
+        expect(find.byKey(Key('home-slot-$slot')), findsOneWidget);
+        final label = tester
+            .getSemantics(find.byKey(Key('home-slot-$slot')))
+            .label;
+        expect(label.toLowerCase(), isNot(contains('unknown')));
+        expect(label.toLowerCase(), isNot(contains('unavailable')));
       }
-      if (slot.lf.type.value != null && slot.lf.type.value != TagType.unknown) {
-        configuredLowFrequency++;
-      }
-    }
-    expect(configuredHighFrequency, greaterThan(0));
-    expect(configuredLowFrequency, greaterThan(0));
-    expect(enabledConfigured, greaterThan(0));
-    expect(disabledConfigured, greaterThan(0));
-    expect(emptyFrequencies, greaterThan(0));
-    expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
-    for (var slot = 1; slot <= 8; slot++) {
-      expect(find.byKey(Key('home-slot-$slot')), findsOneWidget);
-      final label =
-          tester.getSemantics(find.byKey(Key('home-slot-$slot'))).label;
-      expect(label.toLowerCase(), isNot(contains('unknown')));
-      expect(label.toLowerCase(), isNot(contains('unavailable')));
-    }
 
-    final initialActive =
-        appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value!;
-    final targetSlot = (initialActive + 1) % 8;
-    await tester.tap(find.byKey(Key('home-slot-${targetSlot + 1}')));
-    await tester.pumpAndSettle();
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value,
-      targetSlot,
-    );
-    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+      final initialActive =
+          appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value!;
+      final targetSlot = (initialActive + 1) % 8;
+      await tester.tap(find.byKey(Key('home-slot-${targetSlot + 1}')));
+      await tester.pumpAndSettle();
+      expect(
+        appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value,
+        targetSlot,
+      );
+      expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
 
-    final initialMode =
-        appState.connectedDeviceStatus!.snapshot.mode.confirmedMode!;
-    final targetMode = initialMode == ConnectedDeviceMode.emulator
-        ? ConnectedDeviceMode.reader
-        : ConnectedDeviceMode.emulator;
-    await tester.tap(find.text(
-      targetMode == ConnectedDeviceMode.reader ? 'Reader' : 'Emulator',
-    ));
-    await tester.pumpAndSettle();
-    expect(
-      appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
-      targetMode,
-    );
-    expect(find.byType(SnackBar), findsNothing);
-    expect(tester.takeException(), isNull);
-    appState.dispose();
-  });
+      final initialMode =
+          appState.connectedDeviceStatus!.snapshot.mode.confirmedMode!;
+      final targetMode = initialMode == ConnectedDeviceMode.emulator
+          ? ConnectedDeviceMode.reader
+          : ConnectedDeviceMode.emulator;
+      await tester.tap(
+        find.text(
+          targetMode == ConnectedDeviceMode.reader ? 'Reader' : 'Emulator',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
+        targetMode,
+      );
+      expect(find.byType(SnackBar), findsNothing);
+      expect(tester.takeException(), isNull);
+      appState.dispose();
+    },
+  );
 }
 
 Future<String> _readDemoState(ChameleonCommunicator communicator) async {
@@ -543,8 +579,11 @@ void _expectDashboardHierarchy(
   );
   final settings = find.byKey(const Key('home-device-settings'));
   final bottomDashboard = find.byKey(const Key('home-bottom-dashboard'));
-  expect(find.byKey(const Key('home-dashboard-scroll')), findsOneWidget,
-      reason: reason);
+  expect(
+    find.byKey(const Key('home-dashboard-scroll')),
+    findsOneWidget,
+    reason: reason,
+  );
   expect(firmware, findsOneWidget, reason: reason);
   expect(slots, findsOneWidget, reason: reason);
   expect(controls, findsOneWidget, reason: reason);
@@ -573,25 +612,40 @@ void _expectDashboardHierarchy(
     lessThan(tester.getTopLeft(controls).dy),
     reason: reason,
   );
-  expect(tester.getCenter(layout).dx, lessThan(tester.getCenter(mode).dx),
-      reason: reason);
-  expect(tester.getCenter(mode).dx, lessThan(tester.getCenter(settings).dx),
-      reason: reason);
+  expect(
+    tester.getCenter(layout).dx,
+    lessThan(tester.getCenter(mode).dx),
+    reason: reason,
+  );
+  expect(
+    tester.getCenter(mode).dx,
+    lessThan(tester.getCenter(settings).dx),
+    reason: reason,
+  );
   expect(
     tester.getBottomRight(bottomDashboard).dy,
     greaterThan(size.height - 24),
     reason: reason,
   );
-  expect(tester.getSize(layout).height, greaterThanOrEqualTo(48),
-      reason: reason);
+  expect(
+    tester.getSize(layout).height,
+    greaterThanOrEqualTo(48),
+    reason: reason,
+  );
   expect(tester.getSize(mode).height, greaterThanOrEqualTo(48), reason: reason);
-  expect(tester.getSize(settings).height, greaterThanOrEqualTo(48),
-      reason: reason);
+  expect(
+    tester.getSize(settings).height,
+    greaterThanOrEqualTo(48),
+    reason: reason,
+  );
   expect(firmware.hitTestable(), findsOneWidget, reason: reason);
   expect(layout.hitTestable(), findsOneWidget, reason: reason);
   expect(modeAction.hitTestable(), findsOneWidget, reason: reason);
-  expect(find.byKey(const Key('home-mode-retry')), findsNothing,
-      reason: reason);
+  expect(
+    find.byKey(const Key('home-mode-retry')),
+    findsNothing,
+    reason: reason,
+  );
   expect(settings.hitTestable(), findsOneWidget, reason: reason);
 }
 
@@ -615,12 +669,18 @@ void _expectScenario(
     case _DashboardScenario.loading:
       expect(find.text('Checking'), findsOneWidget, reason: reason);
     case _DashboardScenario.stale:
-      expect(find.byKey(const Key('home-slot-refresh')), findsNothing,
-          reason: reason);
+      expect(
+        find.byKey(const Key('home-slot-refresh')),
+        findsNothing,
+        reason: reason,
+      );
     case _DashboardScenario.error:
       expect(find.text('--%'), findsOneWidget, reason: reason);
-      expect(find.byKey(const Key('home-mode-retry')), findsNothing,
-          reason: reason);
+      expect(
+        find.byKey(const Key('home-mode-retry')),
+        findsNothing,
+        reason: reason,
+      );
     case _DashboardScenario.lite:
       final mode = tester.widget<SegmentedButton<ConnectedDeviceMode>>(
         find.byWidgetPredicate(
@@ -686,15 +746,16 @@ Future<_DashboardFixture> _mountDashboard(
     ..connectionType = ConnectionType.usb
     ..portName = portName
     ..activeDevicePort = portName;
-  final appState = ChameleonGUIState(
-    preferences,
-    firmwareCatalog: _DashboardFirmwareCatalog(
-      updateAvailable: scenario == _DashboardScenario.updateAvailable,
-    ),
-  )
-    ..connector = serial
-    ..communicator = communicator
-    ..log = Logger();
+  final appState =
+      ChameleonGUIState(
+          preferences,
+          firmwareCatalog: _DashboardFirmwareCatalog(
+            updateAvailable: scenario == _DashboardScenario.updateAvailable,
+          ),
+        )
+        ..connector = serial
+        ..communicator = communicator
+        ..log = Logger();
   await _pumpHome(
     tester,
     appState,
@@ -716,27 +777,24 @@ Future<void> _pumpHome(
   ChameleonGUIState appState, {
   ThemeData? theme,
   TextScaler? textScaler,
-}) =>
-    tester.pumpWidget(
-      ChangeNotifierProvider<ChameleonGUIState>.value(
-        value: appState,
-        child: MaterialApp(
-          theme: theme,
-          builder: textScaler == null
-              ? null
-              : (context, child) => MediaQuery(
-                    data: MediaQuery.of(context).copyWith(
-                      textScaler: textScaler,
-                    ),
-                    child: child!,
-                  ),
-          locale: const Locale('en'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const HomePage(),
-        ),
-      ),
-    );
+}) => tester.pumpWidget(
+  ChangeNotifierProvider<ChameleonGUIState>.value(
+    value: appState,
+    child: MaterialApp(
+      theme: theme,
+      builder: textScaler == null
+          ? null
+          : (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
+            ),
+      locale: const Locale('en'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: const HomePage(),
+    ),
+  ),
+);
 
 Future<void> _setViewport(WidgetTester tester, Size size) async {
   tester.view.physicalSize = size;
@@ -755,11 +813,10 @@ class _DashboardFirmwareCatalog implements FirmwareCatalog {
     required ChameleonDevice device,
     required String? installedCommit,
     FirmwareChannel channel = FirmwareChannel.official,
-  }) async =>
-      FirmwareCatalogRelease(
-        latestCommit: updateAvailable ? 'new5678' : installedCommit ?? 'none',
-        updateAvailable: updateAvailable,
-      );
+  }) async => FirmwareCatalogRelease(
+    latestCommit: updateAvailable ? 'new5678' : installedCommit ?? 'none',
+    updateAvailable: updateAvailable,
+  );
 }
 
 class _DashboardCommunicator extends ChameleonCommunicator {
@@ -866,7 +923,10 @@ class _DashboardCommunicator extends ChameleonCommunicator {
     _throwIfError();
     return scenario == _DashboardScenario.legacy
         ? const []
-        : [ChameleonCommand.setIdteckEmulatorID.value];
+        : [
+            ChameleonCommand.setIdteckEmulatorID.value,
+            ChameleonCommand.mf0UlcAuth.value,
+          ];
   }
 
   @override

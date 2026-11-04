@@ -692,8 +692,10 @@ void main() {
     await readCardState.startContinuousHFScan();
     expect(original.scanCalls, 1);
 
-    final replacement =
-        _ContinuousHFCommunicator(fixture.logger, port: fixture.connector);
+    final replacement = _ContinuousHFCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
     fixture.appState
       ..communicator = replacement
       ..changesMade();
@@ -718,8 +720,10 @@ void main() {
     await readCardState.startContinuousLFScan();
     expect(original.readCalls, 1);
 
-    final replacement =
-        _ContinuousLFCommunicator(fixture.logger, port: fixture.connector);
+    final replacement = _ContinuousLFCommunicator(
+      fixture.logger,
+      port: fixture.connector,
+    );
     fixture.appState
       ..communicator = replacement
       ..changesMade();
@@ -974,13 +978,13 @@ void main() {
         },
         communicatorFactory: (logger, connector) =>
             _CrossTabMaintenanceCommunicator(
-          logger,
-          [
-            for (var block = 0; block < 20; block++)
-              Uint8List.fromList(targetBlocks[block]),
-          ]..[1] = Uint8List(16),
-          port: connector,
-        ),
+              logger,
+              [
+                for (var block = 0; block < 20; block++)
+                  Uint8List.fromList(targetBlocks[block]),
+              ]..[1] = Uint8List(16),
+              port: connector,
+            ),
       );
       final communicator =
           fixture.communicator as _CrossTabMaintenanceCommunicator;
@@ -1061,9 +1065,12 @@ void main() {
 }
 
 typedef _CommunicatorFactory = ChameleonCommunicator Function(
-    Logger logger, EmulatorSerial connector);
+  Logger logger,
+  EmulatorSerial connector,
+);
 typedef _ConfigurePreferences = void Function(
-    SharedPreferencesProvider preferences);
+  SharedPreferencesProvider preferences,
+);
 
 class _ReadCardFixture {
   _ReadCardFixture({
@@ -1089,9 +1096,9 @@ class _ReadCardFixture {
   }) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dev.fluttercommunity.plus/wakelock'),
-      (call) async => null,
-    );
+          const MethodChannel('dev.fluttercommunity.plus/wakelock'),
+          (call) async => null,
+        );
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -1102,7 +1109,8 @@ class _ReadCardFixture {
       ..device = ChameleonDevice.ultra
       ..portName = 'Demo'
       ..connectionType = ConnectionType.usb;
-    final communicator = communicatorFactory?.call(logger, connector) ??
+    final communicator =
+        communicatorFactory?.call(logger, connector) ??
         ChameleonCommunicator(logger, port: connector);
     final appState = ChameleonGUIState(preferences)
       ..log = logger
@@ -1278,14 +1286,7 @@ class _ReplaceableReadCardHostState extends State<_ReplaceableReadCardHost> {
 
 List<Uint8List> _miniTargetBlocks() {
   const key = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-  const trailer = [
-    ...key,
-    0xFF,
-    0x07,
-    0x80,
-    0x69,
-    ...key,
-  ];
+  const trailer = [...key, 0xFF, 0x07, 0x80, 0x69, ...key];
   final blocks = List.generate(256, (_) => Uint8List(0));
   for (var block = 0; block < 20; block++) {
     blocks[block] = Uint8List(16);
@@ -1293,8 +1294,9 @@ List<Uint8List> _miniTargetBlocks() {
   blocks[0].setRange(0, 4, [1, 2, 3, 4]);
   blocks[1][0] = 1;
   for (var sector = 0; sector < 5; sector++) {
-    blocks[mfClassicGetSectorTrailerBlockBySector(sector)] =
-        Uint8List.fromList(trailer);
+    blocks[mfClassicGetSectorTrailerBlockBySector(sector)] = Uint8List.fromList(
+      trailer,
+    );
   }
   return blocks;
 }
@@ -1346,6 +1348,8 @@ class _PendingHFCommunicator extends ChameleonCommunicator {
 }
 
 class _PendingLFCommunicator extends ChameleonCommunicator {
+  @override
+  Future<JablotronCard?> readJablotron() async => null;
   _PendingLFCommunicator(super.logger, {super.port});
 
   final Completer<void> readStarted = Completer<void>();
@@ -1452,6 +1456,8 @@ class _ThrowingContinuousHFCommunicator extends ChameleonCommunicator {
 }
 
 class _SlowContinuousLFCommunicator extends ChameleonCommunicator {
+  @override
+  Future<JablotronCard?> readJablotron() async => null;
   _SlowContinuousLFCommunicator(super.logger, {super.port});
 
   final Completer<EM410XCard?> _firstRead = Completer<EM410XCard?>();
@@ -1518,12 +1524,14 @@ class _CrossTabMaintenanceCommunicator extends ChameleonCommunicator {
     if (scanCalls == 1) {
       return _continuousScan.future;
     }
-    return Future.value(CardData(
-      uid: Uint8List.fromList([1, 2, 3, 4]),
-      sak: 0x08,
-      atqa: Uint8List.fromList([0x00, 0x04]),
-      ats: Uint8List(0),
-    ));
+    return Future.value(
+      CardData(
+        uid: Uint8List.fromList([1, 2, 3, 4]),
+        sak: 0x08,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+        ats: Uint8List(0),
+      ),
+    );
   }
 
   @override
@@ -1540,28 +1548,25 @@ class _CrossTabMaintenanceCommunicator extends ChameleonCommunicator {
     bool autoSelect = true,
     bool keepRfField = false,
     bool checkResponseCrc = true,
-  }) async =>
-      Uint8List(0);
+  }) async => Uint8List(0);
 
   @override
   Future<ChameleonMessage> mf1AuthResult(
     int block,
     int keyType,
     Uint8List key,
-  ) async =>
-      ChameleonMessage(command: 0, status: 0, data: Uint8List(0));
+  ) async => ChameleonMessage(command: 0, status: 0, data: Uint8List(0));
 
   @override
   Future<ChameleonMessage> mf1ReadBlockResult(
     int block,
     int keyType,
     Uint8List key,
-  ) async =>
-      ChameleonMessage(
-        command: 0,
-        status: 0,
-        data: Uint8List.fromList(blocks[block]),
-      );
+  ) async => ChameleonMessage(
+    command: 0,
+    status: 0,
+    data: Uint8List.fromList(blocks[block]),
+  );
 
   @override
   Future<ChameleonMessage> mf1WriteBlockResult(
@@ -1579,6 +1584,8 @@ class _CrossTabMaintenanceCommunicator extends ChameleonCommunicator {
 }
 
 class _ContinuousLFCommunicator extends ChameleonCommunicator {
+  @override
+  Future<JablotronCard?> readJablotron() async => null;
   _ContinuousLFCommunicator(super.logger, {super.port});
 
   int readCalls = 0;
@@ -1618,11 +1625,11 @@ class _InnerClassicBoundaryCommunicator extends ChameleonCommunicator {
 
   @override
   Future<CardData?> scan14443aTag() async => CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x08,
-        atqa: Uint8List.fromList([0x00, 0x04]),
-        ats: Uint8List(0),
-      );
+    uid: Uint8List.fromList([1, 2, 3, 4]),
+    sak: 0x08,
+    atqa: Uint8List.fromList([0x00, 0x04]),
+    ats: Uint8List(0),
+  );
 
   @override
   Future<bool> detectMf1Support() async => true;
@@ -1675,11 +1682,11 @@ class _InnerUltralightBoundaryCommunicator extends ChameleonCommunicator {
 
   @override
   Future<CardData?> scan14443aTag() async => CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x00,
-        atqa: Uint8List.fromList([0x00, 0x44]),
-        ats: Uint8List(0),
-      );
+    uid: Uint8List.fromList([1, 2, 3, 4]),
+    sak: 0x00,
+    atqa: Uint8List.fromList([0x00, 0x44]),
+    ats: Uint8List(0),
+  );
 
   @override
   Future<bool> detectMf1Support() async => false;
@@ -1705,6 +1712,6 @@ class _InnerUltralightBoundaryCommunicator extends ChameleonCommunicator {
   }
 
   void completeInnerCommand() => _innerCommandResult.complete(
-        Uint8List.fromList([0, 0, 4, 2, 1, 0, 0x0F, 3]),
-      );
+    Uint8List.fromList([0, 0, 4, 2, 1, 0, 0x0F, 3]),
+  );
 }

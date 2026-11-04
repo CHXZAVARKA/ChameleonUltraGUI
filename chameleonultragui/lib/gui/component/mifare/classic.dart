@@ -1,3 +1,6 @@
+import 'package:chameleonultragui/gui/menu/pages/dump_editor.dart';
+import 'package:chameleonultragui/gui/component/cancel_recovery.dart';
+
 import 'dart:typed_data';
 
 import 'package:chameleonultragui/gui/component/card_button.dart';
@@ -26,11 +29,12 @@ class MifareClassicHelper extends StatefulWidget {
   final MifareClassicInfo mfcInfo;
   final bool allowSave;
 
-  const MifareClassicHelper(
-      {super.key,
-      required this.hfInfo,
-      required this.mfcInfo,
-      this.allowSave = true});
+  const MifareClassicHelper({
+    super.key,
+    required this.hfInfo,
+    required this.mfcInfo,
+    this.allowSave = true,
+  });
 
   @override
   State<StatefulWidget> createState() => CardReaderState();
@@ -86,27 +90,25 @@ class CardReaderState extends State<MifareClassicHelper> {
     required Future<bool> Function() operation,
     required void Function(Object error, StackTrace stackTrace) onError,
   }) async {
-    final result = await appState.runSessionBoundForeground(
-      (session) async {
-        if (!_canContinue(info, recovery, session)) {
-          return const _RecoveryAttempt.canceled();
-        }
+    final result = await appState.runSessionBoundForeground((session) async {
+      if (!_canContinue(info, recovery, session)) {
+        return const _RecoveryAttempt.canceled();
+      }
 
-        final wakelockOwner = appState.acquireSessionWakelock(
-          connector: session.connector,
-          communicator: session.communicator,
-        );
-        try {
-          return await operation()
-              ? const _RecoveryAttempt.completed()
-              : const _RecoveryAttempt.canceled();
-        } catch (error, stackTrace) {
-          return _RecoveryAttempt.failed(error, stackTrace);
-        } finally {
-          appState.releaseSessionWakelock(wakelockOwner);
-        }
-      },
-    );
+      final wakelockOwner = appState.acquireSessionWakelock(
+        connector: session.connector,
+        communicator: session.communicator,
+      );
+      try {
+        return await operation()
+            ? const _RecoveryAttempt.completed()
+            : const _RecoveryAttempt.canceled();
+      } catch (error, stackTrace) {
+        return _RecoveryAttempt.failed(error, stackTrace);
+      } finally {
+        appState.releaseSessionWakelock(wakelockOwner);
+      }
+    });
     final attempt = result.value;
     final session = result.session;
     if (!result.executed ||
@@ -153,7 +155,8 @@ class CardReaderState extends State<MifareClassicHelper> {
   Future<String?> _getKeyProfileName() async {
     final localizations = AppLocalizations.of(context)!;
     final controller = TextEditingController(
-        text: widget.hfInfo.uid.replaceAll(RegExp(r'[^0-9a-fA-F]'), ''));
+      text: widget.hfInfo.uid.replaceAll(RegExp(r'[^0-9a-fA-F]'), ''),
+    );
 
     final result = await showDialog<String>(
       context: context,
@@ -216,8 +219,9 @@ class CardReaderState extends State<MifareClassicHelper> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(localizations.mifare_classic_save_key_profile),
-        content:
-            Text(localizations.mifare_classic_key_profile_plaintext_warning),
+        content: Text(
+          localizations.mifare_classic_key_profile_plaintext_warning,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -229,8 +233,9 @@ class CardReaderState extends State<MifareClassicHelper> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child:
-                Text(localizations.mifare_classic_export_key_profile_to_file),
+            child: Text(
+              localizations.mifare_classic_export_key_profile_to_file,
+            ),
           ),
         ],
       ),
@@ -267,8 +272,9 @@ class CardReaderState extends State<MifareClassicHelper> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(localizations.mifare_classic_key_profile_uid_mismatch),
-            content: Text(localizations
-                .mifare_classic_key_profile_uid_mismatch_description),
+            content: Text(
+              localizations.mifare_classic_key_profile_uid_mismatch_description,
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -315,8 +321,10 @@ class CardReaderState extends State<MifareClassicHelper> {
     Uint8List cardDump = Uint8List(0);
     if (!skipDump) {
       cardDump = mfClassicGetExportBytes(
-          widget.mfcInfo.type, widget.mfcInfo.recovery!.cardData,
-          isEV1: widget.mfcInfo.isEV1);
+        widget.mfcInfo.type,
+        widget.mfcInfo.recovery!.cardData,
+        isEV1: widget.mfcInfo.isEV1,
+      );
     }
 
     if (bin) {
@@ -327,7 +335,8 @@ class CardReaderState extends State<MifareClassicHelper> {
       );
     } else {
       var tags = appState.sharedPreferencesProvider.getCards();
-      tags.add(CardSave(
+      tags.add(
+        CardSave(
           uid: widget.hfInfo.uid,
           sak: hexToBytes(widget.hfInfo.sak)[0],
           atqa: hexToBytes(widget.hfInfo.atqa),
@@ -342,7 +351,9 @@ class CardReaderState extends State<MifareClassicHelper> {
           ),
           ats: (widget.hfInfo.ats != localizations.no)
               ? hexToBytes(widget.hfInfo.ats)
-              : Uint8List(0)));
+              : Uint8List(0),
+        ),
+      );
       appState.sharedPreferencesProvider.setCards(tags);
     }
   }
@@ -362,29 +373,39 @@ class CardReaderState extends State<MifareClassicHelper> {
       _profileSelectionRecovery = widget.mfcInfo.recovery;
       _profileSelectionInitialized = false;
     }
-    widget.mfcInfo.recovery?.dictionaries =
-        appState.sharedPreferencesProvider.getDictionaries(keyLength: 12);
-    widget.mfcInfo.recovery?.dictionaries
-        .insert(0, Dictionary(id: "", name: localizations.empty, keys: []));
+    widget.mfcInfo.recovery?.dictionaries = appState.sharedPreferencesProvider
+        .getDictionaries(keyLength: 12);
+    widget.mfcInfo.recovery?.dictionaries.insert(
+      0,
+      Dictionary(id: "", name: localizations.empty, keys: []),
+    );
     widget.mfcInfo.recovery?.selectedDictionary ??=
         widget.mfcInfo.recovery?.dictionaries[0];
-    final sectorCount = mfClassicGetSectorCount(widget.mfcInfo.type,
-        isEV1: widget.mfcInfo.isEV1);
+    final sectorCount = mfClassicGetSectorCount(
+      widget.mfcInfo.type,
+      isEV1: widget.mfcInfo.isEV1,
+    );
     widget.mfcInfo.recovery?.keyProfiles = appState.sharedPreferencesProvider
         .getMifareClassicKeyProfiles()
-        .where((profile) => profile.isCompatible(
-            cardType: widget.mfcInfo.type.name, sectorCount: sectorCount))
+        .where(
+          (profile) => profile.isCompatible(
+            cardType: widget.mfcInfo.type.name,
+            sectorCount: sectorCount,
+          ),
+        )
         .toList();
     final selectedProfile = widget.mfcInfo.recovery?.selectedKeyProfile;
     if (selectedProfile != null &&
-        !(widget.mfcInfo.recovery?.keyProfiles
-                .any((profile) => profile.id == selectedProfile.id) ??
+        !(widget.mfcInfo.recovery?.keyProfiles.any(
+              (profile) => profile.id == selectedProfile.id,
+            ) ??
             false)) {
       widget.mfcInfo.recovery?.selectedKeyProfile = null;
     }
     if (!_profileSelectionInitialized) {
-      for (final profile in widget.mfcInfo.recovery?.keyProfiles ??
-          <MifareClassicKeyProfile>[]) {
+      for (final profile
+          in widget.mfcInfo.recovery?.keyProfiles ??
+              <MifareClassicKeyProfile>[]) {
         if (profile.matchesUid(widget.hfInfo.uid)) {
           widget.mfcInfo.recovery?.selectedKeyProfile = profile;
           break;
@@ -393,441 +414,519 @@ class CardReaderState extends State<MifareClassicHelper> {
       _profileSelectionInitialized = true;
     }
 
-    return Column(children: [
-      const SizedBox(height: 16),
-      Text(
-        localizations.keys,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          localizations.keys,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
-      ),
-      if (widget.mfcInfo.recovery != null) ...[
-        Row(
-          children: [
-            const Spacer(),
-            KeyCheckMarks(
+        if (widget.mfcInfo.recovery != null) ...[
+          Row(
+            children: [
+              const Spacer(),
+              KeyCheckMarks(
                 checkMarks: widget.mfcInfo.recovery!.checkMarks,
                 validKeys: widget.mfcInfo.recovery!.validKeys,
                 fontSize: checkmarkFontSize,
                 checkmarkSize: checkmarkSize,
-                checkmarkCount: mfClassicGetSectorCount(widget.mfcInfo.type,
-                    isEV1: widget.mfcInfo.isEV1),
+                checkmarkCount: mfClassicGetSectorCount(
+                  widget.mfcInfo.type,
+                  isEV1: widget.mfcInfo.isEV1,
+                ),
                 checkmarkPerRow: checkmarkPerRow,
                 onCheckmarkChanged: (index, newValue) {
                   widget.mfcInfo.recovery!.checkMarks[index] = newValue;
                   widget.mfcInfo.recovery!.update();
-                }),
-            const Spacer(),
-          ],
-        ),
-        if (widget.mfcInfo.recovery!.hasVerifiedKeys &&
-            ![
-              MifareClassicState.checkKeysOngoing,
-              MifareClassicState.recoveryOngoing,
-              MifareClassicState.dumpOngoing,
-            ].contains(widget.mfcInfo.state)) ...[
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: saveKeyProfile,
-            icon: const Icon(Icons.key),
-            label: Text(localizations.mifare_classic_save_key_profile),
+                },
+              ),
+              const Spacer(),
+            ],
           ),
-        ],
-        if (widget.mfcInfo.recovery?.error != "") ...[
-          const SizedBox(height: 16),
-          ErrorMessage(errorMessage: widget.mfcInfo.recovery!.error),
-        ],
-        if (widget.mfcInfo.recovery?.state != "") ...[
-          const SizedBox(height: 8),
-          Text(widget.mfcInfo.recovery!.state),
-        ],
-        const SizedBox(height: 12),
-        if (widget.mfcInfo.recovery?.dumpProgress != 0) ...[
-          LinearProgressIndicator(value: widget.mfcInfo.recovery?.dumpProgress),
-          const SizedBox(height: 8)
-        ],
-        if (widget.mfcInfo.recovery?.hardnestedProgress != null &&
-            widget.mfcInfo.recovery?.error == "") ...[
-          LinearProgressIndicator(
-              value: widget.mfcInfo.recovery?.hardnestedProgress),
-          const SizedBox(height: 12)
-        ],
-        if (widget.mfcInfo.recovery?.keyCheckProgress != null) ...[
-          LinearProgressIndicator(
-              value: widget.mfcInfo.recovery?.keyCheckProgress),
-          const SizedBox(height: 12)
-        ],
-        if (widget.mfcInfo.state == MifareClassicState.recovery ||
-            widget.mfcInfo.state == MifareClassicState.recoveryOngoing)
-          _ResponsiveButtonGroup(children: [
+          if (widget.mfcInfo.recovery!.hasVerifiedKeys &&
+              ![
+                MifareClassicState.checkKeysOngoing,
+                MifareClassicState.recoveryOngoing,
+                MifareClassicState.dumpOngoing,
+              ].contains(widget.mfcInfo.state)) ...[
             const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
-                  ? () async {
-                      final info = widget.mfcInfo;
-                      final recovery = info.recovery!;
-                      setState(() {
-                        info.state = MifareClassicState.recoveryOngoing;
-                      });
-
-                      final completed = await _runRecoveryOperation(
-                        appState: appState,
-                        info: info,
-                        recovery: recovery,
-                        actionableState: MifareClassicState.recovery,
-                        operation: recovery.recoverKeys,
-                        onError: (error, stackTrace) {
-                          (appState.log ?? appState.communicator?.log)?.e(
-                            'MIFARE Classic key recovery failed',
-                            error: error,
-                            stackTrace: stackTrace,
-                          );
-                          setState(() {
-                            recovery.error = localizations.error;
-                            info.state = MifareClassicState.recovery;
-                          });
-                        },
-                      );
-                      if (!completed) {
-                        return;
-                      }
-
-                      if (recovery.error.isNotEmpty) {
-                        setState(() {
-                          info.state = MifareClassicState.recovery;
-                        });
-                      } else {
-                        setState(() {
-                          info.state = MifareClassicState.dump;
-                        });
-                      }
-                    }
-                  : null,
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.recover_keys),
+            TextButton.icon(
+              onPressed: saveKeyProfile,
+              icon: const Icon(Icons.key),
+              label: Text(localizations.mifare_classic_save_key_profile),
             ),
-            if (widget.allowSave) ...[
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: (widget.mfcInfo.state == MifareClassicState.recovery)
-                    ? () async {
-                        final info = widget.mfcInfo;
-                        final recovery = info.recovery!;
-                        setState(() {
-                          info.state = MifareClassicState.dumpOngoing;
-                        });
+          ],
+          if (widget.mfcInfo.recovery?.error != "") ...[
+            const SizedBox(height: 16),
+            ErrorMessage(errorMessage: widget.mfcInfo.recovery!.error),
+          ],
+          if (widget.mfcInfo.recovery?.state != "") ...[
+            const SizedBox(height: 8),
+            Text(widget.mfcInfo.recovery!.state),
+          ],
+          const SizedBox(height: 12),
+          if (widget.mfcInfo.recovery?.dumpProgress != 0) ...[
+            LinearProgressIndicator(
+              value: widget.mfcInfo.recovery?.dumpProgress,
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (widget.mfcInfo.recovery?.hardnestedProgress != null &&
+              widget.mfcInfo.recovery?.error == "") ...[
+            LinearProgressIndicator(
+              value: widget.mfcInfo.recovery?.hardnestedProgress,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (widget.mfcInfo.recovery?.keyCheckProgress != null) ...[
+            LinearProgressIndicator(
+              value: widget.mfcInfo.recovery?.keyCheckProgress,
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (widget.mfcInfo.recovery!.operation.isRunning)
+            CancelRecovery(operation: widget.mfcInfo.recovery!.operation),
+          if (widget.mfcInfo.state == MifareClassicState.recovery ||
+              widget.mfcInfo.state == MifareClassicState.recoveryOngoing)
+            _ResponsiveButtonGroup(
+              children: [
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed:
+                      (widget.mfcInfo.state == MifareClassicState.recovery)
+                      ? () async {
+                          final info = widget.mfcInfo;
+                          final recovery = info.recovery!;
+                          setState(() {
+                            info.state = MifareClassicState.recoveryOngoing;
+                          });
 
-                        final completed = await _runRecoveryOperation(
-                          appState: appState,
-                          info: info,
-                          recovery: recovery,
-                          actionableState: MifareClassicState.recovery,
-                          operation: recovery.dumpData,
-                          onError: (error, stackTrace) {
+                          final completed = await _runRecoveryOperation(
+                            appState: appState,
+                            info: info,
+                            recovery: recovery,
+                            actionableState: MifareClassicState.recovery,
+                            operation: recovery.recoverKeys,
+                            onError: (error, stackTrace) {
+                              (appState.log ?? appState.communicator?.log)?.e(
+                                'MIFARE Classic key recovery failed',
+                                error: error,
+                                stackTrace: stackTrace,
+                              );
+                              setState(() {
+                                recovery.error = localizations.error;
+                                info.state = MifareClassicState.recovery;
+                              });
+                            },
+                          );
+                          if (!completed) {
+                            return;
+                          }
+
+                          if (recovery.error.isNotEmpty) {
                             setState(() {
-                              recovery.error =
-                                  localizations.recovery_error_dump_data;
+                              info.state = MifareClassicState.recovery;
+                            });
+                          } else {
+                            setState(() {
                               info.state = MifareClassicState.dump;
                             });
-                          },
-                        );
-                        if (!completed) {
-                          return;
+                          }
                         }
-
-                        setState(() {
-                          recovery.dumpProgress = 0;
-                          info.state = MifareClassicState.save;
-                        });
-                      }
-                    : null,
-                style: customCardButtonStyle(appState),
-                child: Text(localizations.dump_partial_data),
-              )
-            ],
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () async {
-                await exportFoundKeys();
-              },
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.export_to_dictionary),
-            ),
-          ]),
-        if (widget.mfcInfo.state == MifareClassicState.checkKeys ||
-            widget.mfcInfo.state == MifareClassicState.checkKeysOngoing)
-          Column(children: [
-            if (widget.mfcInfo.state == MifareClassicState.checkKeys)
-              Column(children: [
-                Align(
-                    alignment: Alignment.center,
-                    child: SizedBox(
-                        width: 275, // WIP: center without this
-                        child: CheckboxListTile(
-                          title: Text(localizations.skip_default_dictionary),
-                          value: skipDefaultDictionary,
-                          onChanged: (bool? newValue) {
+                      : null,
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.recover_keys),
+                ),
+                if (widget.allowSave) ...[
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed:
+                        (widget.mfcInfo.state == MifareClassicState.recovery)
+                        ? () async {
+                            final info = widget.mfcInfo;
+                            final recovery = info.recovery!;
                             setState(() {
-                              skipDefaultDictionary = newValue!;
+                              info.state = MifareClassicState.dumpOngoing;
                             });
-                          },
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ))),
-                const SizedBox(height: 8),
-                Text(localizations.mifare_classic_assigned_key_profile),
-                const SizedBox(height: 4),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 340,
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value:
-                            widget.mfcInfo.recovery?.selectedKeyProfile?.id ??
-                                '',
-                        items: [
-                          DropdownMenuItem<String>(
-                            value: '',
-                            child: Text(localizations.empty),
+
+                            final completed = await _runRecoveryOperation(
+                              appState: appState,
+                              info: info,
+                              recovery: recovery,
+                              actionableState: MifareClassicState.recovery,
+                              operation: recovery.dumpData,
+                              onError: (error, stackTrace) {
+                                setState(() {
+                                  recovery.error =
+                                      localizations.recovery_error_dump_data;
+                                  info.state = MifareClassicState.dump;
+                                });
+                              },
+                            );
+                            if (!completed) {
+                              return;
+                            }
+
+                            setState(() {
+                              recovery.dumpProgress = 0;
+                              info.state = MifareClassicState.save;
+                            });
+                          }
+                        : null,
+                    style: customCardButtonStyle(appState),
+                    child: Text(localizations.dump_partial_data),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    await exportFoundKeys();
+                  },
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.export_to_dictionary),
+                ),
+              ],
+            ),
+          if (widget.mfcInfo.state == MifareClassicState.checkKeys ||
+              widget.mfcInfo.state == MifareClassicState.checkKeysOngoing)
+            Column(
+              children: [
+                if (widget.mfcInfo.state == MifareClassicState.checkKeys)
+                  Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.center,
+                        child: SizedBox(
+                          width: 275, // WIP: center without this
+                          child: CheckboxListTile(
+                            title: Text(localizations.skip_default_dictionary),
+                            value: skipDefaultDictionary,
+                            onChanged: (bool? newValue) {
+                              setState(() {
+                                skipDefaultDictionary = newValue!;
+                              });
+                            },
+                            controlAffinity: ListTileControlAffinity.leading,
                           ),
-                          ...widget.mfcInfo.recovery!.keyProfiles.map(
-                            (profile) => DropdownMenuItem<String>(
-                              value: profile.id,
-                              child: Text(
-                                profile.uid == null
-                                    ? localizations
-                                        .mifare_classic_key_profile_option(
-                                        profile.name,
-                                        profile.keyCount,
-                                      )
-                                    : localizations
-                                        .mifare_classic_key_profile_option_with_uid(
-                                        profile.name,
-                                        profile.keyCount,
-                                        profile.uid!,
-                                      ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(localizations.mifare_classic_assigned_key_profile),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 340,
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value:
+                                  widget
+                                      .mfcInfo
+                                      .recovery
+                                      ?.selectedKeyProfile
+                                      ?.id ??
+                                  '',
+                              items: [
+                                DropdownMenuItem<String>(
+                                  value: '',
+                                  child: Text(localizations.empty),
+                                ),
+                                ...widget.mfcInfo.recovery!.keyProfiles.map(
+                                  (profile) => DropdownMenuItem<String>(
+                                    value: profile.id,
+                                    child: Text(
+                                      profile.uid == null
+                                          ? localizations
+                                                .mifare_classic_key_profile_option(
+                                                  profile.name,
+                                                  profile.keyCount,
+                                                )
+                                          : localizations
+                                                .mifare_classic_key_profile_option_with_uid(
+                                                  profile.name,
+                                                  profile.keyCount,
+                                                  profile.uid!,
+                                                ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (profileId) {
+                                setState(() {
+                                  if (profileId == null || profileId.isEmpty) {
+                                    widget
+                                            .mfcInfo
+                                            .recovery
+                                            ?.selectedKeyProfile =
+                                        null;
+                                    return;
+                                  }
+                                  widget.mfcInfo.recovery?.selectedKeyProfile =
+                                      widget.mfcInfo.recovery!.keyProfiles
+                                          .firstWhere(
+                                            (profile) =>
+                                                profile.id == profileId,
+                                          );
+                                });
+                              },
                             ),
                           ),
                         ],
-                        onChanged: (profileId) {
-                          setState(() {
-                            if (profileId == null || profileId.isEmpty) {
-                              widget.mfcInfo.recovery?.selectedKeyProfile =
-                                  null;
-                              return;
-                            }
-                            widget.mfcInfo.recovery?.selectedKeyProfile =
-                                widget.mfcInfo.recovery!.keyProfiles.firstWhere(
-                                    (profile) => profile.id == profileId);
-                          });
-                        },
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(localizations.additional_key_dict),
-                const SizedBox(height: 4),
-                DropdownButton<String>(
-                  value: widget.mfcInfo.recovery?.selectedDictionary!.id,
-                  items: widget.mfcInfo.recovery?.dictionaries
-                      .map<DropdownMenuItem<String>>((Dictionary dictionary) {
-                    return DropdownMenuItem<String>(
-                      value: dictionary.id,
-                      child: Text(
-                          "${dictionary.name} (${dictionary.keys.length} ${localizations.keys.toLowerCase()})"),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    for (var dictionary
-                        in widget.mfcInfo.recovery!.dictionaries) {
-                      if (dictionary.id == newValue) {
-                        setState(() {
-                          widget.mfcInfo.recovery?.selectedDictionary =
-                              dictionary;
-                        });
-                        break;
-                      }
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-              ]),
-            ElevatedButton(
-              onPressed: (widget.mfcInfo.state == MifareClassicState.checkKeys)
-                  ? () async {
-                      final info = widget.mfcInfo;
-                      final recovery = info.recovery!;
-                      final confirmationSession =
-                          ConnectedDeviceSession.capture(appState);
-                      if (confirmationSession == null ||
-                          !await _confirmSelectedProfileUid() ||
-                          !_canContinue(info, recovery, confirmationSession)) {
-                        return;
-                      }
-
-                      setState(() {
-                        info.state = MifareClassicState.checkKeysOngoing;
-                      });
-
-                      final completed = await _runRecoveryOperation(
-                        appState: appState,
-                        info: info,
-                        recovery: recovery,
-                        actionableState: MifareClassicState.checkKeys,
-                        operation: () => recovery.checkKeys(
-                          skipDefaultDictionary: skipDefaultDictionary,
-                        ),
-                        onError: (error, stackTrace) {
-                          setState(() {
-                            recovery.error = localizations.recovery_error_dict;
-                            info.state = MifareClassicState.checkKeys;
-                          });
-                        },
-                      );
-                      if (!completed) {
-                        return;
-                      }
-
-                      if (recovery.allKeysExists) {
-                        // all keys exists
-                        setState(() {
-                          info.state = MifareClassicState.dump;
-                        });
-                      } else {
-                        setState(() {
-                          info.state = MifareClassicState.recovery;
-                        });
-                      }
-                    }
-                  : null,
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.check_keys_dict),
-            )
-          ]),
-        if ((widget.mfcInfo.state == MifareClassicState.dump ||
-                widget.mfcInfo.state == MifareClassicState.dumpOngoing) &&
-            widget.allowSave)
-          _ResponsiveButtonGroup(children: [
-            ElevatedButton(
-              onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
-                  ? () async {
-                      final info = widget.mfcInfo;
-                      final recovery = info.recovery!;
-                      setState(() {
-                        info.state = MifareClassicState.dumpOngoing;
-                      });
-
-                      final completed = await _runRecoveryOperation(
-                        appState: appState,
-                        info: info,
-                        recovery: recovery,
-                        actionableState: MifareClassicState.dump,
-                        operation: recovery.dumpData,
-                        onError: (error, stackTrace) {
-                          setState(() {
-                            recovery.error =
-                                localizations.recovery_error_dump_data;
-                            info.state = MifareClassicState.dump;
-                          });
-                        },
-                      );
-                      if (!completed) {
-                        return;
-                      }
-
-                      setState(() {
-                        recovery.dumpProgress = 0;
-                        info.state = MifareClassicState.save;
-                      });
-                    }
-                  : null,
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.dump_card),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () async {
-                await exportFoundKeys();
-              },
-              style: customCardButtonStyle(appState),
-              child: Text(localizations.export_to_dictionary),
-            ),
-          ]),
-      ],
-      if (widget.mfcInfo.state == MifareClassicState.save && widget.allowSave)
-        _ResponsiveButtonGroup(centerOnly: true, children: [
-          ElevatedButton(
-            onPressed: () async {
-              await showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    title: Text(localizations.enter_name_of_card),
-                    content: TextField(
-                      onChanged: (value) {
-                        setState(() {
-                          dumpName = value;
-                        });
-                      },
-                    ),
-                    actions: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          await saveCard();
-                          if (context.mounted) {
-                            Navigator.pop(context);
+                      const SizedBox(height: 8),
+                      Text(localizations.additional_key_dict),
+                      const SizedBox(height: 4),
+                      DropdownButton<String>(
+                        value: widget.mfcInfo.recovery?.selectedDictionary!.id,
+                        items: widget.mfcInfo.recovery?.dictionaries
+                            .map<DropdownMenuItem<String>>((
+                              Dictionary dictionary,
+                            ) {
+                              return DropdownMenuItem<String>(
+                                value: dictionary.id,
+                                child: Text(
+                                  "${dictionary.name} (${dictionary.keys.length} ${localizations.keys.toLowerCase()})",
+                                ),
+                              );
+                            })
+                            .toList(),
+                        onChanged: (String? newValue) {
+                          for (var dictionary
+                              in widget.mfcInfo.recovery!.dictionaries) {
+                            if (dictionary.id == newValue) {
+                              setState(() {
+                                widget.mfcInfo.recovery?.selectedDictionary =
+                                    dictionary;
+                              });
+                              break;
+                            }
                           }
                         },
-                        child: Text(localizations.ok),
                       ),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(
-                              context); // Close the modal without saving
-                        },
-                        child: Text(localizations.cancel),
-                      ),
+                      const SizedBox(height: 8),
                     ],
+                  ),
+                ElevatedButton(
+                  onPressed:
+                      (widget.mfcInfo.state == MifareClassicState.checkKeys)
+                      ? () async {
+                          final info = widget.mfcInfo;
+                          final recovery = info.recovery!;
+                          final confirmationSession =
+                              ConnectedDeviceSession.capture(appState);
+                          if (confirmationSession == null ||
+                              !await _confirmSelectedProfileUid() ||
+                              !_canContinue(
+                                info,
+                                recovery,
+                                confirmationSession,
+                              )) {
+                            return;
+                          }
+
+                          setState(() {
+                            info.state = MifareClassicState.checkKeysOngoing;
+                          });
+
+                          final completed = await _runRecoveryOperation(
+                            appState: appState,
+                            info: info,
+                            recovery: recovery,
+                            actionableState: MifareClassicState.checkKeys,
+                            operation: () => recovery.checkKeys(
+                              skipDefaultDictionary: skipDefaultDictionary,
+                            ),
+                            onError: (error, stackTrace) {
+                              setState(() {
+                                recovery.error =
+                                    localizations.recovery_error_dict;
+                                info.state = MifareClassicState.checkKeys;
+                              });
+                            },
+                          );
+                          if (!completed) {
+                            return;
+                          }
+
+                          if (recovery.allKeysExists) {
+                            // all keys exists
+                            setState(() {
+                              info.state = MifareClassicState.dump;
+                            });
+                          } else {
+                            setState(() {
+                              info.state = MifareClassicState.recovery;
+                            });
+                          }
+                        }
+                      : null,
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.check_keys_dict),
+                ),
+              ],
+            ),
+          if ((widget.mfcInfo.state == MifareClassicState.dump ||
+                  widget.mfcInfo.state == MifareClassicState.dumpOngoing) &&
+              widget.allowSave)
+            _ResponsiveButtonGroup(
+              children: [
+                ElevatedButton(
+                  onPressed: (widget.mfcInfo.state == MifareClassicState.dump)
+                      ? () async {
+                          final info = widget.mfcInfo;
+                          final recovery = info.recovery!;
+                          setState(() {
+                            info.state = MifareClassicState.dumpOngoing;
+                          });
+
+                          final completed = await _runRecoveryOperation(
+                            appState: appState,
+                            info: info,
+                            recovery: recovery,
+                            actionableState: MifareClassicState.dump,
+                            operation: recovery.dumpData,
+                            onError: (error, stackTrace) {
+                              setState(() {
+                                recovery.error =
+                                    localizations.recovery_error_dump_data;
+                                info.state = MifareClassicState.dump;
+                              });
+                            },
+                          );
+                          if (!completed) {
+                            return;
+                          }
+
+                          setState(() {
+                            recovery.dumpProgress = 0;
+                            info.state = MifareClassicState.save;
+                          });
+                        }
+                      : null,
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.dump_card),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    await exportFoundKeys();
+                  },
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.export_to_dictionary),
+                ),
+              ],
+            ),
+        ],
+        if (widget.mfcInfo.state == MifareClassicState.save && widget.allowSave)
+          _ResponsiveButtonGroup(
+            centerOnly: true,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  final info = widget.mfcInfo;
+                  final recovery = info.recovery!;
+                  final viewCard = CardSave(
+                    uid: widget.hfInfo.uid,
+                    sak: hexToBytes(widget.hfInfo.sak)[0],
+                    atqa: hexToBytes(widget.hfInfo.atqa),
+                    name: dumpName,
+                    tag: mfClassicGetChameleonTagType(info.type),
+                    data: recovery.cardData,
+                    ats: widget.hfInfo.ats != localizations.no
+                        ? hexToBytes(widget.hfInfo.ats)
+                        : Uint8List(0),
+                  );
+                  await showDialog(
+                    context: context,
+                    builder: (context) => DumpEditor(
+                      cardSave: viewCard,
+                      onSave: (data) {
+                        if (identical(widget.mfcInfo, info) &&
+                            identical(info.recovery, recovery)) {
+                          recovery.cardData = data;
+                          recovery.dumpComplete = false;
+                        }
+                      },
+                    ),
+                  );
+                  if (mounted) setState(() {});
+                },
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.view_dump),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  await showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: Text(localizations.enter_name_of_card),
+                        content: TextField(
+                          onChanged: (value) {
+                            setState(() {
+                              dumpName = value;
+                            });
+                          },
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            onPressed: () async {
+                              await saveCard();
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                              }
+                            },
+                            child: Text(localizations.ok),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(
+                                context,
+                              ); // Close the modal without saving
+                            },
+                            child: Text(localizations.cancel),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
-              );
-            },
-            style: customCardButtonStyle(appState),
-            child: Text(localizations.save),
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.save),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  await saveCard(bin: true);
+                },
+                style: customCardButtonStyle(appState),
+                child: Text(localizations.save_as(".bin")),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: () async {
-              await saveCard(bin: true);
-            },
-            style: customCardButtonStyle(appState),
-            child: Text(localizations.save_as(".bin")),
-          ),
-        ]),
-    ]);
+      ],
+    );
   }
 }
 
 class _RecoveryAttempt {
   const _RecoveryAttempt.completed()
-      : completed = true,
-        error = null,
-        stackTrace = null;
+    : completed = true,
+      error = null,
+      stackTrace = null;
 
   const _RecoveryAttempt.canceled()
-      : completed = false,
-        error = null,
-        stackTrace = null;
+    : completed = false,
+      error = null,
+      stackTrace = null;
 
   const _RecoveryAttempt.failed(this.error, this.stackTrace)
-      : completed = false;
+    : completed = false;
 
   final bool completed;
   final Object? error;

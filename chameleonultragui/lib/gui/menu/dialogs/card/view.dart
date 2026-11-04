@@ -20,11 +20,7 @@ class CardViewMenu extends StatefulWidget {
   final CardSave tagSave;
   final Future<void> Function(CardSave card) onMove;
 
-  const CardViewMenu({
-    super.key,
-    required this.tagSave,
-    required this.onMove,
-  });
+  const CardViewMenu({super.key, required this.tagSave, required this.onMove});
 
   @override
   CardViewMenuState createState() => CardViewMenuState();
@@ -39,8 +35,10 @@ class CardViewMenuState extends State<CardViewMenu> {
     super.initState();
     currentSavedCard = widget.tagSave;
     if (chameleonTagToFrequency(currentSavedCard.tag) == TagFrequency.lf) {
-      LFCard card =
-          getLFCardFromUID(currentSavedCard.tag, currentSavedCard.uid);
+      LFCard card = getLFCardFromUID(
+        currentSavedCard.tag,
+        currentSavedCard.uid,
+      );
       uid = card.toViewableString();
     } else {
       uid = currentSavedCard.uid;
@@ -71,347 +69,400 @@ class CardViewMenuState extends State<CardViewMenu> {
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
     var appState = context.watch<ChameleonGUIState>();
+    final ioProxCard =
+        currentSavedCard.tag == TagType.ioProx &&
+            hexToBytes(currentSavedCard.uid).length >= 4
+        ? IoProxCard.fromUID(currentSavedCard.uid)
+        : null;
 
     return AlertDialog(
-      title: Text(currentSavedCard.name,
-          maxLines: 3, overflow: TextOverflow.ellipsis),
+      title: Text(
+        currentSavedCard.name,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
       content: SingleChildScrollView(
-          child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  "${localizations.uid}: $uid",
-                  softWrap: true,
-                  overflow: TextOverflow.visible,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "${localizations.uid}: ${ioProxCard == null ? uid : currentSavedCard.uid}",
+                    softWrap: true,
+                    overflow: TextOverflow.visible,
+                  ),
                 ),
-              ),
-              IconButton(
-                onPressed: () async {
-                  ClipboardData data =
-                      ClipboardData(text: currentSavedCard.uid);
-                  await Clipboard.setData(data);
-                },
-                icon: const Icon(Icons.copy),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  "${localizations.tag_type}: ${chameleonTagToString(currentSavedCard.tag, localizations)}",
-                  softWrap: true,
-                  overflow: TextOverflow.visible,
+                IconButton(
+                  onPressed: () async {
+                    ClipboardData data = ClipboardData(
+                      text: currentSavedCard.uid,
+                    );
+                    await Clipboard.setData(data);
+                  },
+                  icon: const Icon(Icons.copy),
                 ),
-              ),
-              IconButton(
-                onPressed: () async {
-                  ClipboardData data = ClipboardData(
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "${localizations.tag_type}: ${chameleonTagToString(currentSavedCard.tag, localizations)}",
+                    softWrap: true,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () async {
+                    ClipboardData data = ClipboardData(
                       text: chameleonTagToString(
-                          currentSavedCard.tag, localizations));
-                  await Clipboard.setData(data);
-                },
-                icon: const Icon(Icons.copy),
-              ),
-            ],
-          ),
-          if (chameleonTagToFrequency(currentSavedCard.tag) ==
-              TagFrequency.hf) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    "${localizations.sak}: ${bytesToHex(u8ToBytes(currentSavedCard.sak))}",
-                    softWrap: true,
-                    overflow: TextOverflow.visible,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () async {
-                    ClipboardData data = ClipboardData(
-                        text: currentSavedCard.sak == 0
-                            ? localizations.unavailable
-                            : bytesToHex(u8ToBytes(currentSavedCard.sak)));
-                    await Clipboard.setData(data);
-                  },
-                  icon: const Icon(Icons.copy),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    "${localizations.atqa}: ${currentSavedCard.atqa.isNotEmpty ? bytesToHexSpace(currentSavedCard.atqa) : localizations.unavailable}",
-                    softWrap: true,
-                    overflow: TextOverflow.visible,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () async {
-                    ClipboardData data = ClipboardData(
-                        text: currentSavedCard.atqa.isNotEmpty
-                            ? bytesToHex(currentSavedCard.atqa)
-                            : localizations.unavailable);
-                    await Clipboard.setData(data);
-                  },
-                  icon: const Icon(Icons.copy),
-                ),
-              ],
-            ),
-            if (isMifareClassic(currentSavedCard.tag))
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                      onPressed:
-                          (mfClassicGetKeysFromDump(currentSavedCard.data)
-                                  .isNotEmpty)
-                              ? () async {
-                                  List<Uint8List> keys =
-                                      mfClassicGetKeysFromDump(
-                                          currentSavedCard.data);
-                                  await showDialog(
-                                    context: context,
-                                    builder: (BuildContext context) {
-                                      return DictionaryExportMenu(keys: keys);
-                                    },
-                                  );
-                                }
-                              : null,
-                      child: Text(localizations.export_to_dictionary)),
-                ],
-              ),
-            if (isMifareUltralight(currentSavedCard.tag))
-              Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "${localizations.ultralight_version}: ${currentSavedCard.extraData.ultralightVersion.isNotEmpty ? bytesToHexSpace(currentSavedCard.extraData.ultralightVersion) : localizations.unavailable}",
-                        softWrap: true,
-                        overflow: TextOverflow.visible,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () async {
-                        ClipboardData data = ClipboardData(
-                            text: currentSavedCard
-                                    .extraData.ultralightVersion.isNotEmpty
-                                ? bytesToHexSpace(currentSavedCard
-                                    .extraData.ultralightVersion)
-                                : localizations.unavailable);
-                        await Clipboard.setData(data);
-                      },
-                      icon: const Icon(Icons.copy),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "${localizations.ultralight_signature}: ${currentSavedCard.extraData.ultralightSignature.isNotEmpty ? bytesToHexSpace(currentSavedCard.extraData.ultralightSignature) : localizations.unavailable}",
-                        softWrap: true,
-                        overflow: TextOverflow.visible,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () async {
-                        ClipboardData data = ClipboardData(
-                            text: currentSavedCard
-                                    .extraData.ultralightSignature.isNotEmpty
-                                ? bytesToHexSpace(currentSavedCard
-                                    .extraData.ultralightSignature)
-                                : localizations.unavailable);
-                        await Clipboard.setData(data);
-                      },
-                      icon: const Icon(Icons.copy),
-                    ),
-                  ],
-                ),
-              ])
-          ],
-        ],
-      )),
-      actions: [
-        Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            alignment: WrapAlignment.end,
-            children: [
-              IconButton(
-                tooltip: localizations.move_card,
-                onPressed: () async {
-                  await widget.onMove(currentSavedCard);
-                  _refreshCardData();
-                },
-                icon: const Icon(Icons.drive_file_move_outline),
-              ),
-              IconButton(
-                onPressed: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return CardEditMenu(tagSave: currentSavedCard);
-                    },
-                  );
-                  _refreshCardData();
-                },
-                icon: const Icon(Icons.edit),
-              ),
-              IconButton(
-                onPressed: () {
-                  var cards = appState.sharedPreferencesProvider.getCards();
-                  var duplicate = CardSave.fromJson(currentSavedCard.toJson());
-                  duplicate.id = const Uuid().v4();
-                  duplicate.name =
-                      "${currentSavedCard.name} (${localizations.copy})";
-                  cards.add(duplicate);
-                  appState.sharedPreferencesProvider.setCards(cards);
-                  appState.changesMade();
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.copy_all),
-              ),
-              if (isMifareClassic(widget.tagSave.tag) ||
-                  isMifareUltralight(widget.tagSave.tag))
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DumpEditor(
-                          cardSave: widget.tagSave,
-                          onSave: (dumpData) {
-                            // Update card data
-                            var updatedCard = CardSave(
-                              id: widget.tagSave.id,
-                              uid: widget.tagSave.uid,
-                              sak: widget.tagSave.sak,
-                              atqa: widget.tagSave.atqa,
-                              name: widget.tagSave.name,
-                              tag: widget.tagSave.tag,
-                              data: dumpData,
-                              ats: widget.tagSave.ats,
-                              extraData: CardSaveExtra(
-                                ultralightSignature: widget
-                                    .tagSave.extraData.ultralightSignature,
-                                ultralightVersion:
-                                    widget.tagSave.extraData.ultralightVersion,
-                                ultralightCounters:
-                                    widget.tagSave.extraData.ultralightCounters,
-                                mifareClassicDumpComplete:
-                                    isMifareClassic(widget.tagSave.tag)
-                                        ? false
-                                        : widget.tagSave.extraData
-                                            .mifareClassicDumpComplete,
-                              ),
-                              folderId: widget.tagSave.folderId,
-                              color: widget.tagSave.color,
-                            );
-
-                            // Update the card in storage
-                            var cards =
-                                appState.sharedPreferencesProvider.getCards();
-                            for (int i = 0; i < cards.length; i++) {
-                              if (cards[i].id == widget.tagSave.id) {
-                                cards[i] = updatedCard;
-                                break;
-                              }
-                            }
-                            appState.sharedPreferencesProvider.setCards(cards);
-                            appState.changesMade();
-                            Navigator.pop(
-                                context); // Close the card view dialog
-                          },
-                        ),
+                        currentSavedCard.tag,
+                        localizations,
                       ),
                     );
+                    await Clipboard.setData(data);
                   },
-                  icon: const Icon(Icons.edit_document),
+                  icon: const Icon(Icons.copy),
                 ),
+              ],
+            ),
+            if (ioProxCard != null)
+              for (final field in [
+                (localizations.version, ioProxCard.version),
+                (localizations.facility_code, ioProxCard.facilityCode),
+                (localizations.card_number, ioProxCard.cardNumber),
+              ])
+                Row(
+                  children: [
+                    Expanded(child: Text('${field.$1}: ${field.$2}')),
+                    IconButton(
+                      onPressed: () => Clipboard.setData(
+                        ClipboardData(text: field.$2.toString()),
+                      ),
+                      icon: const Icon(Icons.copy),
+                    ),
+                  ],
+                ),
+            if (chameleonTagToFrequency(currentSavedCard.tag) ==
+                TagFrequency.hf) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "${localizations.sak}: ${bytesToHex(u8ToBytes(currentSavedCard.sak))}",
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      ClipboardData data = ClipboardData(
+                        text: currentSavedCard.sak == 0
+                            ? localizations.unavailable
+                            : bytesToHex(u8ToBytes(currentSavedCard.sak)),
+                      );
+                      await Clipboard.setData(data);
+                    },
+                    icon: const Icon(Icons.copy),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "${localizations.atqa}: ${currentSavedCard.atqa.isNotEmpty ? bytesToHexSpace(currentSavedCard.atqa) : localizations.unavailable}",
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () async {
+                      ClipboardData data = ClipboardData(
+                        text: currentSavedCard.atqa.isNotEmpty
+                            ? bytesToHex(currentSavedCard.atqa)
+                            : localizations.unavailable,
+                      );
+                      await Clipboard.setData(data);
+                    },
+                    icon: const Icon(Icons.copy),
+                  ),
+                ],
+              ),
+              if (isMifareClassic(currentSavedCard.tag))
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed:
+                          (mfClassicGetKeysFromDump(currentSavedCard.data)
+                              .isNotEmpty)
+                          ? () async {
+                              List<Uint8List> keys = mfClassicGetKeysFromDump(
+                                currentSavedCard.data,
+                              );
+                              await showDialog(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return DictionaryExportMenu(keys: keys);
+                                },
+                              );
+                            }
+                          : null,
+                      child: Text(localizations.export_to_dictionary),
+                    ),
+                  ],
+                ),
+              if (isMifareUltralight(currentSavedCard.tag))
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "${localizations.ultralight_version}: ${currentSavedCard.extraData.ultralightVersion.isNotEmpty ? bytesToHexSpace(currentSavedCard.extraData.ultralightVersion) : localizations.unavailable}",
+                            softWrap: true,
+                            overflow: TextOverflow.visible,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () async {
+                            ClipboardData data = ClipboardData(
+                              text:
+                                  currentSavedCard
+                                      .extraData
+                                      .ultralightVersion
+                                      .isNotEmpty
+                                  ? bytesToHexSpace(
+                                      currentSavedCard
+                                          .extraData
+                                          .ultralightVersion,
+                                    )
+                                  : localizations.unavailable,
+                            );
+                            await Clipboard.setData(data);
+                          },
+                          icon: const Icon(Icons.copy),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "${localizations.ultralight_signature}: ${currentSavedCard.extraData.ultralightSignature.isNotEmpty ? bytesToHexSpace(currentSavedCard.extraData.ultralightSignature) : localizations.unavailable}",
+                            softWrap: true,
+                            overflow: TextOverflow.visible,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () async {
+                            ClipboardData data = ClipboardData(
+                              text:
+                                  currentSavedCard
+                                      .extraData
+                                      .ultralightSignature
+                                      .isNotEmpty
+                                  ? bytesToHexSpace(
+                                      currentSavedCard
+                                          .extraData
+                                          .ultralightSignature,
+                                    )
+                                  : localizations.unavailable,
+                            );
+                            await Clipboard.setData(data);
+                          },
+                          icon: const Icon(Icons.copy),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          alignment: WrapAlignment.end,
+          children: [
+            IconButton(
+              tooltip: localizations.move_card,
+              onPressed: () async {
+                await widget.onMove(currentSavedCard);
+                _refreshCardData();
+              },
+              icon: const Icon(Icons.drive_file_move_outline),
+            ),
+            IconButton(
+              onPressed: () async {
+                await showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return CardEditMenu(tagSave: currentSavedCard);
+                  },
+                );
+                _refreshCardData();
+              },
+              icon: const Icon(Icons.edit),
+            ),
+            IconButton(
+              onPressed: () {
+                var cards = appState.sharedPreferencesProvider.getCards();
+                var duplicate = CardSave.fromJson(currentSavedCard.toJson());
+                duplicate.id = const Uuid().v4();
+                duplicate.name =
+                    "${currentSavedCard.name} (${localizations.copy})";
+                cards.add(duplicate);
+                appState.sharedPreferencesProvider.setCards(cards);
+                appState.changesMade();
+                Navigator.pop(context);
+              },
+              icon: const Icon(Icons.copy_all),
+            ),
+            if (isMifareClassic(currentSavedCard.tag) ||
+                isMifareUltralight(currentSavedCard.tag))
               IconButton(
-                onPressed: () async {
-                  await showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text(localizations.select_save_format),
-                        actions: [
-                          if (MifareClassicGeometry.fromSavedCard(
-                                  currentSavedCard) !=
-                              null)
-                            ElevatedButton(
-                              onPressed: () async {
-                                await saveTag(currentSavedCard, context, true);
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                }
-                              },
-                              child: Text(localizations.save_as(".bin")),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DumpEditor(
+                        cardSave: currentSavedCard,
+                        onSave: (dumpData) {
+                          // Update card data
+                          var updatedCard = CardSave(
+                            id: currentSavedCard.id,
+                            uid: currentSavedCard.uid,
+                            sak: currentSavedCard.sak,
+                            atqa: currentSavedCard.atqa,
+                            name: currentSavedCard.name,
+                            tag: currentSavedCard.tag,
+                            data: dumpData,
+                            ats: currentSavedCard.ats,
+                            extraData: CardSaveExtra(
+                              ultralightSignature:
+                                  widget.tagSave.extraData.ultralightSignature,
+                              ultralightVersion:
+                                  currentSavedCard.extraData.ultralightVersion,
+                              ultralightCounters:
+                                  currentSavedCard.extraData.ultralightCounters,
+                              mifareClassicDumpComplete:
+                                  isMifareClassic(currentSavedCard.tag)
+                                  ? false
+                                  : currentSavedCard
+                                        .extraData
+                                        .mifareClassicDumpComplete,
                             ),
+                            folderId: currentSavedCard.folderId,
+                            color: currentSavedCard.color,
+                          );
+
+                          // Update the card in storage
+                          var cards = appState.sharedPreferencesProvider
+                              .getCards();
+                          for (int i = 0; i < cards.length; i++) {
+                            if (cards[i].id == currentSavedCard.id) {
+                              cards[i] = updatedCard;
+                              break;
+                            }
+                          }
+                          appState.sharedPreferencesProvider.setCards(cards);
+                          appState.changesMade();
+                          Navigator.pop(context); // Close the card view dialog
+                        },
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.edit_document),
+              ),
+            IconButton(
+              onPressed: () async {
+                await showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: Text(localizations.select_save_format),
+                      actions: [
+                        if (MifareClassicGeometry.fromSavedCard(
+                              currentSavedCard,
+                            ) !=
+                            null)
                           ElevatedButton(
                             onPressed: () async {
-                              await saveTag(currentSavedCard, context, false);
+                              await saveTag(currentSavedCard, context, true);
                               if (context.mounted) {
                                 Navigator.pop(context);
                               }
                             },
-                            child: Text(localizations.save_as(".json")),
+                            child: Text(localizations.save_as(".bin")),
                           ),
-                        ],
+                        ElevatedButton(
+                          onPressed: () async {
+                            await saveTag(currentSavedCard, context, false);
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Text(localizations.save_as(".json")),
+                        ),
+                      ],
+                    );
+                  },
+                );
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              icon: const Icon(Icons.download_rounded),
+            ),
+            IconButton(
+              onPressed: () async {
+                if (appState.sharedPreferencesProvider.getConfirmDelete() ==
+                    true) {
+                  var confirm = await showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return ConfirmDeletionMenu(
+                        thingBeingDeleted: currentSavedCard.name,
                       );
                     },
                   );
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.download_rounded),
-              ),
-              IconButton(
-                onPressed: () async {
-                  if (appState.sharedPreferencesProvider.getConfirmDelete() ==
-                      true) {
-                    var confirm = await showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return ConfirmDeletionMenu(
-                            thingBeingDeleted: currentSavedCard.name);
-                      },
-                    );
 
-                    if (confirm != true) {
-                      return;
-                    }
+                  if (confirm != true) {
+                    return;
                   }
-                  var tags = appState.sharedPreferencesProvider.getCards();
-                  List<CardSave> output = [];
-                  for (var tagTest in tags) {
-                    if (tagTest.id != currentSavedCard.id) {
-                      output.add(tagTest);
-                    }
+                }
+                var tags = appState.sharedPreferencesProvider.getCards();
+                List<CardSave> output = [];
+                for (var tagTest in tags) {
+                  if (tagTest.id != currentSavedCard.id) {
+                    output.add(tagTest);
                   }
-                  appState.sharedPreferencesProvider.setCards(output);
-                  appState.changesMade();
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.delete_outline),
-              ),
-              ElevatedButton(
-                onPressed: () {
+                }
+                appState.sharedPreferencesProvider.setCards(output);
+                appState.changesMade();
+                if (context.mounted) {
                   Navigator.pop(context);
-                },
-                child: Text(localizations.ok),
-              ),
-            ]),
+                }
+              },
+              icon: const Icon(Icons.delete_outline),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text(localizations.ok),
+            ),
+          ],
+        ),
       ],
     );
   }

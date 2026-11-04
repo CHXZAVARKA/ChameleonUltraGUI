@@ -112,7 +112,7 @@ void main() {
 
     test('uses injected GitHub helpers without network access', () async {
       final catalog = GitHubFirmwareCatalog(
-        latestCommitLoader: (_, __) async => 'abcdef1234567890',
+        latestCommitLoader: (_, _) async => 'abcdef1234567890',
         commitResolver: (commit, _) async => 'abcdef1234567890',
       );
 
@@ -128,7 +128,7 @@ void main() {
     test('propagates latest-commit lookup errors', () async {
       final failure = StateError('lookup failed');
       final catalog = GitHubFirmwareCatalog(
-        latestCommitLoader: (_, __) async => throw failure,
+        latestCommitLoader: (_, _) async => throw failure,
       );
 
       await expectLater(
@@ -143,8 +143,8 @@ void main() {
     test('propagates installed-commit resolution errors', () async {
       final failure = StateError('resolution failed');
       final catalog = GitHubFirmwareCatalog(
-        latestCommitLoader: (_, __) async => 'abcdef1234567890',
-        commitResolver: (_, __) async => throw failure,
+        latestCommitLoader: (_, _) async => 'abcdef1234567890',
+        commitResolver: (_, _) async => throw failure,
       );
 
       await expectLater(

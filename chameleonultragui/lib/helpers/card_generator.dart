@@ -45,11 +45,7 @@ class CardProfileGenerator {
 
   int generateUltralightCounter() => _random.nextInt(0x1000000);
 
-  GeneratedCardProfile generate(
-    TagType type, {
-    int? uidLength,
-    int? hidType,
-  }) {
+  GeneratedCardProfile generate(TagType type, {int? uidLength, int? hidType}) {
     if (isMifareClassic(type)) {
       return _generateMifareClassic(type, uidLength: uidLength);
     }
@@ -61,15 +57,20 @@ class CardProfileGenerator {
         ultralightVersion: _ultralightVersion(type),
       );
     }
+    if (type == TagType.hf14a4) {
+      return GeneratedCardProfile(
+        uid: _randomBytes(uidLength ?? 4),
+        sak: 0x20,
+        atqa: Uint8List.fromList([0x00, 0x04]),
+      );
+    }
     return _generateLf(type, hidType: hidType);
   }
 
-  GeneratedCardProfile _generateMifareClassic(
-    TagType type, {
-    int? uidLength,
-  }) {
+  GeneratedCardProfile _generateMifareClassic(TagType type, {int? uidLength}) {
     final supportsSevenByteUid = validUidLengthsForTagType(type).contains(7);
-    final useSevenByteUid = supportsSevenByteUid &&
+    final useSevenByteUid =
+        supportsSevenByteUid &&
         (uidLength == 7 || (uidLength == null && _random.nextBool()));
     final uid = useSevenByteUid ? _nxpSevenByteUid() : _fixedNonUniqueUid();
 
@@ -111,9 +112,8 @@ class CardProfileGenerator {
       case TagType.em410X64:
       case TagType.em410XElectra:
       case TagType.viking:
-        return GeneratedCardProfile(
-          uid: _randomBytes(uidSizeForLfTag(type)),
-        );
+      case TagType.jablotron:
+        return GeneratedCardProfile(uid: _randomBytes(uidSizeForLfTag(type)));
       default:
         throw ArgumentError.value(type, 'type', 'Unsupported tag type');
     }
@@ -256,6 +256,7 @@ List<Uint8List> generateBlankCardData({
   required Uint8List uid,
   int sak = 0,
   Uint8List? atqa,
+  bool vanitySak = false,
 }) {
   if (chameleonTagToFrequency(type) == TagFrequency.lf) return [];
 
@@ -268,7 +269,7 @@ List<Uint8List> generateBlankCardData({
       0x00,
     ]);
     blocks.add(cc);
-    while (blocks.length < getBlockCountForTagType(type)) {
+    while (blocks.length < mfUltralightGetPagesCount(type)) {
       blocks.add(Uint8List(4));
     }
     return blocks;
@@ -276,13 +277,16 @@ List<Uint8List> generateBlankCardData({
 
   if (isMifareClassic(type)) {
     final blocks = <Uint8List>[];
-    for (var sector = 0;
-        sector <
-            mfClassicGetSectorCount(chameleonTagTypeGetMfClassicType(type));
-        sector++) {
-      for (var block = 0;
-          block < mfClassicGetBlockCountBySector(sector) - 1;
-          block++) {
+    for (
+      var sector = 0;
+      sector < mfClassicGetSectorCount(chameleonTagTypeGetMfClassicType(type));
+      sector++
+    ) {
+      for (
+        var block = 0;
+        block < mfClassicGetBlockCountBySector(sector) - 1;
+        block++
+      ) {
         blocks.add(Uint8List(16));
       }
       blocks.add(
@@ -310,6 +314,7 @@ List<Uint8List> generateBlankCardData({
       uid,
       sak,
       atqa ?? Uint8List(2),
+      vanitySak,
     );
     return blocks;
   }

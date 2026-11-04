@@ -38,14 +38,14 @@ void main() {
       }
     }
 
-    expect(
-      generator.generate(TagType.mifare4K, uidLength: 4).atqa,
-      [0x00, 0x02],
-    );
-    expect(
-      generator.generate(TagType.mifare4K, uidLength: 7).atqa,
-      [0x00, 0x42],
-    );
+    expect(generator.generate(TagType.mifare4K, uidLength: 4).atqa, [
+      0x00,
+      0x02,
+    ]);
+    expect(generator.generate(TagType.mifare4K, uidLength: 7).atqa, [
+      0x00,
+      0x42,
+    ]);
   });
 
   test('Ultralight and NTAG profiles use Type 2 anticollision values', () {
@@ -109,13 +109,10 @@ void main() {
   test('HID generation respects every selected firmware format', () {
     final generator = CardProfileGenerator(random: Random(53));
 
-    for (var hidType = 1; hidType <= 30; hidType++) {
+    for (final hidType in hidProxFormats.keys) {
       final limits = hidFormatLimits(hidType);
       for (var attempt = 0; attempt < 20; attempt++) {
-        final profile = generator.generate(
-          TagType.hidProx,
-          hidType: hidType,
-        );
+        final profile = generator.generate(TagType.hidProx, hidType: hidType);
         final cardNumber = profile.uid.fold<int>(
           0,
           (value, byte) => (value << 8) | byte,
@@ -123,10 +120,7 @@ void main() {
 
         expect(profile.hidType, hidType);
         expect(cardNumber, inInclusiveRange(0, limits.cardNumber));
-        expect(
-          profile.facilityCode,
-          inInclusiveRange(0, limits.facilityCode),
-        );
+        expect(profile.facilityCode, inInclusiveRange(0, limits.facilityCode));
         expect(profile.issueLevel, inInclusiveRange(0, limits.issueLevel));
         expect(profile.oem, inInclusiveRange(0, limits.oem));
       }
@@ -141,19 +135,11 @@ void main() {
       isNull,
     );
     expect(
-      validateUid(
-        '04 01 02 03 04 05 06',
-        localizations,
-        TagType.mifareMini,
-      ),
+      validateUid('04 01 02 03 04 05 06', localizations, TagType.mifareMini),
       isNotNull,
     );
     expect(
-      validateUid(
-        '04 01 02 03 04 05 06',
-        localizations,
-        TagType.ntag215,
-      ),
+      validateUid('04 01 02 03 04 05 06', localizations, TagType.ntag215),
       isNull,
     );
     expect(
@@ -164,6 +150,21 @@ void main() {
       ),
       isNotNull,
     );
+  });
+
+  test('generated Ultralight memory includes all emulator pages', () {
+    const geometry = {
+      TagType.ultralightC: 48,
+      TagType.ultralight21: 41,
+      TagType.ntag210: 20,
+    };
+    final generator = CardProfileGenerator(random: Random(41));
+    for (final entry in geometry.entries) {
+      final profile = generator.generate(entry.key);
+      final dump = generateBlankCardData(type: entry.key, uid: profile.uid);
+      expect(dump, hasLength(entry.value), reason: '${entry.key}');
+      expect(dump.every((page) => page.length == 4), isTrue);
+    }
   });
 
   test('whole-card generation rebuilds memory for the selected geometry', () {
@@ -191,10 +192,7 @@ void main() {
     expect(ntagData.every((page) => page.length == 4), isTrue);
 
     expect(
-      generateBlankCardData(
-        type: TagType.em410X,
-        uid: Uint8List(5),
-      ),
+      generateBlankCardData(type: TagType.em410X, uid: Uint8List(5)),
       isEmpty,
     );
   });

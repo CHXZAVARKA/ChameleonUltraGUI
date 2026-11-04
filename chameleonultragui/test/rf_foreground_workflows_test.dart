@@ -36,7 +36,7 @@ void main() {
 
     final upload = state.onTap(
       CardSave(uid: '01 02 03 04 05', name: 'LF', tag: TagType.em410X),
-      (_, __) {},
+      (_, _) {},
       await AppLocalizations.delegate.load(const Locale('en')),
     );
     await tester.pump();
@@ -152,7 +152,7 @@ void main() {
 
     final upload = state.onTap(
       CardSave(uid: '01 02 03 04 05', name: 'LF', tag: TagType.em410X),
-      (_, __) {},
+      (_, _) {},
       await AppLocalizations.delegate.load(const Locale('en')),
     );
     await tester.pump();
@@ -182,7 +182,7 @@ void main() {
 
     final upload = state.onTap(
       CardSave(uid: '01 02 03 04 05', name: 'LF', tag: TagType.em410X),
-      (_, __) {},
+      (_, _) {},
       await AppLocalizations.delegate.load(const Locale('en')),
     );
     await fixture.communicator.modeStarted.future.timeout(

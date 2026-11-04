@@ -1,3 +1,4 @@
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/chameleon_settings.dart';
 import 'package:chameleonultragui/gui/component/home_slot_grid.dart';
 import 'package:chameleonultragui/helpers/general.dart';
@@ -27,8 +28,8 @@ class HomePageState extends State<HomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final nextStatus =
-        Provider.of<ChameleonGUIState>(context).connectedDeviceStatus;
+    final nextStatus = Provider.of<ChameleonGUIState>(context)
+        .connectedDeviceStatus;
     if (identical(_status, nextStatus)) {
       return;
     }
@@ -115,18 +116,16 @@ class HomePageState extends State<HomePage> {
     }
     final preferences = appState.sharedPreferencesProvider;
     return Scaffold(
-      appBar: _ConnectedDeviceAppBar(
-        appState: appState,
-        status: status,
-      ),
+      appBar: _ConnectedDeviceAppBar(appState: appState, status: status),
       body: ListenableBuilder(
         listenable: preferences,
         builder: (context, _) {
           final slotLayout = preferences.getSlotLayout();
           return LayoutBuilder(
             builder: (context, constraints) {
-              final horizontalPadding =
-                  constraints.maxWidth < 500 ? 12.0 : 28.0;
+              final horizontalPadding = constraints.maxWidth < 500
+                  ? 12.0
+                  : 28.0;
               final firmware = Align(
                 alignment: Alignment.topCenter,
                 child: _FirmwarePill(status: status),
@@ -138,10 +137,7 @@ class HomePageState extends State<HomePage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      HomeSlotGrid(
-                        status: status,
-                        layout: slotLayout,
-                      ),
+                      HomeSlotGrid(status: status, layout: slotLayout),
                       const SizedBox(height: 16),
                       _HomeControls(
                         status: status,
@@ -210,28 +206,28 @@ class _HomeControls extends StatelessWidget {
       layout: layout,
     );
     Widget controls() => Row(
-          key: const Key('home-controls'),
-          children: [
-            layoutControl,
-            const SizedBox(width: 2),
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: _DeviceModeControl(status: status),
-              ),
-            ),
-            const SizedBox(width: 2),
-            IconButton(
-              key: const Key('home-device-settings'),
-              tooltip: localizations.settings,
-              onPressed: () => showDialog<String>(
-                context: context,
-                builder: (_) => const ChameleonSettings(),
-              ),
-              icon: const Icon(Icons.settings),
-            ),
-          ],
-        );
+      key: const Key('home-controls'),
+      children: [
+        layoutControl,
+        const SizedBox(width: 2),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _DeviceModeControl(status: status),
+          ),
+        ),
+        const SizedBox(width: 2),
+        IconButton(
+          key: const Key('home-device-settings'),
+          tooltip: localizations.settings,
+          onPressed: () => showDialog<String>(
+            context: context,
+            builder: (_) => const ChameleonSettings(),
+          ),
+          icon: const Icon(Icons.settings),
+        ),
+      ],
+    );
 
     final textScaler = MediaQuery.textScalerOf(context);
     final baseLabelSize =
@@ -245,9 +241,7 @@ class _HomeControls extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: constraints.maxWidth),
-          child: IntrinsicWidth(
-            child: controls(),
-          ),
+          child: IntrinsicWidth(child: controls()),
         ),
       ),
     );
@@ -255,10 +249,7 @@ class _HomeControls extends StatelessWidget {
 }
 
 class _SlotLayoutControl extends StatelessWidget {
-  const _SlotLayoutControl({
-    required this.preferences,
-    required this.layout,
-  });
+  const _SlotLayoutControl({required this.preferences, required this.layout});
 
   final SharedPreferencesProvider preferences;
   final SlotLayout layout;
@@ -267,11 +258,11 @@ class _SlotLayoutControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final dotStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          height: 0.72,
-          fontSize: 8,
-          letterSpacing: -1.2,
-          fontWeight: FontWeight.w700,
-        );
+      height: 0.72,
+      fontSize: 8,
+      letterSpacing: -1.2,
+      fontWeight: FontWeight.w700,
+    );
     return Semantics(
       key: const Key('home-slot-layout-control'),
       container: true,
@@ -315,9 +306,7 @@ class _SlotLayoutControl extends StatelessWidget {
           minimumSize: WidgetStatePropertyAll(Size(48, 48)),
           fixedSize: WidgetStatePropertyAll(Size(52, 48)),
           tapTargetSize: MaterialTapTargetSize.padded,
-          padding: WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 2),
-          ),
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 2)),
         ),
       ),
     );
@@ -347,7 +336,8 @@ class _FirmwarePill extends StatelessWidget {
       builder: (context, _) {
         final firmware = status.snapshot.firmware;
         final statusLabel = _firmwareStatusLabel(localizations, firmware.state);
-        final semanticLabel = '${localizations.firmware} · $statusLabel · '
+        final semanticLabel =
+            '${localizations.firmware} · $statusLabel · '
             '${localizations.firmware_details}';
         return Semantics(
           button: true,
@@ -369,8 +359,9 @@ class _FirmwarePill extends StatelessWidget {
                     key: const Key('firmware-visual-pill'),
                     height: 48,
                     decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Padding(
@@ -494,7 +485,8 @@ class _FirmwareDetailsDialog extends StatelessWidget {
                       ),
                     ],
                     selected: {status.firmwareChannel},
-                    onSelectionChanged: firmware.installing ||
+                    onSelectionChanged:
+                        firmware.installing ||
                             firmware.state == FirmwareState.demo
                         ? null
                         : (selection) {
@@ -607,27 +599,24 @@ class _FirmwareDetailRow extends StatelessWidget {
 String _firmwareStatusLabel(
   AppLocalizations localizations,
   FirmwareState state,
-) =>
-    switch (state) {
-      FirmwareState.checking => localizations.firmware_checking,
-      FirmwareState.upToDate => localizations.firmware_up_to_date,
-      FirmwareState.updateAvailable => localizations.firmware_update_available,
-      FirmwareState.updateRequired => localizations.firmware_update_required,
-      FirmwareState.checkUnavailable =>
-        localizations.firmware_check_unavailable,
-      FirmwareState.demo => localizations.firmware_demo,
-    };
+) => switch (state) {
+  FirmwareState.checking => localizations.firmware_checking,
+  FirmwareState.upToDate => localizations.firmware_up_to_date,
+  FirmwareState.updateAvailable => localizations.firmware_update_available,
+  FirmwareState.updateRequired => localizations.firmware_update_required,
+  FirmwareState.checkUnavailable => localizations.firmware_check_unavailable,
+  FirmwareState.demo => localizations.firmware_demo,
+};
 
 String _firmwareProtocolLabel(
   AppLocalizations localizations,
   FirmwareProtocol protocol,
-) =>
-    switch (protocol) {
-      FirmwareProtocol.loading => localizations.firmware_checking,
-      FirmwareProtocol.current => localizations.current_protocol,
-      FirmwareProtocol.legacy => localizations.legacy_protocol,
-      FirmwareProtocol.unknown => localizations.unknown,
-    };
+) => switch (protocol) {
+  FirmwareProtocol.loading => localizations.firmware_checking,
+  FirmwareProtocol.current => localizations.current_protocol,
+  FirmwareProtocol.legacy => localizations.legacy_protocol,
+  FirmwareProtocol.unknown => localizations.unknown,
+};
 
 String _latestFirmwareLabel(
   AppLocalizations localizations,
@@ -644,15 +633,15 @@ String _latestFirmwareLabel(
 String _firmwareCheckResultLabel(
   AppLocalizations localizations,
   FirmwareStatus firmware,
-) =>
-    switch (firmware.checkResult) {
-      FirmwareCheckResult.checking => localizations.firmware_checking,
-      FirmwareCheckResult.succeeded =>
-        _firmwareStatusLabel(localizations, firmware.state),
-      FirmwareCheckResult.unavailable =>
-        localizations.firmware_check_unavailable,
-      FirmwareCheckResult.demo => localizations.firmware_demo,
-    };
+) => switch (firmware.checkResult) {
+  FirmwareCheckResult.checking => localizations.firmware_checking,
+  FirmwareCheckResult.succeeded => _firmwareStatusLabel(
+    localizations,
+    firmware.state,
+  ),
+  FirmwareCheckResult.unavailable => localizations.firmware_check_unavailable,
+  FirmwareCheckResult.demo => localizations.firmware_demo,
+};
 
 Color _firmwareStatusColor(BuildContext context, FirmwareState state) {
   final theme = Theme.of(context);
@@ -666,8 +655,7 @@ Color _firmwareStatusColor(BuildContext context, FirmwareState state) {
     FirmwareState.checkUnavailable =>
       dark ? Colors.grey.shade400 : Colors.grey.shade600,
     FirmwareState.checking ||
-    FirmwareState.demo =>
-      theme.colorScheme.onSurfaceVariant,
+    FirmwareState.demo => theme.colorScheme.onSurfaceVariant,
   };
 }
 
@@ -687,7 +675,8 @@ class _DeviceModeControl extends StatelessWidget {
           final mode = status.snapshot.mode;
           final isLite =
               status.snapshot.identity.device == ChameleonDevice.lite;
-          final enabled = mode.availability == ModeAvailability.available &&
+          final enabled =
+              mode.availability == ModeAvailability.available &&
               mode.pendingMode == null;
           final control = SegmentedButton<ConnectedDeviceMode>(
             segments: [
@@ -702,8 +691,9 @@ class _DeviceModeControl extends StatelessWidget {
                 label: Text(localizations.reader),
               ),
             ],
-            selected:
-                mode.confirmedMode == null ? const {} : {mode.confirmedMode!},
+            selected: mode.confirmedMode == null
+                ? const {}
+                : {mode.confirmedMode!},
             emptySelectionAllowed: mode.confirmedMode == null,
             onSelectionChanged: enabled
                 ? (selection) async {
@@ -737,10 +727,7 @@ class _DeviceModeControl extends StatelessWidget {
 
 class _ConnectedDeviceAppBar extends StatelessWidget
     implements PreferredSizeWidget {
-  const _ConnectedDeviceAppBar({
-    required this.appState,
-    required this.status,
-  });
+  const _ConnectedDeviceAppBar({required this.appState, required this.status});
 
   final ChameleonGUIState appState;
   final ConnectedDeviceStatus status;
@@ -819,9 +806,22 @@ class _BatteryIndicator extends StatelessWidget {
     final color = _batteryColor(context, percent);
     final percentLabel = percent == null ? '--%' : '$percent%';
     final voltage = battery.voltageMillivolts;
-    final tooltip = voltage == null
+    final localizations = AppLocalizations.of(context)!;
+    final condition = switch (battery.condition) {
+      BatteryCondition.critical => localizations.battery_condition_critical,
+      BatteryCondition.low => localizations.battery_condition_low,
+      BatteryCondition.fair => localizations.battery_condition_fair,
+      BatteryCondition.good => localizations.battery_condition_good,
+      BatteryCondition.excellent => localizations.battery_condition_excellent,
+      BatteryCondition.unknown => localizations.battery_condition_unknown,
+      null => null,
+    };
+    final levelTooltip = voltage == null
         ? percentLabel
         : '$percentLabel · ${(voltage / 1000).toStringAsFixed(2)} V';
+    final tooltip = condition == null
+        ? levelTooltip
+        : '$levelTooltip\n${localizations.battery_condition(condition)}';
 
     return Tooltip(
       message: tooltip,

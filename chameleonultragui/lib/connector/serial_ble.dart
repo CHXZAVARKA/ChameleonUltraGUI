@@ -112,13 +112,10 @@ class BLESerial extends AbstractSerial {
   BLESerial({
     required super.log,
     ReactiveBleClient? reactiveBle,
-    Duration handshakeTimeout = defaultHandshakeTimeout,
-    Duration connectionAttemptTimeout = defaultConnectionAttemptTimeout,
-    Duration retryDelay = defaultRetryDelay,
-  })  : _reactiveBle = reactiveBle ?? FlutterReactiveBleClient(),
-        _handshakeTimeout = handshakeTimeout,
-        _connectionAttemptTimeout = connectionAttemptTimeout,
-        _retryDelay = retryDelay;
+    this._handshakeTimeout = defaultHandshakeTimeout,
+    this._connectionAttemptTimeout = defaultConnectionAttemptTimeout,
+    this._retryDelay = defaultRetryDelay,
+  })  : _reactiveBle = reactiveBle ?? FlutterReactiveBleClient();
 
   static const defaultConnectionAttemptTimeout = Duration(seconds: 7);
   static const defaultHandshakeTimeout = Duration(seconds: 3);

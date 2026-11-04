@@ -27,53 +27,63 @@ void main() {
     expect(app.connectedDeviceSessionToken, isNot(same(token)));
   });
 
-  for (final replacement in [
-    'communicator',
-    'connector',
-    'disconnect',
-    'DFU',
-    'dispose'
-  ]) {
-    test('old queued command stops after $replacement', () async {
-      final logger = Logger(level: Level.off);
-      addTearDown(logger.close);
-      final serial = _GatedSerial(log: logger)
-        ..connected = true
-        ..isOpen = true;
-      final app = ChameleonGUIState(SharedPreferencesProvider())
-        ..connector = serial;
-      final old = ChameleonCommunicator(logger, port: serial);
-      app.communicator = old;
-      await serial.registerCallback(old.onSerialMessage);
+  for (final raw in [false, true]) {
+    for (final replacement in [
+      'communicator',
+      'connector',
+      'disconnect',
+      'DFU',
+      'dispose',
+    ]) {
+      test(
+        'old queued ${raw ? 'numeric' : 'typed'} command stops after $replacement',
+        () async {
+          final logger = Logger(level: Level.off);
+          addTearDown(logger.close);
+          final serial = _GatedSerial(log: logger)
+            ..connected = true
+            ..isOpen = true;
+          final app = ChameleonGUIState(SharedPreferencesProvider())
+            ..connector = serial;
+          final old = ChameleonCommunicator(logger, port: serial);
+          app.communicator = old;
+          await serial.registerCallback(old.onSerialMessage);
 
-      final reading = old.getActiveSlot();
-      await serial.started.future;
-      final queued = old.activateSlot(7);
-      final readRejected = expectLater(reading, throwsStateError);
-      final writeRejected = expectLater(queued, throwsStateError);
+          final reading = old.getActiveSlot();
+          await serial.started.future;
+          final queued = raw
+              ? old.sendRawCmd(
+                  ChameleonCommand.setActiveSlot.value,
+                  data: Uint8List.fromList([7]),
+                )
+              : old.activateSlot(7);
+          final readRejected = expectLater(reading, throwsStateError);
+          final writeRejected = expectLater(queued, throwsStateError);
 
-      switch (replacement) {
-        case 'communicator':
-          app.communicator = ChameleonCommunicator(logger, port: serial);
-        case 'connector':
-          app.connector = _GatedSerial(log: logger)..connected = true;
-        case 'disconnect':
-          await app.disconnect();
-          serial.connected = true;
-          serial.isOpen = true;
-          app.communicator = ChameleonCommunicator(logger, port: serial);
-        case 'DFU':
-          serial.isDFU = true;
-          app.changesMade();
-        case 'dispose':
-          app.dispose();
-      }
-      serial.gate.complete();
-      await Future.wait([readRejected, writeRejected]);
+          switch (replacement) {
+            case 'communicator':
+              app.communicator = ChameleonCommunicator(logger, port: serial);
+            case 'connector':
+              app.connector = _GatedSerial(log: logger)..connected = true;
+            case 'disconnect':
+              await app.disconnect();
+              serial.connected = true;
+              serial.isOpen = true;
+              app.communicator = ChameleonCommunicator(logger, port: serial);
+            case 'DFU':
+              serial.isDFU = true;
+              app.changesMade();
+            case 'dispose':
+              app.dispose();
+          }
+          serial.gate.complete();
+          await Future.wait([readRejected, writeRejected]);
 
-      expect(serial.commands, [ChameleonCommand.getActiveSlot.value]);
-      if (replacement != 'dispose') app.dispose();
-    });
+          expect(serial.commands, [ChameleonCommand.getActiveSlot.value]);
+          if (replacement != 'dispose') app.dispose();
+        },
+      );
+    }
   }
 
   test('current connection still serializes successful commands', () async {

@@ -61,10 +61,10 @@ class _GeneratedCardIdentityFieldsState
   int _currentHidType() => int.tryParse(widget.controllers.hidType.text) ?? 1;
 
   GeneratedCardProfile _newProfile({int? uidLength}) => _generator.generate(
-        widget.type,
-        uidLength: uidLength,
-        hidType: widget.type == TagType.hidProx ? _currentHidType() : null,
-      );
+    widget.type,
+    uidLength: uidLength,
+    hidType: widget.type == TagType.hidProx ? _currentHidType() : null,
+  );
 
   int? _currentUidLength() {
     final length = widget.controllers.uid.text.replaceAll(' ', '').length ~/ 2;
@@ -102,16 +102,15 @@ class _GeneratedCardIdentityFieldsState
     final controllers = widget.controllers;
     controllers.uid.text = generatedHex(profile.uid);
     if (profile.sak != null) {
-      controllers.sak.text = generatedHex(
-        Uint8List.fromList([profile.sak!]),
-      );
+      controllers.sak.text = generatedHex(Uint8List.fromList([profile.sak!]));
     }
     if (profile.atqa != null) {
       controllers.atqa.text = generatedHex(profile.atqa);
     }
     controllers.ats.clear();
-    controllers.ultralightVersion.text =
-        generatedHex(profile.ultralightVersion);
+    controllers.ultralightVersion.text = generatedHex(
+      profile.ultralightVersion,
+    );
     controllers.ultralightSignature.clear();
     for (final controller in widget.ultralightCounters) {
       controller.text = _generator.generateUltralightCounter().toString();
@@ -205,9 +204,7 @@ class _GeneratedCardIdentityFieldsState
               ),
               generateTooltip: localizations.generate_field_value,
               onGenerate: () {
-                final atqa = _newProfile(
-                  uidLength: _currentUidLength(),
-                ).atqa;
+                final atqa = _newProfile(uidLength: _currentUidLength()).atqa;
                 if (atqa != null) {
                   controllers.atqa.text = generatedHex(atqa);
                 }
@@ -270,9 +267,7 @@ class _GeneratedCardIdentityFieldsState
                     child: GeneratedCardField(
                       controller: entry.value,
                       label: localizations.ultralight_counter(entry.key),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       validator: (value) => validateIntRange(
                         value,
                         localizations,
@@ -281,8 +276,9 @@ class _GeneratedCardIdentityFieldsState
                         emptyMessage: localizations.counter_value_empty,
                       ),
                       generateTooltip: localizations.generate_field_value,
-                      onGenerate: () => entry.value.text =
-                          _generator.generateUltralightCounter().toString(),
+                      onGenerate: () => entry.value.text = _generator
+                          .generateUltralightCounter()
+                          .toString(),
                     ),
                   );
                 }),
@@ -293,7 +289,7 @@ class _GeneratedCardIdentityFieldsState
             const SizedBox(height: 20),
             DropdownButton<int>(
               value: int.tryParse(controllers.hidType.text) ?? 1,
-              items: List.generate(hidFormatCount, (index) => index + 1)
+              items: hidProxFormats.keys
                   .map(
                     (type) => DropdownMenuItem<int>(
                       value: type,
@@ -320,8 +316,9 @@ class _GeneratedCardIdentityFieldsState
                 max: hidFormatLimits(_currentHidType()).facilityCode,
               ),
               generateTooltip: localizations.generate_field_value,
-              onGenerate: () => controllers.facilityCode.text =
-                  _newProfile().facilityCode.toString(),
+              onGenerate: () => controllers.facilityCode.text = _newProfile()
+                  .facilityCode
+                  .toString(),
             ),
             const SizedBox(height: 20),
             GeneratedCardField(
@@ -335,8 +332,9 @@ class _GeneratedCardIdentityFieldsState
                 max: hidFormatLimits(_currentHidType()).issueLevel,
               ),
               generateTooltip: localizations.generate_field_value,
-              onGenerate: () => controllers.issueLevel.text =
-                  _newProfile().issueLevel.toString(),
+              onGenerate: () => controllers.issueLevel.text = _newProfile()
+                  .issueLevel
+                  .toString(),
             ),
             const SizedBox(height: 20),
             GeneratedCardField(

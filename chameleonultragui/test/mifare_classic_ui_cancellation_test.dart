@@ -17,8 +17,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('profile UID confirmation does not hold the RF lease',
-      (tester) async {
+  testWidgets('profile UID confirmation does not hold the RF lease', (
+    tester,
+  ) async {
     final fixture = await _ClassicFixture.create(
       tester,
       _ClassicOperation.check,
@@ -31,10 +32,10 @@ void main() {
     expect(fixture.info.state, MifareClassicState.checkKeys);
 
     var backgroundRan = false;
-    final backgroundExecuted =
-        await fixture.appState.rfOperations.tryRunBackground(() async {
-      backgroundRan = true;
-    });
+    final backgroundExecuted = await fixture.appState.rfOperations
+        .tryRunBackground(() async {
+          backgroundRan = true;
+        });
     var foregroundRan = false;
     final foreground = fixture.appState.rfOperations.runForeground(() async {
       foregroundRan = true;
@@ -62,8 +63,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('profile UID confirmation rejects a reconnected device',
-      (tester) async {
+  testWidgets('profile UID confirmation rejects a reconnected device', (
+    tester,
+  ) async {
     final fixture = await _ClassicFixture.create(
       tester,
       _ClassicOperation.check,
@@ -145,10 +147,13 @@ void main() {
     );
   }
 
-  testWidgets('canceled key check restores state after helper disposal',
-      (tester) async {
-    final fixture =
-        await _ClassicFixture.create(tester, _ClassicOperation.check);
+  testWidgets('canceled key check restores state after helper disposal', (
+    tester,
+  ) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.check,
+    );
 
     await tester.tap(find.text(fixture.buttonLabel));
     await tester.pump();
@@ -159,17 +164,17 @@ void main() {
     await tester.pump();
 
     expect(fixture.info.state, MifareClassicState.checkKeys);
-    expect(
-      fixture.recovery.checkMarks[0],
-      ChameleonKeyCheckmark.none,
-    );
+    expect(fixture.recovery.checkMarks[0], ChameleonKeyCheckmark.none);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('recover error restores the current model and reports safely',
-      (tester) async {
-    final fixture =
-        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+  testWidgets('recover error restores the current model and reports safely', (
+    tester,
+  ) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.recover,
+    );
 
     await tester.tap(find.text(fixture.buttonLabel));
     await tester.pump();
@@ -178,10 +183,7 @@ void main() {
     await tester.pump();
 
     expect(fixture.info.state, MifareClassicState.recovery);
-    expect(
-      fixture.recovery.checkMarks[0],
-      ChameleonKeyCheckmark.none,
-    );
+    expect(fixture.recovery.checkMarks[0], ChameleonKeyCheckmark.none);
     expect(fixture.recovery.error, fixture.localizations.error);
     expect(find.text(fixture.localizations.error), findsOneWidget);
     expect(
@@ -191,10 +193,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('recover error restores only the replaced original model',
-      (tester) async {
-    final fixture =
-        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+  testWidgets('recover error restores only the replaced original model', (
+    tester,
+  ) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.recover,
+    );
 
     await tester.tap(find.text(fixture.buttonLabel));
     await tester.pump();
@@ -206,10 +211,7 @@ void main() {
     await tester.pump();
 
     expect(fixture.info.state, MifareClassicState.recovery);
-    expect(
-      fixture.recovery.checkMarks[0],
-      ChameleonKeyCheckmark.none,
-    );
+    expect(fixture.recovery.checkMarks[0], ChameleonKeyCheckmark.none);
     expect(fixture.recovery.error, isEmpty);
     expect(replacement.state, MifareClassicState.recovery);
     expect(replacement.recovery?.error, isEmpty);
@@ -220,10 +222,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('recover error after reconnect restores without reporting',
-      (tester) async {
-    final fixture =
-        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+  testWidgets('recover error after reconnect restores without reporting', (
+    tester,
+  ) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.recover,
+    );
 
     await tester.tap(find.text(fixture.buttonLabel));
     await tester.pump();
@@ -233,10 +238,7 @@ void main() {
     await tester.pump();
 
     expect(fixture.info.state, MifareClassicState.recovery);
-    expect(
-      fixture.recovery.checkMarks[0],
-      ChameleonKeyCheckmark.none,
-    );
+    expect(fixture.recovery.checkMarks[0], ChameleonKeyCheckmark.none);
     expect(fixture.recovery.error, isEmpty);
     expect(
       fixture.logOutput.buffer.map((event) => event.origin.error),
@@ -245,10 +247,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('recover error restores state after helper disposal',
-      (tester) async {
-    final fixture =
-        await _ClassicFixture.create(tester, _ClassicOperation.recover);
+  testWidgets('recover error restores state after helper disposal', (
+    tester,
+  ) async {
+    final fixture = await _ClassicFixture.create(
+      tester,
+      _ClassicOperation.recover,
+    );
 
     await tester.tap(find.text(fixture.buttonLabel));
     await tester.pump();
@@ -258,10 +263,7 @@ void main() {
     await tester.pump();
 
     expect(fixture.info.state, MifareClassicState.recovery);
-    expect(
-      fixture.recovery.checkMarks[0],
-      ChameleonKeyCheckmark.none,
-    );
+    expect(fixture.recovery.checkMarks[0], ChameleonKeyCheckmark.none);
     expect(fixture.recovery.error, isEmpty);
     expect(
       fixture.logOutput.buffer.map((event) => event.origin.error),
@@ -355,7 +357,7 @@ class _ClassicFixture {
     final recovery = _CancellableRecovery(
       appState: appState,
       localizations: localizations,
-      operation: operation,
+      selectedOperation: operation,
     );
     final info = MifareClassicInfo(
       type: MifareClassicType.m1k,
@@ -418,16 +420,16 @@ class _CancellableRecovery extends MifareClassicRecovery {
   _CancellableRecovery({
     required super.appState,
     required super.localizations,
-    required this.operation,
+    required this.selectedOperation,
   }) : super(update: () {}, mifareClassicType: MifareClassicType.m1k);
 
-  final _ClassicOperation operation;
+  final _ClassicOperation selectedOperation;
   final Completer<void> started = Completer<void>();
   final Completer<bool> result = Completer<bool>();
 
   Future<bool> _run(_ClassicOperation requested) {
-    if (operation != requested) {
-      throw StateError('Unexpected operation: $requested');
+    if (selectedOperation != requested) {
+      throw StateError('Unexpected selectedOperation: $requested');
     }
     checkMarks[0] = ChameleonKeyCheckmark.checking;
     started.complete();

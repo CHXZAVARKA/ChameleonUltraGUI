@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/status/firmware_channel.dart';
 import 'package:http/http.dart' as http;
@@ -10,44 +11,44 @@ List<Map<String, String>> developers = [
     'name': 'GameTec-live',
     'description': 'Lead Developer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/66077766',
-    'username': 'GameTec-live'
+    'username': 'GameTec-live',
   },
   {
     'name': 'Foxushka',
     'description': 'Lead Developer 🦊',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/135865149',
-    'username': 'Foxushka'
+    'username': 'Foxushka',
   },
   {
     'name': 'Augusto Zanellato',
     'description': 'Developer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/13242738',
-    'username': 'augustozanellato'
+    'username': 'augustozanellato',
   },
   {
     'name': 'Thomas Cannon',
     'description': 'Apple maintainer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/1297160',
-    'username': 'thomascannon'
+    'username': 'thomascannon',
   },
   {
     'name': 'Akisame',
     'description': 'Schrödingers Developer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/61940251',
-    'username': 'Akisame-AI'
+    'username': 'Akisame-AI',
   },
   {
     'name': 'Andrés Ruz Nieto',
     'description': 'Translation maintainer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/40019177',
-    'username': 'aruznieto'
+    'username': 'aruznieto',
   },
   {
     'name': 'St.Ricky',
     'description': 'Icon designer',
     'avatarUrl': 'https://avatars.githubusercontent.com/u/192366376',
-    'username': 'Saint-Ricky'
-  }
+    'username': 'Saint-Ricky',
+  },
 ];
 
 class GitHubFirmwareRelease {
@@ -109,22 +110,26 @@ List<String> excludedAccounts = ["github-actions[bot]", "ChameleonHelper"];
 
 Future<List<Map<String, String>>> fetchGitHubContributors() async {
   try {
-    final response = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/contributors")))
-        .body
-        .toString());
+    final response = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/contributors",
+        ),
+      )).body.toString(),
+    );
 
     if (response is List) {
       List<Map<String, String>> contributors = [];
       for (var contributor in response) {
         if (!excludedAccounts.contains(contributor['login']) &&
             !developers.any(
-                (developer) => developer['username'] == contributor['login'])) {
+              (developer) => developer['username'] == contributor['login'],
+            )) {
           contributors.add({
             'name': contributor['login'],
             'description': '',
             'avatarUrl': contributor['avatar_url'],
-            'username': contributor['login']
+            'username': contributor['login'],
           });
         }
       }
@@ -146,10 +151,13 @@ Future<Uint8List> fetchFirmwareFromReleases(
   String error = "";
 
   try {
-    final releases = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/${channel.repository}/releases")))
-        .body
-        .toString());
+    final releases = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/${channel.repository}/releases",
+        ),
+      )).body.toString(),
+    );
 
     if (releases is! List && releases.containsKey("message")) {
       error = releases["message"];
@@ -170,6 +178,38 @@ Future<Uint8List> fetchFirmwareFromReleases(
   return content;
 }
 
+String _dfuAppName(ChameleonDevice device) =>
+    "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app";
+
+/// Returns the newest non-expired DFU artifact built from upstream main.
+///
+/// The artifacts API lists by artifact ID, which does not follow build order,
+/// so the first match can be an older build. Workflow run IDs do follow it,
+/// and unlike created_at they do not change when an old run is re-run.
+Map<String, dynamic>? selectLatestFirmwareArtifact(
+  List<dynamic> artifacts,
+  ChameleonDevice device,
+) {
+  Map<String, dynamic>? latest;
+
+  for (var artifact in artifacts) {
+    final run = artifact["workflow_run"];
+    if (artifact["name"] != _dfuAppName(device) ||
+        artifact["expired"] == true ||
+        run == null ||
+        run["head_branch"] != "main" ||
+        run["head_repository_id"] != 581338100) {
+      continue;
+    }
+
+    if (latest == null || run["id"] > latest["workflow_run"]["id"]) {
+      latest = artifact;
+    }
+  }
+
+  return latest;
+}
+
 Future<Uint8List> fetchFirmwareFromActions(
   ChameleonDevice device, [
   FirmwareChannel channel = FirmwareChannel.official,
@@ -181,25 +221,29 @@ Future<Uint8List> fetchFirmwareFromActions(
   String error = "";
 
   try {
-    final artifacts = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100")))
-        .body
-        .toString());
+    final artifacts = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100&name=${_dfuAppName(device)}",
+        ),
+      )).body.toString(),
+    );
 
     if (artifacts.containsKey("message")) {
       error = artifacts["message"];
       throw error;
     }
 
-    for (var artifact in artifacts["artifacts"]) {
-      if (artifact["name"] ==
-              "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app" &&
-          artifact["workflow_run"]["head_branch"] == "main" &&
-          artifact["workflow_run"]["head_repository_id"] == 581338100) {
-        content = await http.readBytes(Uri.parse(
-            "https://nightly.link/RfidResearchGroup/ChameleonUltra/suites/${artifact["workflow_run"]["id"]}/artifacts/${artifact["id"]}"));
-        break;
-      }
+    final artifact = selectLatestFirmwareArtifact(
+      artifacts["artifacts"],
+      device,
+    );
+    if (artifact != null) {
+      content = await http.readBytes(
+        Uri.parse(
+          "https://nightly.link/RfidResearchGroup/ChameleonUltra/suites/${artifact["workflow_run"]["id"]}/artifacts/${artifact["id"]}",
+        ),
+      );
     }
   } catch (_) {}
 
@@ -218,32 +262,35 @@ Future<String> latestAvailableCommit(
 
   if (channel.usesActionsArtifacts) {
     try {
-      final artifacts = json.decode((await http.get(Uri.parse(
-              "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100")))
-          .body
-          .toString());
+      final artifacts = json.decode(
+        (await http.get(
+          Uri.parse(
+            "https://api.github.com/repos/RfidResearchGroup/ChameleonUltra/actions/artifacts?per_page=100",
+          ),
+        )).body.toString(),
+      );
 
       if (artifacts.containsKey("message")) {
         error = artifacts["message"];
         throw error;
       }
 
-      for (var artifact in artifacts["artifacts"]) {
-        if (artifact["name"] ==
-                "${(device == ChameleonDevice.ultra) ? "ultra" : "lite"}-dfu-app" &&
-            artifact["workflow_run"]["head_branch"] == "main" &&
-            artifact["workflow_run"]["head_repository_id"] == 581338100) {
-          return artifact["workflow_run"]["head_sha"];
-        }
-      }
+      final artifact = selectLatestFirmwareArtifact(
+        artifacts["artifacts"],
+        device,
+      );
+      if (artifact != null) return artifact["workflow_run"]["head_sha"];
     } catch (_) {}
   }
 
   try {
-    final releases = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/${channel.repository}/releases")))
-        .body
-        .toString());
+    final releases = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/${channel.repository}/releases",
+        ),
+      )).body.toString(),
+    );
 
     if (releases is! List && releases.containsKey("message")) {
       error = releases["message"];
@@ -269,10 +316,11 @@ Future<String> resolveCommit(
   } else if (commitHash.startsWith('-dirty')) {
     return commitHash; // v2.0.0-1-gXXXXXX-dirty
   } else if ('-'.allMatches(commitHash).isEmpty) {
-    final tags = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/${channel.repository}/tags")))
-        .body
-        .toString());
+    final tags = json.decode(
+      (await http.get(
+        Uri.parse("https://api.github.com/repos/${channel.repository}/tags"),
+      )).body.toString(),
+    );
     for (var tag in tags) {
       if (commitHash == tag['name']) {
         return tag['commit']['sha'];
@@ -339,10 +387,12 @@ class ChangelogEntry {
         .split(RegExp(r'\r?\n'))
         .where((line) => line.trim().isNotEmpty)
         .map((line) => line.trim())
-        .where((line) =>
-            line.startsWith('*') ||
-            line.startsWith('-') ||
-            line.startsWith('+'))
+        .where(
+          (line) =>
+              line.startsWith('*') ||
+              line.startsWith('-') ||
+              line.startsWith('+'),
+        )
         .map((line) => line.replaceFirst(RegExp(r'^[*\-+]\s*'), ''))
         .toList();
   }
@@ -350,10 +400,13 @@ class ChangelogEntry {
 
 Future<List<dynamic>?> _fetchReleases() async {
   try {
-    final response = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/releases")))
-        .body
-        .toString());
+    final response = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/releases",
+        ),
+      )).body.toString(),
+    );
 
     if (response is List) {
       return response;
@@ -381,8 +434,10 @@ Future<List<ChangelogEntry>> fetchChangelogs([String? buildNumber]) async {
     }
 
     // First, get unreleased changes
-    final unreleasedEntry =
-        await fetchUnreleasedChanges(releases, currentVersionCommit);
+    final unreleasedEntry = await fetchUnreleasedChanges(
+      releases,
+      currentVersionCommit,
+    );
     if (unreleasedEntry != null) {
       changelogs.add(unreleasedEntry);
     }
@@ -400,8 +455,10 @@ Future<List<ChangelogEntry>> fetchChangelogs([String? buildNumber]) async {
   }
 }
 
-Future<ChangelogEntry?> fetchUnreleasedChanges(
-    [List<dynamic>? releases, String? currentVersionCommit]) async {
+Future<ChangelogEntry?> fetchUnreleasedChanges([
+  List<dynamic>? releases,
+  String? currentVersionCommit,
+]) async {
   try {
     // Use provided releases or fetch them if not provided
     final releasesResponse = releases ?? await _fetchReleases();
@@ -423,10 +480,13 @@ Future<ChangelogEntry?> fetchUnreleasedChanges(
     final String latestReleaseCommit = latestRelease['target_commitish'];
 
     // Get commits between the latest release and main branch
-    final commitsResponse = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/compare/$latestReleaseCommit...main")))
-        .body
-        .toString());
+    final commitsResponse = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/compare/$latestReleaseCommit...main",
+        ),
+      )).body.toString(),
+    );
 
     if (commitsResponse['commits'] == null ||
         (commitsResponse['commits'] as List).isEmpty) {
@@ -457,8 +517,9 @@ Future<ChangelogEntry?> fetchUnreleasedChanges(
     // Check if current version commit is among the unreleased commits
     String? matchedCurrentVersionCommit;
     if (currentVersionCommit != null) {
-      bool hasMatch =
-          commits.any((commit) => commit['sha'] == currentVersionCommit);
+      bool hasMatch = commits.any(
+        (commit) => commit['sha'] == currentVersionCommit,
+      );
       if (hasMatch) {
         matchedCurrentVersionCommit = currentVersionCommit;
       }
@@ -483,15 +544,18 @@ Future<ChangelogEntry?> fetchUnreleasedChanges(
 Future<String?> findCurrentVersionCommit(String buildNumber) async {
   String workflowName =
       (Platform.isAndroid || Platform.isMacOS || Platform.isIOS)
-          ? 'publish-app.yml'
-          : 'build-app.yml';
+      ? 'publish-app.yml'
+      : 'build-app.yml';
 
   try {
     // Fetch workflow runs
-    final response = json.decode((await http.get(Uri.parse(
-            "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/actions/workflows/$workflowName/runs?status=success&per_page=100")))
-        .body
-        .toString());
+    final response = json.decode(
+      (await http.get(
+        Uri.parse(
+          "https://api.github.com/repos/GameTec-live/ChameleonUltraGUI/actions/workflows/$workflowName/runs?status=success&per_page=100",
+        ),
+      )).body.toString(),
+    );
 
     if (response['workflow_runs'] == null) {
       return null;

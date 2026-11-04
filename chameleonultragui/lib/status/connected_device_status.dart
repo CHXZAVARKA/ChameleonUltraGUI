@@ -97,20 +97,20 @@ class FirmwareStatus {
   });
 
   const FirmwareStatus.checking()
-      : this(
-          state: FirmwareState.checking,
-          protocol: FirmwareProtocol.loading,
-          compatibility: FirmwareCompatibility.loading,
-          checkResult: FirmwareCheckResult.checking,
-        );
+    : this(
+        state: FirmwareState.checking,
+        protocol: FirmwareProtocol.loading,
+        compatibility: FirmwareCompatibility.loading,
+        checkResult: FirmwareCheckResult.checking,
+      );
 
   const FirmwareStatus.demo()
-      : this(
-          state: FirmwareState.demo,
-          protocol: FirmwareProtocol.unknown,
-          compatibility: FirmwareCompatibility.unknown,
-          checkResult: FirmwareCheckResult.demo,
-        );
+    : this(
+        state: FirmwareState.demo,
+        protocol: FirmwareProtocol.unknown,
+        compatibility: FirmwareCompatibility.unknown,
+        checkResult: FirmwareCheckResult.demo,
+      );
 
   final FirmwareState state;
   final String? installedVersion;
@@ -134,19 +134,18 @@ class FirmwareStatus {
     FirmwareCheckResult? checkResult,
     bool? installing,
     bool? installationFailed,
-  }) =>
-      FirmwareStatus(
-        state: state ?? this.state,
-        installedVersion: installedVersion ?? this.installedVersion,
-        installedCommit: installedCommit ?? this.installedCommit,
-        protocol: protocol ?? this.protocol,
-        compatibility: compatibility ?? this.compatibility,
-        latestVersion: latestVersion ?? this.latestVersion,
-        latestCommit: latestCommit ?? this.latestCommit,
-        checkResult: checkResult ?? this.checkResult,
-        installing: installing ?? this.installing,
-        installationFailed: installationFailed ?? this.installationFailed,
-      );
+  }) => FirmwareStatus(
+    state: state ?? this.state,
+    installedVersion: installedVersion ?? this.installedVersion,
+    installedCommit: installedCommit ?? this.installedCommit,
+    protocol: protocol ?? this.protocol,
+    compatibility: compatibility ?? this.compatibility,
+    latestVersion: latestVersion ?? this.latestVersion,
+    latestCommit: latestCommit ?? this.latestCommit,
+    checkResult: checkResult ?? this.checkResult,
+    installing: installing ?? this.installing,
+    installationFailed: installationFailed ?? this.installationFailed,
+  );
 
   bool get canInstall =>
       state == FirmwareState.updateAvailable ||
@@ -168,17 +167,17 @@ class FirmwareStatus {
 
   @override
   int get hashCode => Object.hash(
-        state,
-        installedVersion,
-        installedCommit,
-        protocol,
-        compatibility,
-        latestVersion,
-        latestCommit,
-        checkResult,
-        installing,
-        installationFailed,
-      );
+    state,
+    installedVersion,
+    installedCommit,
+    protocol,
+    compatibility,
+    latestVersion,
+    latestCommit,
+    checkResult,
+    installing,
+    installationFailed,
+  );
 }
 
 enum SlotFieldAvailability { confirmed, unavailable }
@@ -193,11 +192,11 @@ const Object _keepPendingReorder = Object();
 @immutable
 class SlotField<T> {
   const SlotField.confirmed(this.value)
-      : availability = SlotFieldAvailability.confirmed;
+    : availability = SlotFieldAvailability.confirmed;
 
   const SlotField.unavailable()
-      : availability = SlotFieldAvailability.unavailable,
-        value = null;
+    : availability = SlotFieldAvailability.unavailable,
+      value = null;
 
   final SlotFieldAvailability availability;
   final T? value;
@@ -223,9 +222,9 @@ class SlotFrequencyStatus {
   });
 
   const SlotFrequencyStatus.unavailable()
-      : type = const SlotField<TagType>.unavailable(),
-        enabled = const SlotField<bool>.unavailable(),
-        name = const SlotField<String>.unavailable();
+    : type = const SlotField<TagType>.unavailable(),
+      enabled = const SlotField<bool>.unavailable(),
+      name = const SlotField<String>.unavailable();
 
   final SlotField<TagType> type;
   final SlotField<bool> enabled;
@@ -251,11 +250,11 @@ class DeviceSlotStatus {
   });
 
   const DeviceSlotStatus.unavailable(int index)
-      : this(
-          index: index,
-          hf: const SlotFrequencyStatus.unavailable(),
-          lf: const SlotFrequencyStatus.unavailable(),
-        );
+    : this(
+        index: index,
+        hf: const SlotFrequencyStatus.unavailable(),
+        lf: const SlotFrequencyStatus.unavailable(),
+      );
 
   final int index;
   final SlotFrequencyStatus hf;
@@ -284,33 +283,33 @@ class SlotsStatus {
     Map<int, Set<SlotFacet>> staleSlotFacets = const {},
     Set<SlotFacet> unavailableFacets = const {},
     Set<SlotFacet> staleFacets = const {},
-  })  : assert(slots.length == 8),
-        assert(
-          pendingActivation == null ||
-              (pendingActivation >= 0 && pendingActivation < 8),
-        ),
-        assert(
-          pendingReorder == null ||
-              (pendingReorder.source >= 0 &&
-                  pendingReorder.source < 8 &&
-                  pendingReorder.target >= 0 &&
-                  pendingReorder.target < 8),
-        ),
-        slots = List.unmodifiable(slots),
-        staleSlotFacets = Map.unmodifiable(
-          staleSlotFacets.map(
-            (slot, facets) => MapEntry(slot, Set.unmodifiable(facets)),
-          ),
-        ),
-        unavailableFacets = Set.unmodifiable(unavailableFacets),
-        staleFacets = Set.unmodifiable(staleFacets);
+  }) : assert(slots.length == 8),
+       assert(
+         pendingActivation == null ||
+             (pendingActivation >= 0 && pendingActivation < 8),
+       ),
+       assert(
+         pendingReorder == null ||
+             (pendingReorder.source >= 0 &&
+                 pendingReorder.source < 8 &&
+                 pendingReorder.target >= 0 &&
+                 pendingReorder.target < 8),
+       ),
+       slots = List.unmodifiable(slots),
+       staleSlotFacets = Map.unmodifiable(
+         staleSlotFacets.map(
+           (slot, facets) => MapEntry(slot, Set.unmodifiable(facets)),
+         ),
+       ),
+       unavailableFacets = Set.unmodifiable(unavailableFacets),
+       staleFacets = Set.unmodifiable(staleFacets);
 
   factory SlotsStatus.loading() => SlotsStatus(
-        availability: SlotsAvailability.loading,
-        slots: List.generate(8, DeviceSlotStatus.unavailable),
-        activeSlot: const SlotField<int>.unavailable(),
-        unavailableFacets: SlotFacet.values.toSet(),
-      );
+    availability: SlotsAvailability.loading,
+    slots: List.generate(8, DeviceSlotStatus.unavailable),
+    activeSlot: const SlotField<int>.unavailable(),
+    unavailableFacets: SlotFacet.values.toSet(),
+  );
 
   final SlotsAvailability availability;
   final List<DeviceSlotStatus> slots;
@@ -351,25 +350,21 @@ class SlotsStatus {
     Map<int, Set<SlotFacet>>? staleSlotFacets,
     Set<SlotFacet>? unavailableFacets,
     Set<SlotFacet>? staleFacets,
-  }) =>
-      SlotsStatus(
-        availability: availability ?? this.availability,
-        slots: slots ?? this.slots,
-        activeSlot: activeSlot ?? this.activeSlot,
-        pendingActivation: identical(
-          pendingActivation,
-          _keepPendingActivation,
-        )
-            ? this.pendingActivation
-            : pendingActivation as int?,
-        pendingReorder: identical(pendingReorder, _keepPendingReorder)
-            ? this.pendingReorder
-            : pendingReorder as PendingSlotReorder?,
-        reorderCapability: reorderCapability ?? this.reorderCapability,
-        staleSlotFacets: staleSlotFacets ?? this.staleSlotFacets,
-        unavailableFacets: unavailableFacets ?? this.unavailableFacets,
-        staleFacets: staleFacets ?? this.staleFacets,
-      );
+  }) => SlotsStatus(
+    availability: availability ?? this.availability,
+    slots: slots ?? this.slots,
+    activeSlot: activeSlot ?? this.activeSlot,
+    pendingActivation: identical(pendingActivation, _keepPendingActivation)
+        ? this.pendingActivation
+        : pendingActivation as int?,
+    pendingReorder: identical(pendingReorder, _keepPendingReorder)
+        ? this.pendingReorder
+        : pendingReorder as PendingSlotReorder?,
+    reorderCapability: reorderCapability ?? this.reorderCapability,
+    staleSlotFacets: staleSlotFacets ?? this.staleSlotFacets,
+    unavailableFacets: unavailableFacets ?? this.unavailableFacets,
+    staleFacets: staleFacets ?? this.staleFacets,
+  );
 
   @override
   bool operator ==(Object other) {
@@ -395,30 +390,27 @@ class SlotsStatus {
 
   @override
   int get hashCode => Object.hash(
-        availability,
-        activeSlot,
-        pendingActivation,
-        pendingReorder,
-        reorderCapability,
-        staleSlotFacets.entries.fold<int>(
-          0,
-          (hash, entry) =>
-              hash ^
-              Object.hash(
-                entry.key,
-                entry.value.fold<int>(
-                  0,
-                  (facetHash, facet) => facetHash ^ facet.hashCode,
-                ),
-              ),
-        ),
-        Object.hashAll(slots),
-        unavailableFacets.fold<int>(
-          0,
-          (hash, facet) => hash ^ facet.hashCode,
-        ),
-        staleFacets.fold<int>(0, (hash, facet) => hash ^ facet.hashCode),
-      );
+    availability,
+    activeSlot,
+    pendingActivation,
+    pendingReorder,
+    reorderCapability,
+    staleSlotFacets.entries.fold<int>(
+      0,
+      (hash, entry) =>
+          hash ^
+          Object.hash(
+            entry.key,
+            entry.value.fold<int>(
+              0,
+              (facetHash, facet) => facetHash ^ facet.hashCode,
+            ),
+          ),
+    ),
+    Object.hashAll(slots),
+    unavailableFacets.fold<int>(0, (hash, facet) => hash ^ facet.hashCode),
+    staleFacets.fold<int>(0, (hash, facet) => hash ^ facet.hashCode),
+  );
 }
 
 bool _setEquals<T>(Set<T> left, Set<T> right) =>
@@ -466,36 +458,42 @@ class BatteryStatus {
     required this.availability,
     this.percent,
     this.voltageMillivolts,
+    this.condition,
   });
 
   const BatteryStatus.loading()
-      : this._(availability: BatteryAvailability.loading);
+    : this._(availability: BatteryAvailability.loading);
 
   const BatteryStatus.unavailable()
-      : this._(availability: BatteryAvailability.unavailable);
+    : this._(availability: BatteryAvailability.unavailable);
 
   const BatteryStatus.available({
     required int percent,
     required int voltageMillivolts,
+    BatteryCondition? condition,
   }) : this._(
-          availability: BatteryAvailability.available,
-          percent: percent,
-          voltageMillivolts: voltageMillivolts,
-        );
+         availability: BatteryAvailability.available,
+         percent: percent,
+         voltageMillivolts: voltageMillivolts,
+         condition: condition,
+       );
 
   final BatteryAvailability availability;
   final int? percent;
   final int? voltageMillivolts;
+  final BatteryCondition? condition;
 
   @override
   bool operator ==(Object other) =>
       other is BatteryStatus &&
       other.availability == availability &&
       other.percent == percent &&
-      other.voltageMillivolts == voltageMillivolts;
+      other.voltageMillivolts == voltageMillivolts &&
+      other.condition == condition;
 
   @override
-  int get hashCode => Object.hash(availability, percent, voltageMillivolts);
+  int get hashCode =>
+      Object.hash(availability, percent, voltageMillivolts, condition);
 }
 
 @immutable
@@ -509,25 +507,22 @@ class ModeStatus {
   const ModeStatus.loading() : this._(availability: ModeAvailability.loading);
 
   const ModeStatus.unavailable({ConnectedDeviceMode? confirmedMode})
-      : this._(
-          availability: ModeAvailability.unavailable,
-          confirmedMode: confirmedMode,
-        );
+    : this._(
+        availability: ModeAvailability.unavailable,
+        confirmedMode: confirmedMode,
+      );
 
   const ModeStatus.available(ConnectedDeviceMode mode)
-      : this._(
-          availability: ModeAvailability.available,
-          confirmedMode: mode,
-        );
+    : this._(availability: ModeAvailability.available, confirmedMode: mode);
 
   const ModeStatus.pending({
     required ConnectedDeviceMode confirmedMode,
     required ConnectedDeviceMode pendingMode,
   }) : this._(
-          availability: ModeAvailability.available,
-          confirmedMode: confirmedMode,
-          pendingMode: pendingMode,
-        );
+         availability: ModeAvailability.available,
+         confirmedMode: confirmedMode,
+         pendingMode: pendingMode,
+       );
 
   final ModeAvailability availability;
   final ConnectedDeviceMode? confirmedMode;
@@ -565,14 +560,13 @@ class DeviceStatusSnapshot {
     ModeStatus? mode,
     SlotsStatus? slots,
     FirmwareStatus? firmware,
-  }) =>
-      DeviceStatusSnapshot(
-        identity: identity,
-        battery: battery ?? this.battery,
-        mode: mode ?? this.mode,
-        slots: slots ?? this.slots,
-        firmware: firmware ?? this.firmware,
-      );
+  }) => DeviceStatusSnapshot(
+    identity: identity,
+    battery: battery ?? this.battery,
+    mode: mode ?? this.mode,
+    slots: slots ?? this.slots,
+    firmware: firmware ?? this.firmware,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -654,39 +648,34 @@ class _FirmwareFacts {
 class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   ConnectedDeviceStatus({
     required ConnectedDeviceSession session,
-    required RfOperationCoordinator rfOperations,
-    FirmwareCatalog firmwareCatalog = const GitHubFirmwareCatalog(),
+    required this._rfOperations,
+    this._firmwareCatalog = const GitHubFirmwareCatalog(),
     FirmwareInstaller? firmwareInstaller,
-    FirmwareChannel firmwareChannel = FirmwareChannel.official,
+    this._firmwareChannel = FirmwareChannel.official,
     this.batteryPollInterval = const Duration(seconds: 15),
-  })  : _session = session,
-        _rfOperations = rfOperations,
-        _firmwareCatalog = firmwareCatalog,
-        _firmwareInstaller = firmwareInstaller ??
-            ((channel) => flashFirmware(
-                  session.appState,
-                  channel: channel,
-                )),
-        _firmwareChannel = firmwareChannel,
-        _snapshot = DeviceStatusSnapshot(
-          identity: DeviceIdentityStatus(
-            device: session.connector.device,
-            portName: session.connector.portName,
-            connectionType: session.connector.connectionType,
-          ),
-          battery: const BatteryStatus.loading(),
-          mode: session.connector.device == ChameleonDevice.lite
-              ? const ModeStatus.available(ConnectedDeviceMode.emulator)
-              : const ModeStatus.loading(),
-          slots: SlotsStatus.loading().copyWith(
-            reorderCapability: session.connector.portName == 'Demo'
-                ? SlotReorderCapability.supported
-                : SlotReorderCapability.unknown,
-          ),
-          firmware: session.connector.portName == 'Demo'
-              ? const FirmwareStatus.demo()
-              : const FirmwareStatus.checking(),
-        ) {
+  }) : _session = session,
+       _firmwareInstaller =
+           firmwareInstaller ??
+           ((channel) => flashFirmware(session.appState, channel: channel)),
+       _snapshot = DeviceStatusSnapshot(
+         identity: DeviceIdentityStatus(
+           device: session.connector.device,
+           portName: session.connector.portName,
+           connectionType: session.connector.connectionType,
+         ),
+         battery: const BatteryStatus.loading(),
+         mode: session.connector.device == ChameleonDevice.lite
+             ? const ModeStatus.available(ConnectedDeviceMode.emulator)
+             : const ModeStatus.loading(),
+         slots: SlotsStatus.loading().copyWith(
+           reorderCapability: session.connector.portName == 'Demo'
+               ? SlotReorderCapability.supported
+               : SlotReorderCapability.unknown,
+         ),
+         firmware: session.connector.portName == 'Demo'
+             ? const FirmwareStatus.demo()
+             : const FirmwareStatus.checking(),
+       ) {
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -744,11 +733,11 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   Future<SlotReorderCapability> _refreshSlotReorderCapability() async {
     try {
       while (_canPublish) {
-        final result =
-            await _rfOperations.tryRunBackground<SlotReorderCapability>(
-          _readSlotReorderCapability,
-          group: _backgroundOperationGroup,
-        );
+        final result = await _rfOperations
+            .tryRunBackground<SlotReorderCapability>(
+              _readSlotReorderCapability,
+              group: _backgroundOperationGroup,
+            );
         if (!result.acquired) {
           await _rfOperations.waitUntilIdle();
           continue;
@@ -802,16 +791,19 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final batteryRefresh = refreshBattery();
     final modeRefresh =
         _snapshot.mode.availability == ModeAvailability.available
-            ? Future<void>.value()
-            : refreshMode();
+        ? Future<void>.value()
+        : refreshMode();
     final slotsRefresh =
         _snapshot.slots.availability == SlotsAvailability.available
-            ? _scheduleActiveSlotRefresh()
-            : refreshSlots();
+        ? _scheduleActiveSlotRefresh()
+        : refreshSlots();
     final firmwareRefresh = refreshFirmware();
-    await Future.wait(
-      [batteryRefresh, modeRefresh, slotsRefresh, firmwareRefresh],
-    );
+    await Future.wait([
+      batteryRefresh,
+      modeRefresh,
+      slotsRefresh,
+      firmwareRefresh,
+    ]);
   }
 
   Future<void> _refreshHomeAfterResume() async {
@@ -821,9 +813,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         : Future<void>.value();
     final activeSlotRefresh = _scheduleActiveSlotRefresh();
     final firmwareRefresh = refreshFirmware();
-    await Future.wait(
-      [batteryRefresh, modeRefresh, activeSlotRefresh, firmwareRefresh],
-    );
+    await Future.wait([
+      batteryRefresh,
+      modeRefresh,
+      activeSlotRefresh,
+      firmwareRefresh,
+    ]);
   }
 
   Future<void> refreshFirmware() {
@@ -918,7 +913,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     _publish(
       _snapshot.copyWith(
         firmware: _snapshot.firmware.copyWith(
-          state: _snapshot.firmware.compatibility ==
+          state:
+              _snapshot.firmware.compatibility ==
                   FirmwareCompatibility.incompatible
               ? FirmwareState.updateRequired
               : FirmwareState.checking,
@@ -967,10 +963,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       final state = facts.compatibility == FirmwareCompatibility.incompatible
           ? FirmwareState.updateRequired
           : latest.updateAvailable == true
-              ? FirmwareState.updateAvailable
-              : latest.updateAvailable == false
-                  ? FirmwareState.upToDate
-                  : FirmwareState.checkUnavailable;
+          ? FirmwareState.updateAvailable
+          : latest.updateAvailable == false
+          ? FirmwareState.upToDate
+          : FirmwareState.checkUnavailable;
       _publish(
         _snapshot.copyWith(
           firmware: FirmwareStatus(
@@ -1066,24 +1062,29 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           }
 
           final legacy = version?.legacyProtocol == true;
-          final requiredCapability = ChameleonCommand.setIdteckEmulatorID.value;
-          final compatibility = legacy ||
+          final requiredCapability =
+              _session.connector.device == ChameleonDevice.ultra
+              ? ChameleonCommand.mf0UlcAuth.value
+              : ChameleonCommand.setIdteckEmulatorID.value;
+          final compatibility =
+              legacy ||
                   (capabilities != null &&
                       !capabilities.contains(requiredCapability))
               ? FirmwareCompatibility.incompatible
               : capabilities == null || version == null
-                  ? FirmwareCompatibility.unknown
-                  : FirmwareCompatibility.compatible;
+              ? FirmwareCompatibility.unknown
+              : FirmwareCompatibility.compatible;
 
           return _FirmwareFacts(
-            installedVersion:
-                version == null ? null : numToVerCode(version.version),
+            installedVersion: version == null
+                ? null
+                : numToVerCode(version.version),
             installedCommit: commit,
             protocol: version == null
                 ? FirmwareProtocol.unknown
                 : legacy
-                    ? FirmwareProtocol.legacy
-                    : FirmwareProtocol.current,
+                ? FirmwareProtocol.legacy
+                : FirmwareProtocol.current,
             compatibility: compatibility,
           );
         },
@@ -1316,8 +1317,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       final confirmed = isReader == null
           ? null
           : isReader
-              ? ConnectedDeviceMode.reader
-              : ConnectedDeviceMode.emulator;
+          ? ConnectedDeviceMode.reader
+          : ConnectedDeviceMode.emulator;
       if (readError == null && confirmed != null) {
         _publish(_snapshot.copyWith(mode: ModeStatus.available(confirmed)));
         if (confirmed == target) {
@@ -1332,9 +1333,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       }
       final latestConfirmed =
           _snapshot.mode.confirmedMode ?? previous.confirmedMode!;
-      _publish(
-        _snapshot.copyWith(mode: ModeStatus.available(latestConfirmed)),
-      );
+      _publish(_snapshot.copyWith(mode: ModeStatus.available(latestConfirmed)));
       return ModeActionOutcome.failed;
     });
   }
@@ -1399,9 +1398,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
             stackTrace: stackTrace,
           );
           if (_canPublish) {
-            _publish(
-              _snapshot.copyWith(slots: _failedSlots(_snapshot.slots)),
-            );
+            _publish(_snapshot.copyWith(slots: _failedSlots(_snapshot.slots)));
           }
         }
       }
@@ -1514,8 +1511,12 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           return SlotReorderOutcome.ambiguous;
         }
 
-        final matchesExpected =
-            _matchesExpectedSwap(previous, reconciled, source, target);
+        final matchesExpected = _matchesExpectedSwap(
+          previous,
+          reconciled,
+          source,
+          target,
+        );
         final matchesPrevious = _matchesConfirmedOrder(previous, reconciled);
         if (matchesExpected && !matchesPrevious) {
           _swapSemanticReorderAmbiguity(source, target);
@@ -1530,11 +1531,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         }
 
         _rememberSemanticReorderAmbiguity(source, target);
-        reconciled = _markReorderPositionsStale(
-          reconciled,
-          source,
-          target,
-        );
+        reconciled = _markReorderPositionsStale(reconciled, source, target);
         reconciled = _withSemanticReorderAmbiguity(reconciled);
         _publish(_snapshot.copyWith(slots: reconciled));
         return SlotReorderOutcome.ambiguous;
@@ -1607,12 +1604,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     return _deriveSlotReorderCapability(capabilities);
   }
 
-  SlotReorderCapability _deriveSlotReorderCapability(
-    List<int> capabilities,
-  ) =>
+  SlotReorderCapability _deriveSlotReorderCapability(List<int> capabilities) =>
       capabilities.contains(ChameleonCommand.swapSlots.value)
-          ? SlotReorderCapability.supported
-          : SlotReorderCapability.unsupported;
+      ? SlotReorderCapability.supported
+      : SlotReorderCapability.unsupported;
 
   void _publishSlotReorderCapability(SlotReorderCapability capability) {
     _publish(
@@ -1687,10 +1682,10 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       _semanticReorderAmbiguity
           .putIfAbsent(position, () => <SlotFacet>{})
           .addAll(const {
-        SlotFacet.types,
-        SlotFacet.enabledStates,
-        SlotFacet.names,
-      });
+            SlotFacet.types,
+            SlotFacet.enabledStates,
+            SlotFacet.names,
+          });
     }
   }
 
@@ -1771,8 +1766,8 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final expectedActive = active == source
         ? target
         : active == target
-            ? source
-            : active;
+        ? source
+        : active;
     return _slotListsEqual(expected, after.slots) &&
         after.activeSlot.value == expectedActive;
   }
@@ -1785,8 +1780,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     SlotsStatus before,
     int source,
     int target,
-  ) =>
-      _matchesExpectedSwap(before, before, source, target);
+  ) => _matchesExpectedSwap(before, before, source, target);
 
   bool _slotListsEqual(
     List<DeviceSlotStatus> left,
@@ -1808,9 +1802,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _publish(
-      _snapshot.copyWith(
-        slots: _snapshot.slots.copyWith(pendingReorder: null),
-      ),
+      _snapshot.copyWith(slots: _snapshot.slots.copyWith(pendingReorder: null)),
     );
   }
 
@@ -1986,10 +1978,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
         _snapshot.copyWith(
           slots: currentSlots.copyWith(
             availability: SlotsAvailability.stale,
-            staleFacets: {
-              ...currentSlots.staleFacets,
-              SlotFacet.activeSlot,
-            },
+            staleFacets: {...currentSlots.staleFacets, SlotFacet.activeSlot},
             pendingActivation: null,
           ),
         ),
@@ -2204,8 +2193,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     final normalized = List.generate(8, (index) {
       final old = previous.slots[index];
       final type = index < (types?.length ?? 0) ? types![index] : null;
-      final enabledInfo =
-          index < (enabled?.length ?? 0) ? enabled![index] : null;
+      final enabledInfo = index < (enabled?.length ?? 0)
+          ? enabled![index]
+          : null;
       final slotNames = index < (names?.length ?? 0) ? names![index] : null;
       return DeviceSlotStatus(
         index: index,
@@ -2241,8 +2231,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
     });
 
     final staleFacets = failures.where(previous.isFacetConfirmed).toSet();
-    final unavailableFacets =
-        failures.where((facet) => !previous.isFacetConfirmed(facet)).toSet();
+    final unavailableFacets = failures
+        .where((facet) => !previous.isFacetConfirmed(facet))
+        .toSet();
     final staleSlotFacets = <int, Set<SlotFacet>>{
       for (final entry in previous.staleSlotFacets.entries)
         entry.key: {...entry.value}..retainAll(failures),
@@ -2289,8 +2280,9 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   SlotsStatus _failedSlots(SlotsStatus previous) {
-    final staleFacets =
-        SlotFacet.values.where(previous.isFacetConfirmed).toSet();
+    final staleFacets = SlotFacet.values
+        .where(previous.isFacetConfirmed)
+        .toSet();
     final unavailableFacets = SlotFacet.values
         .where((facet) => !previous.isFacetConfirmed(facet))
         .toSet();
@@ -2364,6 +2356,7 @@ class ConnectedDeviceStatus extends ChangeNotifier with WidgetsBindingObserver {
           battery: BatteryStatus.available(
             percent: charge.percent,
             voltageMillivolts: charge.voltage,
+            condition: charge.condition,
           ),
         ),
       );

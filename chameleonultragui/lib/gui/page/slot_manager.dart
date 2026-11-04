@@ -2,6 +2,7 @@ import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/settings.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/hf14a4_slot.dart';
 import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/main.dart';
@@ -32,8 +33,8 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final nextStatus =
-        Provider.of<ChameleonGUIState>(context).connectedDeviceStatus;
+    final nextStatus = Provider.of<ChameleonGUIState>(context)
+        .connectedDeviceStatus;
     if (identical(nextStatus, _status)) {
       return;
     }
@@ -58,16 +59,22 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   }
 
   Future<void> onTap(
-      CardSave card, dynamic close, AppLocalizations localizations) async {
+    CardSave card,
+    dynamic close,
+    AppLocalizations localizations,
+  ) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
     final status = _status;
     if (status == null) {
       return;
     }
-    final supported = isMifareClassic(card.tag) ||
+    final supported =
+        isMifareClassic(card.tag) ||
         isEM410X(card.tag) ||
         card.tag == TagType.hidProx ||
         card.tag == TagType.viking ||
+        card.tag == TagType.jablotron ||
+        card.tag == TagType.hf14a4 ||
         card.tag == TagType.pac ||
         card.tag == TagType.ioProx ||
         card.tag == TagType.idteck ||
@@ -112,11 +119,14 @@ class SlotManagerPageState extends State<SlotManagerPage> {
           List<int> blockChunk = [];
           int lastSend = 0;
 
-          for (var blockOffset = 0;
-              blockOffset <
-                  mfClassicGetBlockCount(
-                      chameleonTagTypeGetMfClassicType(card.tag));
-              blockOffset++) {
+          for (
+            var blockOffset = 0;
+            blockOffset <
+                mfClassicGetBlockCount(
+                  chameleonTagTypeGetMfClassicType(card.tag),
+                );
+            blockOffset++
+          ) {
             if ((card.data.length > blockOffset &&
                     card.data[blockOffset].isEmpty) ||
                 blockChunk.length >= 128) {
@@ -137,11 +147,14 @@ class SlotManagerPageState extends State<SlotManagerPage> {
               blockChunk.addAll(card.data[blockOffset]);
             }
 
-            setUploadState((blockOffset /
-                    mfClassicGetBlockCount(
-                        chameleonTagTypeGetMfClassicType(card.tag)) *
-                    100)
-                .round());
+            setUploadState(
+              (blockOffset /
+                      mfClassicGetBlockCount(
+                        chameleonTagTypeGetMfClassicType(card.tag),
+                      ) *
+                      100)
+                  .round(),
+            );
             await asyncSleep(1);
           }
 
@@ -164,6 +177,27 @@ class SlotManagerPageState extends State<SlotManagerPage> {
             ),
           );
           await mutation.run((communicator) => communicator.saveSlotData());
+        } else if (card.tag == TagType.hf14a4) {
+          setUploadState(0);
+          await mutation.run((c) => c.setReaderDeviceMode(false));
+          await mutation.run(
+            (c) => c.enableSlot(gridPosition, TagFrequency.hf, true),
+          );
+          await mutation.run((c) => c.activateSlot(gridPosition));
+          await mutation.run((c) => c.setSlotType(gridPosition, card.tag));
+          await mutation.run(
+            (c) => c.setDefaultDataToSlot(gridPosition, card.tag),
+          );
+          await mutation.run((c) => writeHf14a4SlotIdentity(c, card));
+          await mutation.run(
+            (c) => c.setSlotTagName(
+              gridPosition,
+              card.name.isEmpty ? localizations.no_name : card.name,
+              TagFrequency.hf,
+            ),
+          );
+          await mutation.run((c) => c.saveSlotData());
+          setUploadState(100);
         } else if (isEM410X(card.tag)) {
           await mutation.run(
             (communicator) => communicator.setReaderDeviceMode(false),
@@ -250,6 +284,36 @@ class SlotManagerPageState extends State<SlotManagerPage> {
           await mutation.run(
             (communicator) =>
                 communicator.setVikingEmulatorID(hexToBytes(card.uid)),
+          );
+          await mutation.run(
+            (communicator) => communicator.setSlotTagName(
+              gridPosition,
+              (card.name.isEmpty) ? localizations.no_name : card.name,
+              TagFrequency.lf,
+            ),
+          );
+          await mutation.run((communicator) => communicator.saveSlotData());
+        } else if (card.tag == TagType.jablotron) {
+          await mutation.run(
+            (communicator) => communicator.setReaderDeviceMode(false),
+          );
+          await mutation.run(
+            (communicator) =>
+                communicator.enableSlot(gridPosition, TagFrequency.lf, true),
+          );
+          await mutation.run(
+            (communicator) => communicator.activateSlot(gridPosition),
+          );
+          await mutation.run(
+            (communicator) => communicator.setSlotType(gridPosition, card.tag),
+          );
+          await mutation.run(
+            (communicator) =>
+                communicator.setDefaultDataToSlot(gridPosition, card.tag),
+          );
+          await mutation.run(
+            (communicator) =>
+                communicator.setJablotronEmulatorID(hexToBytes(card.uid)),
           );
           await mutation.run(
             (communicator) => communicator.setSlotTagName(
@@ -370,25 +434,29 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                 communicator.setDefaultDataToSlot(gridPosition, card.tag),
           );
           var cardData = CardData(
-              uid: hexToBytes(card.uid),
-              atqa: card.atqa,
-              sak: card.sak,
-              ats: card.ats);
+            uid: hexToBytes(card.uid),
+            atqa: card.atqa,
+            sak: card.sak,
+            ats: card.ats,
+          );
           await mutation.run(
             (communicator) => communicator.setMf1AntiCollision(cardData),
           );
 
-          for (var page = 0;
-              page < mfUltralightGetPagesCount(card.tag) &&
-                  card.data.length > page;
-              page++) {
+          for (
+            var page = 0;
+            page < mfUltralightGetPagesCount(card.tag) &&
+                card.data.length > page;
+            page++
+          ) {
             await mutation.run(
               (communicator) =>
                   communicator.mf0EmulatorWritePages(page, card.data[page]),
             );
 
             setUploadState(
-                (page / mfUltralightGetPagesCount(card.tag) * 100).round());
+              (page / mfUltralightGetPagesCount(card.tag) * 100).round(),
+            );
 
             await asyncSleep(1);
           }
@@ -469,9 +537,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
     final status = _status;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(localizations.slot_manager),
-      ),
+      appBar: AppBar(title: Text(localizations.slot_manager)),
       body: status == null
           ? Center(child: Text(localizations.unavailable))
           : ListenableBuilder(
@@ -583,9 +649,7 @@ class SlotManagerPageState extends State<SlotManagerPage> {
                         onPressed: () {
                           showDialog<void>(
                             context: context,
-                            builder: (_) => SlotSettings(
-                              slot: index,
-                            ),
+                            builder: (_) => SlotSettings(slot: index),
                           );
                         },
                         icon: const Icon(Icons.settings),
@@ -608,8 +672,8 @@ class SlotManagerPageState extends State<SlotManagerPage> {
   }) {
     final name = frequency.name.isConfirmed
         ? (frequency.name.value!.isEmpty
-            ? localizations.no_name
-            : frequency.name.value!)
+              ? localizations.no_name
+              : frequency.name.value!)
         : localizations.unavailable;
     final type = frequency.type.isConfirmed
         ? chameleonTagToString(frequency.type.value!, localizations)

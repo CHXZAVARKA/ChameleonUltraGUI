@@ -22,8 +22,9 @@ void main() {
     await SharedPreferencesProvider().load();
   });
 
-  testWidgets('Home shows firmware Checking independently of other facets',
-      (tester) async {
+  testWidgets('Home shows firmware Checking independently of other facets', (
+    tester,
+  ) async {
     final communicator = _FirmwareCommunicator.pendingFirmware();
     final catalog = _FakeFirmwareCatalog.current();
     final appState = _connectedState(communicator, catalog: catalog);
@@ -47,8 +48,9 @@ void main() {
     );
   });
 
-  testWidgets('BLE Home avoids the multi-packet capabilities response',
-      (tester) async {
+  testWidgets('BLE Home avoids the multi-packet capabilities response', (
+    tester,
+  ) async {
     final communicator = _FirmwareCommunicator.current();
     final appState = _connectedState(
       communicator,
@@ -71,32 +73,33 @@ void main() {
     );
   });
 
-  testWidgets('firmware states use their specified semantic colors',
-      (tester) async {
+  testWidgets('firmware states use their specified semantic colors', (
+    tester,
+  ) async {
     final theme = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
     );
     final cases =
         <(String, _FirmwareCommunicator, _FakeFirmwareCatalog, Color)>[
-      (
-        'Up to date',
-        _FirmwareCommunicator.current(),
-        _FakeFirmwareCatalog.current(),
-        Colors.green.shade700,
-      ),
-      (
-        'Update available',
-        _FirmwareCommunicator.current(),
-        _FakeFirmwareCatalog.updateAvailable(),
-        Colors.amber.shade800,
-      ),
-      (
-        'Check unavailable',
-        _FirmwareCommunicator.current(),
-        _FakeFirmwareCatalog.unavailable(),
-        Colors.grey.shade600,
-      ),
-    ];
+          (
+            'Up to date',
+            _FirmwareCommunicator.current(),
+            _FakeFirmwareCatalog.current(),
+            Colors.green.shade700,
+          ),
+          (
+            'Update available',
+            _FirmwareCommunicator.current(),
+            _FakeFirmwareCatalog.updateAvailable(),
+            Colors.amber.shade800,
+          ),
+          (
+            'Check unavailable',
+            _FirmwareCommunicator.current(),
+            _FakeFirmwareCatalog.unavailable(),
+            Colors.grey.shade600,
+          ),
+        ];
 
     for (final (label, communicator, catalog, color) in cases) {
       final appState = _connectedState(communicator, catalog: catalog);
@@ -114,40 +117,45 @@ void main() {
   });
 
   testWidgets(
-      'firmware pill visual and pressed action share the same 48px stadium',
-      (tester) async {
-    final semantics = tester.ensureSemantics();
-    try {
-      final appState = _connectedState(
-        _FirmwareCommunicator.current(),
-        catalog: _FakeFirmwareCatalog.current(),
-      );
+    'firmware pill visual and pressed action share the same 48px stadium',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final appState = _connectedState(
+          _FirmwareCommunicator.current(),
+          catalog: _FakeFirmwareCatalog.current(),
+        );
 
-      await _pumpHome(tester, appState);
-      await tester.pumpAndSettle();
+        await _pumpHome(tester, appState);
+        await tester.pumpAndSettle();
 
-      final pill = find.byKey(const Key('home-firmware-pill'));
-      final actionSize = tester.getSize(pill);
-      expect(actionSize.height, greaterThanOrEqualTo(48));
-      expect(
-        tester.getSize(find.byKey(const Key('firmware-visual-pill'))).height,
-        actionSize.height,
-      );
-      expect(
-        find.bySemanticsLabel('Firmware · Up to date · Firmware details'),
-        findsOneWidget,
-      );
+        final pill = find.byKey(const Key('home-firmware-pill'));
+        final actionSize = tester.getSize(pill);
+        expect(actionSize.height, greaterThanOrEqualTo(48));
+        expect(
+          tester.getSize(find.byKey(const Key('firmware-visual-pill'))).height,
+          actionSize.height,
+        );
+        expect(
+          find.bySemanticsLabel('Firmware · Up to date · Firmware details'),
+          findsOneWidget,
+        );
 
-      await tester.tap(pill);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('firmware-details-dialog')), findsOneWidget);
-    } finally {
-      semantics.dispose();
-    }
-  });
+        await tester.tap(pill);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('firmware-details-dialog')),
+          findsOneWidget,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
 
-  testWidgets('firmware pill content has optically even padding',
-      (tester) async {
+  testWidgets('firmware pill content has optically even padding', (
+    tester,
+  ) async {
     final appState = _connectedState(
       _FirmwareCommunicator.current(),
       catalog: _FakeFirmwareCatalog.current(),
@@ -182,133 +190,145 @@ void main() {
     );
   });
 
-  testWidgets('firmware details contain facts and exclude unsupported content',
-      (tester) async {
-    final communicator = _FirmwareCommunicator.current(
-      version: 0x0102,
-      commit: 'abc1234',
-    );
-    final catalog = _FakeFirmwareCatalog([
-      const FirmwareCatalogRelease(
-        latestVersion: '2.0',
-        latestCommit: 'def5678',
-        updateAvailable: true,
-      ),
-    ]);
-    final appState = _connectedState(communicator, catalog: catalog);
+  testWidgets(
+    'firmware details contain facts and exclude unsupported content',
+    (tester) async {
+      final communicator = _FirmwareCommunicator.current(
+        version: 0x0102,
+        commit: 'abc1234',
+      );
+      final catalog = _FakeFirmwareCatalog([
+        const FirmwareCatalogRelease(
+          latestVersion: '2.0',
+          latestCommit: 'def5678',
+          updateAvailable: true,
+        ),
+      ]);
+      final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('firmware-details-dialog')), findsOneWidget);
-    expect(find.text('Firmware details'), findsOneWidget);
-    expect(find.textContaining('Model: Ultra', findRichText: true),
-        findsOneWidget);
-    expect(
-      find.textContaining('Installed version: 1.2', findRichText: true),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Installed commit: abc1234', findRichText: true),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Protocol: Current', findRichText: true),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining(
-        'Latest version or commit: 2.0 (def5678)',
-        findRichText: true,
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining('Last check result: Update available',
-          findRichText: true),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Capabilities'), findsNothing);
-    expect(find.textContaining('Changelog'), findsNothing);
-    expect(find.byKey(const Key('firmware-update')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('firmware-details-dialog')), findsOneWidget);
+      expect(find.text('Firmware details'), findsOneWidget);
+      expect(
+        find.textContaining('Model: Ultra', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Installed version: 1.2', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Installed commit: abc1234', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Protocol: Current', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Latest version or commit: 2.0 (def5678)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Last check result: Update available',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Capabilities'), findsNothing);
+      expect(find.textContaining('Changelog'), findsNothing);
+      expect(find.byKey(const Key('firmware-update')), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'firmware details persists the selected channel and rechecks that source',
-      (tester) async {
-    final catalog = _FakeFirmwareCatalog([
-      const FirmwareCatalogRelease(
-        latestCommit: 'abc1234',
-        updateAvailable: false,
-      ),
-      const FirmwareCatalogRelease(
-        latestCommit: 'custom5678',
-        updateAvailable: true,
-      ),
-      const FirmwareCatalogRelease(
-        latestCommit: 'custom5678',
-        updateAvailable: true,
-      ),
-    ]);
-    FirmwareChannel? installedChannel;
-    final appState = _connectedState(
-      _FirmwareCommunicator.current(),
-      catalog: catalog,
-      channelInstaller: (_, channel) async {
-        installedChannel = channel;
-      },
-    );
+    'firmware details persists the selected channel and rechecks that source',
+    (tester) async {
+      final catalog = _FakeFirmwareCatalog([
+        const FirmwareCatalogRelease(
+          latestCommit: 'abc1234',
+          updateAvailable: false,
+        ),
+        const FirmwareCatalogRelease(
+          latestCommit: 'custom5678',
+          updateAvailable: true,
+        ),
+        const FirmwareCatalogRelease(
+          latestCommit: 'custom5678',
+          updateAvailable: true,
+        ),
+      ]);
+      FirmwareChannel? installedChannel;
+      final appState = _connectedState(
+        _FirmwareCommunicator.current(),
+        catalog: catalog,
+        channelInstaller: (_, channel) async {
+          installedChannel = channel;
+        },
+      );
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    expect(catalog.channels, [FirmwareChannel.official]);
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      expect(catalog.channels, [FirmwareChannel.official]);
 
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('firmware-channel-control')), findsOneWidget);
-    expect(
-      tester
-          .widget<SegmentedButton<FirmwareChannel>>(
-            find.byKey(const Key('firmware-channel-control')),
-          )
-          .selected,
-      {FirmwareChannel.official},
-    );
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('firmware-channel-control')), findsOneWidget);
+      expect(
+        tester
+            .widget<SegmentedButton<FirmwareChannel>>(
+              find.byKey(const Key('firmware-channel-control')),
+            )
+            .selected,
+        {FirmwareChannel.official},
+      );
 
-    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+      await tester.pumpAndSettle();
 
-    expect(
-      appState.sharedPreferencesProvider.getFirmwareChannel(),
-      FirmwareChannel.custom,
-    );
-    expect(
-        catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
-    expect(
-      appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
-      'custom5678',
-    );
+      expect(
+        appState.sharedPreferencesProvider.getFirmwareChannel(),
+        FirmwareChannel.custom,
+      );
+      expect(catalog.channels, [
+        FirmwareChannel.official,
+        FirmwareChannel.custom,
+      ]);
+      expect(
+        appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
+        'custom5678',
+      );
 
-    await tester.tap(find.byKey(const Key('firmware-update')));
-    await tester.pumpAndSettle();
-    expect(installedChannel, FirmwareChannel.custom);
+      await tester.tap(find.byKey(const Key('firmware-update')));
+      await tester.pumpAndSettle();
+      expect(installedChannel, FirmwareChannel.custom);
 
-    _replaceConnection(appState, _FirmwareCommunicator.current());
-    appState.changesMade();
-    await tester.pumpAndSettle();
-    expect(appState.connectedDeviceStatus!.firmwareChannel,
-        FirmwareChannel.custom);
-    expect(catalog.channels, [
-      FirmwareChannel.official,
-      FirmwareChannel.custom,
-      FirmwareChannel.custom,
-    ]);
-  });
+      _replaceConnection(appState, _FirmwareCommunicator.current());
+      appState.changesMade();
+      await tester.pumpAndSettle();
+      expect(
+        appState.connectedDeviceStatus!.firmwareChannel,
+        FirmwareChannel.custom,
+      );
+      expect(catalog.channels, [
+        FirmwareChannel.official,
+        FirmwareChannel.custom,
+        FirmwareChannel.custom,
+      ]);
+    },
+  );
 
-  testWidgets('a late result from the previous channel cannot replace Custom',
-      (tester) async {
+  testWidgets('a late result from the previous channel cannot replace Custom', (
+    tester,
+  ) async {
     final officialLookup = Completer<FirmwareCatalogRelease>();
     final catalog = _FakeFirmwareCatalog([
       officialLookup.future,
@@ -331,8 +351,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('firmware-channel-custom')));
     await tester.pump();
-    expect(appState.connectedDeviceStatus!.firmwareChannel,
-        FirmwareChannel.custom);
+    expect(
+      appState.connectedDeviceStatus!.firmwareChannel,
+      FirmwareChannel.custom,
+    );
 
     officialLookup.complete(
       const FirmwareCatalogRelease(
@@ -342,8 +364,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-        catalog.channels, [FirmwareChannel.official, FirmwareChannel.custom]);
+    expect(catalog.channels, [
+      FirmwareChannel.official,
+      FirmwareChannel.custom,
+    ]);
     expect(
       appState.connectedDeviceStatus!.snapshot.firmware.latestCommit,
       'custom5678',
@@ -351,38 +375,40 @@ void main() {
   });
 
   testWidgets(
-      'switching channel during the first fact read reuses those device facts',
-      (tester) async {
-    final communicator = _FirmwareCommunicator.pendingFirmware();
-    final catalog = _FakeFirmwareCatalog([
-      const FirmwareCatalogRelease(
-        latestCommit: 'custom5678',
-        updateAvailable: true,
-      ),
-    ]);
-    final appState = _connectedState(communicator, catalog: catalog);
+    'switching channel during the first fact read reuses those device facts',
+    (tester) async {
+      final communicator = _FirmwareCommunicator.pendingFirmware();
+      final catalog = _FakeFirmwareCatalog([
+        const FirmwareCatalogRelease(
+          latestCommit: 'custom5678',
+          updateAvailable: true,
+        ),
+      ]);
+      final appState = _connectedState(communicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
-    await tester.pump();
-    await tester.pump();
-    expect(communicator.firmwareReads, 1);
+      await _pumpHome(tester, appState);
+      await tester.pump();
+      await tester.pump();
+      expect(communicator.firmwareReads, 1);
 
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('firmware-channel-custom')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('firmware-channel-custom')));
+      await tester.pump();
 
-    communicator.completePendingFirmware();
-    await tester.pumpAndSettle();
+      communicator.completePendingFirmware();
+      await tester.pumpAndSettle();
 
-    expect(communicator.firmwareReads, 1);
-    expect(communicator.commitReads, 1);
-    expect(communicator.capabilityReads, 1);
-    expect(catalog.channels, [FirmwareChannel.custom]);
-  });
+      expect(communicator.firmwareReads, 1);
+      expect(communicator.commitReads, 1);
+      expect(communicator.capabilityReads, 1);
+      expect(catalog.channels, [FirmwareChannel.custom]);
+    },
+  );
 
-  testWidgets('firmware channel remains reachable at 360px and 2.5x text',
-      (tester) async {
+  testWidgets('firmware channel remains reachable at 360px and 2.5x text', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -402,18 +428,15 @@ void main() {
       catalog: catalog,
     );
 
-    await _pumpHome(
-      tester,
-      appState,
-      textScaler: const TextScaler.linear(2.5),
-    );
+    await _pumpHome(tester, appState, textScaler: const TextScaler.linear(2.5));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-firmware-pill')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('firmware-channel-control')), findsOneWidget);
-    await tester
-        .ensureVisible(find.byKey(const Key('firmware-channel-custom')));
+    await tester.ensureVisible(
+      find.byKey(const Key('firmware-channel-custom')),
+    );
     await tester.tap(find.byKey(const Key('firmware-channel-custom')));
     await tester.pumpAndSettle();
     expect(
@@ -423,8 +446,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('automatic firmware lookup runs once for a connected session',
-      (tester) async {
+  testWidgets('automatic firmware lookup runs once for a connected session', (
+    tester,
+  ) async {
     final catalog = _FakeFirmwareCatalog.current();
     final communicator = _FirmwareCommunicator.current();
     final appState = _connectedState(communicator, catalog: catalog);
@@ -442,8 +466,9 @@ void main() {
     expect(communicator.firmwareReads, 1);
   });
 
-  testWidgets('Retry after unavailable performs exactly one new lookup',
-      (tester) async {
+  testWidgets('Retry after unavailable performs exactly one new lookup', (
+    tester,
+  ) async {
     final catalog = _FakeFirmwareCatalog([
       StateError('offline'),
       const FirmwareCatalogRelease(
@@ -471,8 +496,9 @@ void main() {
     expect(find.byKey(const Key('firmware-check-retry')), findsNothing);
   });
 
-  testWidgets('Demo performs no lookup and never exposes Update',
-      (tester) async {
+  testWidgets('Demo performs no lookup and never exposes Update', (
+    tester,
+  ) async {
     final catalog = _FakeFirmwareCatalog.updateAvailable();
     final communicator = _FirmwareCommunicator.current();
     final appState = _connectedState(
@@ -505,8 +531,9 @@ void main() {
     );
   });
 
-  testWidgets('current and unavailable firmware do not expose Update',
-      (tester) async {
+  testWidgets('current and unavailable firmware do not expose Update', (
+    tester,
+  ) async {
     for (final catalog in [
       _FakeFirmwareCatalog.current(),
       _FakeFirmwareCatalog.unavailable(),
@@ -527,53 +554,59 @@ void main() {
   });
 
   testWidgets(
-      'legacy warning appears once per connection and Skip keeps Home usable',
-      (tester) async {
-    final catalog = _FakeFirmwareCatalog.updateAvailable();
-    final appState = _connectedState(
-      _FirmwareCommunicator.legacy(),
-      catalog: catalog,
-    );
+    'legacy warning appears once per connection and Skip keeps Home usable',
+    (tester) async {
+      final catalog = _FakeFirmwareCatalog.updateAvailable();
+      final appState = _connectedState(
+        _FirmwareCommunicator.legacy(),
+        catalog: catalog,
+      );
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('firmware-compatibility-warning')),
-        findsOneWidget);
-    expect(find.text('Update required'), findsOneWidget);
-    final requiredText = tester.widget<Text>(
-      find.byKey(const Key('firmware-status-text')),
-    );
-    expect(
-      requiredText.style?.color,
-      Theme.of(tester.element(find.byKey(const Key('home-firmware-pill'))))
-          .colorScheme
-          .error,
-    );
+      expect(
+        find.byKey(const Key('firmware-compatibility-warning')),
+        findsOneWidget,
+      );
+      expect(find.text('Update required'), findsOneWidget);
+      final requiredText = tester.widget<Text>(
+        find.byKey(const Key('firmware-status-text')),
+      );
+      expect(
+        requiredText.style?.color,
+        Theme.of(tester.element(find.byKey(const Key('home-firmware-pill'))))
+            .colorScheme
+            .error,
+      );
 
-    await tester.tap(find.byKey(const Key('firmware-warning-skip')));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.settings), findsOneWidget);
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('firmware-update')), findsOneWidget);
-    expect(
-      find.textContaining('Protocol: Legacy', findRichText: true),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('firmware-warning-skip')));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('firmware-update')), findsOneWidget);
+      expect(
+        find.textContaining('Protocol: Legacy', findRichText: true),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    expect(
-        find.byKey(const Key('firmware-compatibility-warning')), findsNothing);
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('firmware-compatibility-warning')),
+        findsNothing,
+      );
+    },
+  );
 
-  testWidgets('legacy warning can appear again for a new connection',
-      (tester) async {
+  testWidgets('legacy warning can appear again for a new connection', (
+    tester,
+  ) async {
     final catalog = _FakeFirmwareCatalog([
       const FirmwareCatalogRelease(
         latestCommit: 'def5678',
@@ -598,13 +631,16 @@ void main() {
     appState.changesMade();
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('firmware-compatibility-warning')),
-        findsOneWidget);
+    expect(
+      find.byKey(const Key('firmware-compatibility-warning')),
+      findsOneWidget,
+    );
     expect(catalog.lookups, 2);
   });
 
-  testWidgets('Update starts flashing directly without a second confirmation',
-      (tester) async {
+  testWidgets('Update starts flashing directly without a second confirmation', (
+    tester,
+  ) async {
     var installs = 0;
     final installGate = Completer<void>();
     addTearDown(() {
@@ -632,136 +668,139 @@ void main() {
   });
 
   testWidgets(
-      'queued update from a replaced connection never reaches the installer',
-      (tester) async {
-    var installs = 0;
-    final catalog = _FakeFirmwareCatalog([
-      const FirmwareCatalogRelease(
-        latestCommit: 'def5678',
-        updateAvailable: true,
-      ),
-      const FirmwareCatalogRelease(
-        latestCommit: 'new5678',
-        updateAvailable: true,
-      ),
-    ]);
-    final appState = _connectedState(
-      _FirmwareCommunicator.current(),
-      catalog: catalog,
-      installer: (_) async => installs++,
-    );
-
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    final oldStatus = appState.connectedDeviceStatus!;
-
-    final releaseForeground = Completer<void>();
-    final foregroundStarted = Completer<void>();
-    final foreground = appState.rfOperations.runForeground(() async {
-      foregroundStarted.complete();
-      await releaseForeground.future;
-    });
-    await foregroundStarted.future;
-
-    final oldPublications = <DeviceStatusSnapshot>[];
-    oldStatus.addListener(() => oldPublications.add(oldStatus.snapshot));
-    final oldInstall = oldStatus.installFirmware();
-    await tester.pump();
-
-    expect(oldStatus.snapshot.firmware.installing, isTrue);
-    expect(installs, 0);
-
-    _replaceConnection(
-        appState,
-        _FirmwareCommunicator.current(
-          commit: 'new1234',
-        ));
-    appState.changesMade();
-    await tester.pumpAndSettle();
-    final newStatus = appState.connectedDeviceStatus!;
-    final publicationsAtReplacement = oldPublications.length;
-
-    releaseForeground.complete();
-    await foreground;
-
-    expect(await oldInstall, FirmwareInstallOutcome.connectionChanged);
-    expect(installs, 0);
-    expect(oldPublications, hasLength(publicationsAtReplacement));
-    expect(newStatus.snapshot.firmware.state, FirmwareState.updateAvailable);
-
-    expect(await newStatus.installFirmware(), FirmwareInstallOutcome.started);
-    expect(installs, 1);
-  });
-
-  testWidgets(
-      'update failure remains inline and Retry starts the flasher again',
-      (tester) async {
-    var installs = 0;
-    final appState = _connectedState(
-      _FirmwareCommunicator.current(),
-      catalog: _FakeFirmwareCatalog.updateAvailable(),
-      installer: (_) async {
-        installs++;
-        if (installs == 1) throw StateError('flash failed');
-      },
-    );
-
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('firmware-update')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('firmware-update-error')), findsOneWidget);
-    expect(find.byKey(const Key('firmware-install-retry')), findsOneWidget);
-    expect(installs, 1);
-
-    await tester.tap(find.byKey(const Key('firmware-install-retry')));
-    await tester.pumpAndSettle();
-    expect(installs, 2);
-    expect(find.byKey(const Key('firmware-update-error')), findsNothing);
-  });
-
-  testWidgets(
-      'successful flashing resets firmware with the replacement session',
-      (tester) async {
-    late ChameleonGUIState appState;
-    appState = _connectedState(
-      _FirmwareCommunicator.current(),
-      catalog: _FakeFirmwareCatalog([
+    'queued update from a replaced connection never reaches the installer',
+    (tester) async {
+      var installs = 0;
+      final catalog = _FakeFirmwareCatalog([
         const FirmwareCatalogRelease(
           latestCommit: 'def5678',
           updateAvailable: true,
         ),
         const FirmwareCatalogRelease(
-          latestCommit: 'def5678',
-          updateAvailable: false,
+          latestCommit: 'new5678',
+          updateAvailable: true,
         ),
-      ]),
-      installer: (state) async {
-        _replaceConnection(state, _FirmwareCommunicator.current());
-        state.changesMade();
-      },
-    );
+      ]);
+      final appState = _connectedState(
+        _FirmwareCommunicator.current(),
+        catalog: catalog,
+        installer: (_) async => installs++,
+      );
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    final oldStatus = appState.connectedDeviceStatus!;
-    await tester.tap(find.byKey(const Key('home-firmware-pill')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('firmware-update')));
-    await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      final oldStatus = appState.connectedDeviceStatus!;
 
-    expect(appState.connectedDeviceStatus, isNot(same(oldStatus)));
-    expect(
-      appState.connectedDeviceStatus!.snapshot.firmware.state,
-      FirmwareState.upToDate,
-    );
-  });
+      final releaseForeground = Completer<void>();
+      final foregroundStarted = Completer<void>();
+      final foreground = appState.rfOperations.runForeground(() async {
+        foregroundStarted.complete();
+        await releaseForeground.future;
+      });
+      await foregroundStarted.future;
 
-  testWidgets('late catalog result from an old connection is discarded',
-      (tester) async {
+      final oldPublications = <DeviceStatusSnapshot>[];
+      oldStatus.addListener(() => oldPublications.add(oldStatus.snapshot));
+      final oldInstall = oldStatus.installFirmware();
+      await tester.pump();
+
+      expect(oldStatus.snapshot.firmware.installing, isTrue);
+      expect(installs, 0);
+
+      _replaceConnection(
+        appState,
+        _FirmwareCommunicator.current(commit: 'new1234'),
+      );
+      appState.changesMade();
+      await tester.pumpAndSettle();
+      final newStatus = appState.connectedDeviceStatus!;
+      final publicationsAtReplacement = oldPublications.length;
+
+      releaseForeground.complete();
+      await foreground;
+
+      expect(await oldInstall, FirmwareInstallOutcome.connectionChanged);
+      expect(installs, 0);
+      expect(oldPublications, hasLength(publicationsAtReplacement));
+      expect(newStatus.snapshot.firmware.state, FirmwareState.updateAvailable);
+
+      expect(await newStatus.installFirmware(), FirmwareInstallOutcome.started);
+      expect(installs, 1);
+    },
+  );
+
+  testWidgets(
+    'update failure remains inline and Retry starts the flasher again',
+    (tester) async {
+      var installs = 0;
+      final appState = _connectedState(
+        _FirmwareCommunicator.current(),
+        catalog: _FakeFirmwareCatalog.updateAvailable(),
+        installer: (_) async {
+          installs++;
+          if (installs == 1) throw StateError('flash failed');
+        },
+      );
+
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('firmware-update')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('firmware-update-error')), findsOneWidget);
+      expect(find.byKey(const Key('firmware-install-retry')), findsOneWidget);
+      expect(installs, 1);
+
+      await tester.tap(find.byKey(const Key('firmware-install-retry')));
+      await tester.pumpAndSettle();
+      expect(installs, 2);
+      expect(find.byKey(const Key('firmware-update-error')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'successful flashing resets firmware with the replacement session',
+    (tester) async {
+      late ChameleonGUIState appState;
+      appState = _connectedState(
+        _FirmwareCommunicator.current(),
+        catalog: _FakeFirmwareCatalog([
+          const FirmwareCatalogRelease(
+            latestCommit: 'def5678',
+            updateAvailable: true,
+          ),
+          const FirmwareCatalogRelease(
+            latestCommit: 'def5678',
+            updateAvailable: false,
+          ),
+        ]),
+        installer: (state) async {
+          _replaceConnection(state, _FirmwareCommunicator.current());
+          state.changesMade();
+        },
+      );
+
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      final oldStatus = appState.connectedDeviceStatus!;
+      await tester.tap(find.byKey(const Key('home-firmware-pill')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('firmware-update')));
+      await tester.pumpAndSettle();
+
+      expect(appState.connectedDeviceStatus, isNot(same(oldStatus)));
+      expect(
+        appState.connectedDeviceStatus!.snapshot.firmware.state,
+        FirmwareState.upToDate,
+      );
+    },
+  );
+
+  testWidgets('late catalog result from an old connection is discarded', (
+    tester,
+  ) async {
     final oldLookup = Completer<FirmwareCatalogRelease>();
     final catalog = _FakeFirmwareCatalog([
       oldLookup.future,
@@ -802,49 +841,57 @@ void main() {
   });
 
   testWidgets(
-      'replacement during firmware version read stops all old session work',
-      (tester) async {
-    final oldCommunicator = _FirmwareCommunicator.pendingFirmware();
-    final newCommunicator = _FirmwareCommunicator.current(commit: 'new1234');
-    final catalog = _FakeFirmwareCatalog([
-      const FirmwareCatalogRelease(
-        latestCommit: 'new1234',
-        updateAvailable: false,
-      ),
-    ]);
-    final appState = _connectedState(oldCommunicator, catalog: catalog);
+    'replacement during firmware version read stops all old session work',
+    (tester) async {
+      final oldCommunicator = _FirmwareCommunicator.pendingFirmware();
+      final newCommunicator = _FirmwareCommunicator.current(commit: 'new1234');
+      final catalog = _FakeFirmwareCatalog([
+        const FirmwareCatalogRelease(
+          latestCommit: 'new1234',
+          updateAvailable: false,
+        ),
+      ]);
+      final appState = _connectedState(oldCommunicator, catalog: catalog);
 
-    await _pumpHome(tester, appState);
-    await tester.pump();
-    await tester.pump();
-    expect(oldCommunicator.firmwareReads, 1);
-    final oldCapabilityReadsBeforeReplacement = oldCommunicator.capabilityReads;
-    expect(oldCapabilityReadsBeforeReplacement, 1);
+      await _pumpHome(tester, appState);
+      await tester.pump();
+      await tester.pump();
+      expect(oldCommunicator.firmwareReads, 1);
+      final oldCapabilityReadsBeforeReplacement =
+          oldCommunicator.capabilityReads;
+      expect(oldCapabilityReadsBeforeReplacement, 1);
 
-    _replaceConnection(appState, newCommunicator);
-    appState.changesMade();
-    await tester.pumpAndSettle();
-    expect(appState.connectedDeviceStatus!.snapshot.firmware.state,
-        FirmwareState.upToDate);
+      _replaceConnection(appState, newCommunicator);
+      appState.changesMade();
+      await tester.pumpAndSettle();
+      expect(
+        appState.connectedDeviceStatus!.snapshot.firmware.state,
+        FirmwareState.upToDate,
+      );
 
-    oldCommunicator.completePendingFirmware();
-    await tester.pump();
-    await tester.pump();
+      oldCommunicator.completePendingFirmware();
+      await tester.pump();
+      await tester.pump();
 
-    expect(oldCommunicator.commitReads, 0);
-    expect(
-      oldCommunicator.capabilityReads,
-      oldCapabilityReadsBeforeReplacement,
-    );
-    expect(newCommunicator.firmwareReads, 1);
-    expect(newCommunicator.commitReads, 1);
-    expect(newCommunicator.capabilityReads, 1);
-    expect(catalog.lookups, 1);
-  });
+      expect(oldCommunicator.commitReads, 0);
+      expect(
+        oldCommunicator.capabilityReads,
+        oldCapabilityReadsBeforeReplacement,
+      );
+      expect(newCommunicator.firmwareReads, 1);
+      expect(newCommunicator.commitReads, 1);
+      expect(newCommunicator.capabilityReads, 1);
+      expect(catalog.lookups, 1);
+    },
+  );
 }
 
-Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
-    {ThemeData? theme, TextScaler? textScaler}) async {
+Future<void> _pumpHome(
+  WidgetTester tester,
+  ChameleonGUIState appState, {
+  ThemeData? theme,
+  TextScaler? textScaler,
+}) async {
   SharedPreferences.setMockInitialValues({});
   await appState.sharedPreferencesProvider.load();
   await tester.pumpWidget(
@@ -855,11 +902,9 @@ Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState,
         builder: textScaler == null
             ? null
             : (context, child) => MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    textScaler: textScaler,
-                  ),
-                  child: child!,
-                ),
+                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                child: child!,
+              ),
         locale: const Locale('en'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -875,10 +920,8 @@ ChameleonGUIState _connectedState(
   String portName = 'firmware-test-device',
   ConnectionType connectionType = ConnectionType.usb,
   Future<void> Function(ChameleonGUIState appState)? installer,
-  Future<void> Function(
-    ChameleonGUIState appState,
-    FirmwareChannel channel,
-  )? channelInstaller,
+  Future<void> Function(ChameleonGUIState appState, FirmwareChannel channel)?
+  channelInstaller,
 }) {
   final serial = _TestSerial(log: Logger())
     ..connected = true
@@ -887,46 +930,48 @@ ChameleonGUIState _connectedState(
     ..portName = portName
     ..activeDevicePort = 'firmware-test-port';
   late ChameleonGUIState appState;
-  appState = ChameleonGUIState(
-    SharedPreferencesProvider(),
-    firmwareCatalog: catalog,
-    firmwareInstaller: channelInstaller != null
-        ? (channel) => channelInstaller(appState, channel)
-        : installer == null
-            ? null
-            : (_) => installer(appState),
-  )
-    ..connector = serial
-    ..communicator = communicator
-    ..log = Logger();
+  appState =
+      ChameleonGUIState(
+          SharedPreferencesProvider(),
+          firmwareCatalog: catalog,
+          firmwareInstaller: channelInstaller != null
+              ? (channel) => channelInstaller(appState, channel)
+              : installer == null
+              ? null
+              : (_) => installer(appState),
+        )
+        ..connector = serial
+        ..communicator = communicator
+        ..log = Logger();
   return appState;
 }
 
 class _FirmwareCommunicator extends ChameleonCommunicator {
   _FirmwareCommunicator.pendingFirmware()
-      : _pendingFirmware = Completer<FirmwareVersion>(),
-        _version = null,
-        commit = 'abc1234',
-        capabilities = [ChameleonCommand.setIdteckEmulatorID.value],
-        super(Logger());
+    : _pendingFirmware = Completer<FirmwareVersion>(),
+      _version = null,
+      commit = 'abc1234',
+      capabilities = [
+        ChameleonCommand.setIdteckEmulatorID.value,
+        ChameleonCommand.mf0UlcAuth.value,
+      ],
+      super(Logger());
 
-  _FirmwareCommunicator.current({
-    int version = 0x0100,
-    this.commit = 'abc1234',
-  })  : _pendingFirmware = null,
-        _version = FirmwareVersion(
-          legacyProtocol: false,
-          version: version,
-        ),
-        capabilities = [ChameleonCommand.setIdteckEmulatorID.value],
-        super(Logger());
+  _FirmwareCommunicator.current({int version = 0x0100, this.commit = 'abc1234'})
+    : _pendingFirmware = null,
+      _version = FirmwareVersion(legacyProtocol: false, version: version),
+      capabilities = [
+        ChameleonCommand.setIdteckEmulatorID.value,
+        ChameleonCommand.mf0UlcAuth.value,
+      ],
+      super(Logger());
 
   _FirmwareCommunicator.legacy()
-      : _pendingFirmware = null,
-        _version = FirmwareVersion(legacyProtocol: true, version: 0x0100),
-        commit = 'legacy123',
-        capabilities = const [],
-        super(Logger());
+    : _pendingFirmware = null,
+      _version = FirmwareVersion(legacyProtocol: true, version: 0x0100),
+      commit = 'legacy123',
+      capabilities = const [],
+      super(Logger());
 
   final Completer<FirmwareVersion>? _pendingFirmware;
   final FirmwareVersion? _version;
@@ -997,20 +1042,20 @@ class _FakeFirmwareCatalog implements FirmwareCatalog {
   _FakeFirmwareCatalog(this.results);
 
   _FakeFirmwareCatalog.current()
-      : results = [
-          const FirmwareCatalogRelease(
-            latestCommit: 'abc1234',
-            updateAvailable: false,
-          ),
-        ];
+    : results = [
+        const FirmwareCatalogRelease(
+          latestCommit: 'abc1234',
+          updateAvailable: false,
+        ),
+      ];
 
   _FakeFirmwareCatalog.updateAvailable()
-      : results = [
-          const FirmwareCatalogRelease(
-            latestCommit: 'def5678',
-            updateAvailable: true,
-          ),
-        ];
+    : results = [
+        const FirmwareCatalogRelease(
+          latestCommit: 'def5678',
+          updateAvailable: true,
+        ),
+      ];
 
   _FakeFirmwareCatalog.unavailable() : results = [StateError('offline')];
 

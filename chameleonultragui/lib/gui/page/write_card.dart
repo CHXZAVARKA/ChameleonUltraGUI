@@ -1,9 +1,12 @@
+import 'package:chameleonultragui/gui/component/mifare/vanity_sak_checkbox.dart';
 import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/gui/component/card_list.dart';
 import 'package:chameleonultragui/gui/component/mifare/standard_write.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/connected_device_session.dart';
 import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/vanity_sak.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/write/base.dart';
 import 'package:chameleonultragui/helpers/write.dart';
 import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
@@ -25,6 +28,8 @@ class WriteCardPageState extends State<WriteCardPage> {
   int step = 0;
   int progress = -1;
   bool written = false;
+  bool vanitySak = false;
+  bool showVanitySak = false;
   CardSave? card;
   AbstractWriteHelper? baseHelper;
   AbstractWriteHelper? helper;
@@ -57,8 +62,11 @@ class WriteCardPageState extends State<WriteCardPage> {
     );
   }
 
-  Future<void> onTap(CardSave selectedCard, dynamic close,
-      AppLocalizations localizations) async {
+  Future<void> onTap(
+    CardSave selectedCard,
+    dynamic close,
+    AppLocalizations localizations,
+  ) async {
     var appState = Provider.of<ChameleonGUIState>(context, listen: false);
     final result = await appState.runSessionBoundForeground((session) async {
       if (!mounted) {
@@ -66,8 +74,17 @@ class WriteCardPageState extends State<WriteCardPage> {
       }
       setState(() {
         card = selectedCard;
+        showVanitySak = mfClassicVanitySakVisibleInWrite(
+          selectedCard.tag,
+          selectedCard.data,
+        );
+        vanitySak = mfClassicVanitySakFromUidHex(selectedCard.uid) ?? false;
         baseHelper = AbstractWriteHelper.getClassByCardType(
-            selectedCard.tag, appState, updateState, localizations);
+          selectedCard.tag,
+          appState,
+          updateState,
+          localizations,
+        );
         helper = baseHelper?.getAvailableMethods()[0];
       });
       final operationHelper = helper;
@@ -177,11 +194,9 @@ class WriteCardPageState extends State<WriteCardPage> {
         scaffoldMessenger.hideCurrentSnackBar();
         var snackBar = SnackBar(
           content: Text(
-              '${localizations.detected_magic_card_type}: ${helper!.name}'),
-          action: SnackBarAction(
-            label: localizations.close,
-            onPressed: () {},
+            '${localizations.detected_magic_card_type}: ${helper!.name}',
           ),
+          action: SnackBarAction(label: localizations.close, onPressed: () {}),
         );
 
         scaffoldMessenger.showSnackBar(snackBar);
@@ -197,10 +212,7 @@ class WriteCardPageState extends State<WriteCardPage> {
 
     var snackBar = SnackBar(
       content: Text(localizations.failed_to_detect_magic_card_type),
-      action: SnackBarAction(
-        label: localizations.close,
-        onPressed: () {},
-      ),
+      action: SnackBarAction(label: localizations.close, onPressed: () {}),
     );
 
     scaffoldMessenger.showSnackBar(snackBar);
@@ -231,19 +243,13 @@ class WriteCardPageState extends State<WriteCardPage> {
     if (operationHelper == null || operationCard == null) {
       return;
     }
-    final result = await appState.runSessionBoundForeground(
-      (session) async {
-        if (_canUseHelper(session, operationHelper) &&
-            identical(helper, operationHelper) &&
-            identical(card, operationCard)) {
-          await _writeCardUnderLease(
-            session,
-            operationHelper,
-            operationCard,
-          );
-        }
-      },
-    );
+    final result = await appState.runSessionBoundForeground((session) async {
+      if (_canUseHelper(session, operationHelper) &&
+          identical(helper, operationHelper) &&
+          identical(card, operationCard)) {
+        await _writeCardUnderLease(session, operationHelper, operationCard);
+      }
+    });
     final session = result.session;
     if (result.executed &&
         session != null &&
@@ -287,8 +293,13 @@ class WriteCardPageState extends State<WriteCardPage> {
           identical(helper, operationHelper) &&
           identical(card, operationCard),
     );
-    final writeSucceeded =
-        await operationHelper.writeData(operationCard, updateProgress);
+    if (operationHelper is BaseMifareClassicWriteHelper) {
+      operationHelper.vanitySak = vanitySak;
+    }
+    final writeSucceeded = await operationHelper.writeData(
+      operationCard,
+      updateProgress,
+    );
     if (!_canUseHelper(session, operationHelper) ||
         !identical(helper, operationHelper) ||
         !identical(card, operationCard)) {
@@ -297,18 +308,12 @@ class WriteCardPageState extends State<WriteCardPage> {
     if (writeSucceeded) {
       snackBar = SnackBar(
         content: Text(localizations.magic_success_write),
-        action: SnackBarAction(
-          label: localizations.close,
-          onPressed: () {},
-        ),
+        action: SnackBarAction(label: localizations.close, onPressed: () {}),
       );
     } else {
       snackBar = SnackBar(
         content: Text(localizations.magic_failed_write),
-        action: SnackBarAction(
-          label: localizations.close,
-          onPressed: () {},
-        ),
+        action: SnackBarAction(label: localizations.close, onPressed: () {}),
       );
     }
 
@@ -332,8 +337,10 @@ class WriteCardPageState extends State<WriteCardPage> {
         context: context,
         builder: (BuildContext context) => AlertDialog(
           title: Text(localizations.no_supported),
-          content: Text(localizations.lite_no_read,
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Text(
+            localizations.lite_no_read,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.pop(context, localizations.ok),
@@ -383,11 +390,7 @@ class WriteCardPageState extends State<WriteCardPage> {
           return null;
         }
         if (compatible) {
-          await _writeCardUnderLease(
-            session,
-            operationHelper,
-            operationCard,
-          );
+          await _writeCardUnderLease(session, operationHelper, operationCard);
         }
         return compatible;
       });
@@ -444,40 +447,47 @@ class WriteCardPageState extends State<WriteCardPage> {
     List<Widget> widgets = [];
 
     if (written) {
-      widgets.add(TextButton(
-        onPressed: (progress == -1) ? onStepContinue : null,
-        child: Text(localizations.write_again),
-      ));
+      widgets.add(
+        TextButton(
+          onPressed: (progress == -1) ? onStepContinue : null,
+          child: Text(localizations.write_again),
+        ),
+      );
 
-      widgets.add(TextButton(
-        onPressed: (progress == -1) ? onStepReset : null,
-        child: Text(localizations.reset),
-      ));
+      widgets.add(
+        TextButton(
+          onPressed: (progress == -1) ? onStepReset : null,
+          child: Text(localizations.reset),
+        ),
+      );
     } else {
       if (step == 0 || step == 1) {
-        widgets.add(TextButton(
-          onPressed:
-              (step == 0 && card == null || step == 1 && baseHelper == null)
-                  ? null
-                  : onStepContinue,
-          child: Text(localizations.next),
-        ));
+        widgets.add(
+          TextButton(
+            onPressed:
+                (step == 0 && card == null || step == 1 && baseHelper == null)
+                ? null
+                : onStepContinue,
+            child: Text(localizations.next),
+          ),
+        );
       }
 
       if (step == 2) {
-        widgets.add(TextButton(
-          onPressed: (helper != null && helper!.isReady() && progress == -1)
-              ? onStepContinue
-              : null,
-          child: Text(localizations.write_data_to_magic_card),
-        ));
+        widgets.add(
+          TextButton(
+            onPressed: (helper != null && helper!.isReady() && progress == -1)
+                ? onStepContinue
+                : null,
+            child: Text(localizations.write_data_to_magic_card),
+          ),
+        );
       }
 
       if (step != 0) {
-        widgets.add(TextButton(
-          onPressed: onStepBack,
-          child: Text(localizations.back),
-        ));
+        widgets.add(
+          TextButton(onPressed: onStepBack, child: Text(localizations.back)),
+        );
       }
     }
 
@@ -500,9 +510,7 @@ class WriteCardPageState extends State<WriteCardPage> {
     };
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(localizations.write_card),
-      ),
+      appBar: AppBar(title: Text(localizations.write_card)),
       body: Column(
         children: [
           Padding(
@@ -544,42 +552,67 @@ class WriteCardPageState extends State<WriteCardPage> {
                         physics: const ClampingScrollPhysics(),
                         controlsBuilder:
                             (BuildContext context, ControlsDetails details) {
-                          return Column(children: [
-                            const SizedBox(height: 8),
-                            Row(
-                              children: createButtonsForStep(details, step),
-                            )
-                          ]);
-                        },
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: createButtonsForStep(
+                                      details,
+                                      step,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                         currentStep: step,
                         steps: [
                           Step(
-                            title:
-                                Text(localizations.select_saved_card_to_write),
+                            title: Text(
+                              localizations.select_saved_card_to_write,
+                            ),
                             content: Card(
-                              child: ListTile(
-                                title: Row(children: [
-                                  FilterChip(
-                                    onSelected: (bool selected) {
-                                      cardSelectDialog(context);
-                                    },
-                                    avatar: (card != null)
-                                        ? CircleAvatar(
-                                            backgroundColor: Colors.transparent,
-                                            child: Icon(
-                                                (chameleonTagToFrequency(
-                                                            card!.tag) ==
-                                                        TagFrequency.hf)
-                                                    ? Icons.credit_card
-                                                    : Icons.wifi,
-                                                color: card!.color),
-                                          )
-                                        : null,
-                                    label: Text((card != null)
-                                        ? card!.name
-                                        : localizations.select_saved_card),
-                                  )
-                                ]),
+                              child: Column(
+                                children: [
+                                  ListTile(
+                                    title: Row(
+                                      children: [
+                                        FilterChip(
+                                          onSelected: (bool selected) {
+                                            cardSelectDialog(context);
+                                          },
+                                          avatar: (card != null)
+                                              ? CircleAvatar(
+                                                  backgroundColor:
+                                                      Colors.transparent,
+                                                  child: Icon(
+                                                    (chameleonTagToFrequency(
+                                                              card!.tag,
+                                                            ) ==
+                                                            TagFrequency.hf)
+                                                        ? Icons.credit_card
+                                                        : Icons.wifi,
+                                                    color: card!.color,
+                                                  ),
+                                                )
+                                              : null,
+                                          label: Text(
+                                            (card != null)
+                                                ? card!.name
+                                                : localizations
+                                                      .select_saved_card,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (showVanitySak)
+                                    VanitySakCheckbox(
+                                      value: vanitySak,
+                                      onChanged: (v) => setState(
+                                        () => vanitySak = v ?? false,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             isActive: step >= 1,
@@ -594,41 +627,56 @@ class WriteCardPageState extends State<WriteCardPage> {
                                         crossAxisAlignment:
                                             WrapCrossAlignment.center,
                                         children: <Widget>[
-                                            DropdownButton<AbstractWriteHelper>(
-                                              value: helper,
-                                              items: baseHelper!
-                                                  .getAvailableMethods()
-                                                  .map<
-                                                          DropdownMenuItem<
-                                                              AbstractWriteHelper>>(
-                                                      (AbstractWriteHelper
-                                                          helperClass) {
-                                                return DropdownMenuItem<
-                                                    AbstractWriteHelper>(
-                                                  value: helperClass,
-                                                  child: Text(typeLocalization[
-                                                      helperClass.name]!),
-                                                );
-                                              }).toList(),
-                                              onChanged: (AbstractWriteHelper?
-                                                  helperClass) {
-                                                setState(() {
-                                                  helper = helperClass;
-                                                });
-                                              },
-                                            ),
-                                            const SizedBox(width: 8),
-                                            if (baseHelper!.autoDetect)
-                                              TextButton(
-                                                onPressed: () async {
-                                                  await detectMagicType();
+                                          DropdownButton<AbstractWriteHelper>(
+                                            value: helper,
+                                            items: baseHelper!
+                                                .getAvailableMethods()
+                                                .map<
+                                                  DropdownMenuItem<
+                                                    AbstractWriteHelper
+                                                  >
+                                                >((
+                                                  AbstractWriteHelper
+                                                  helperClass,
+                                                ) {
+                                                  return DropdownMenuItem<
+                                                    AbstractWriteHelper
+                                                  >(
+                                                    value: helperClass,
+                                                    child: Text(
+                                                      typeLocalization[helperClass
+                                                          .name]!,
+                                                    ),
+                                                  );
+                                                })
+                                                .toList(),
+                                            onChanged:
+                                                (
+                                                  AbstractWriteHelper?
+                                                  helperClass,
+                                                ) {
+                                                  setState(() {
+                                                    helper = helperClass;
+                                                  });
                                                 },
-                                                child: Text(localizations
-                                                    .auto_detect_magic_card),
-                                              )
-                                          ])
-                                    : Text(localizations
-                                        .writing_is_not_yet_supported),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          if (baseHelper!.autoDetect)
+                                            TextButton(
+                                              onPressed: () async {
+                                                await detectMagicType();
+                                              },
+                                              child: Text(
+                                                localizations
+                                                    .auto_detect_magic_card,
+                                              ),
+                                            ),
+                                        ],
+                                      )
+                                    : Text(
+                                        localizations
+                                            .writing_is_not_yet_supported,
+                                      ),
                               ),
                             ),
                             isActive: step >= 2,
@@ -639,32 +687,44 @@ class WriteCardPageState extends State<WriteCardPage> {
                               child: ListTile(
                                 title: (progress == -1)
                                     ? (helper != null && helper!.isReady())
-                                        ? (helper != null &&
-                                                helper!
-                                                    .getFailedBlocks()
-                                                    .isNotEmpty)
-                                            ? Text(
-                                                "${localizations.otp_magic_warning(localizations.write_data_to_magic_card)} ${localizations.some_blocks_failed_to_write}: ${helper!.getFailedBlocks().join(", ")}")
-                                            : Column(children: [
-                                                Text(localizations
-                                                    .otp_magic_warning(localizations
-                                                        .write_data_to_magic_card)),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                    localizations
-                                                        .keep_stable_warning,
-                                                    style: const TextStyle(
-                                                        color: Colors.orange,
-                                                        fontWeight:
-                                                            FontWeight.bold))
-                                              ])
-                                        : (helper != null &&
+                                          ? (helper != null &&
+                                                    helper!
+                                                        .getFailedBlocks()
+                                                        .isNotEmpty)
+                                                ? Text(
+                                                    "${localizations.otp_magic_warning(localizations.write_data_to_magic_card)} ${localizations.some_blocks_failed_to_write}: ${helper!.getFailedBlocks().join(", ")}",
+                                                  )
+                                                : Column(
+                                                    children: [
+                                                      Text(
+                                                        localizations
+                                                            .otp_magic_warning(
+                                                              localizations
+                                                                  .write_data_to_magic_card,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Text(
+                                                        localizations
+                                                            .keep_stable_warning,
+                                                        style: const TextStyle(
+                                                          color: Colors.orange,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                          : (helper != null &&
                                                 helper!.writeWidgetSupported())
-                                            ? helper!.getWriteWidget(
-                                                context, setState)
-                                            : Text(localizations.error)
+                                          ? helper!.getWriteWidget(
+                                              context,
+                                              setState,
+                                            )
+                                          : Text(localizations.error)
                                     : LinearProgressIndicator(
-                                        value: progress.toDouble() / 100),
+                                        value: progress.toDouble() / 100,
+                                      ),
                               ),
                             ),
                             isActive: step >= 3,

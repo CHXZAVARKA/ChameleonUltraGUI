@@ -19,11 +19,7 @@ String? validateName(String? value, AppLocalizations l) {
   return null;
 }
 
-String? validateUid(
-  String? value,
-  AppLocalizations l,
-  TagType tagType,
-) {
+String? validateUid(String? value, AppLocalizations l, TagType tagType) {
   if (value == null || value.isEmpty) {
     return l.please_enter_something(l.uid);
   }
@@ -96,7 +92,9 @@ String? validateIntRange(
     if (required) {
       return emptyMessage ??
           l.must_be_between(
-              _numberFormat.format(min), _numberFormat.format(max));
+            _numberFormat.format(min),
+            _numberFormat.format(max),
+          );
     }
     return null;
   }
@@ -104,7 +102,9 @@ String? validateIntRange(
   int? parsed = int.tryParse(value);
   if (parsed == null || parsed < min || parsed > max) {
     return l.must_be_between(
-        _numberFormat.format(min), _numberFormat.format(max));
+      _numberFormat.format(min),
+      _numberFormat.format(max),
+    );
   }
 
   return null;
@@ -121,5 +121,5 @@ String? validateBlePin(String? value, AppLocalizations l) {
 }
 
 List<FilteringTextInputFormatter> hexFormatter = [
-  FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f: ]'))
+  FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Fa-f: ]')),
 ];

@@ -6,6 +6,7 @@ import 'package:chameleonultragui/connector/serial_abstract.dart';
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
 
 import 'support/firmware_catalog_stub.dart';
+
 import 'package:chameleonultragui/gui/page/home.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/main.dart';
@@ -18,8 +19,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('Home shows the confirmed device mode in a segmented control',
-      (tester) async {
+  testWidgets('Home shows the confirmed device mode in a segmented control', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
@@ -37,208 +39,210 @@ void main() {
     expect(communicator.modeReads, 1);
   });
 
-  testWidgets('narrow Home preserves the established mode control presentation',
-      (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final appState = _connectedState(
-      _ModeCommunicator(initialReaderMode: false),
-    );
+  testWidgets(
+    'narrow Home preserves the established mode control presentation',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final appState = _connectedState(
+        _ModeCommunicator(initialReaderMode: false),
+      );
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
 
-    var control = _modeControl(tester);
-    expect(control.showSelectedIcon, isTrue);
-    expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
-    expect(tester.takeException(), isNull);
-    expect(
-      tester.getCenter(find.text('Emulator')).dy,
-      closeTo(tester.getCenter(find.byTooltip('Settings')).dy, 1),
-    );
-    expect(
-      tester.getCenter(find.byKey(const Key('home-slot-layout-control'))).dy,
-      closeTo(tester.getCenter(find.text('Emulator')).dy, 1),
-    );
+      var control = _modeControl(tester);
+      expect(control.showSelectedIcon, isTrue);
+      expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getCenter(find.text('Emulator')).dy,
+        closeTo(tester.getCenter(find.byTooltip('Settings')).dy, 1),
+      );
+      expect(
+        tester.getCenter(find.byKey(const Key('home-slot-layout-control'))).dy,
+        closeTo(tester.getCenter(find.text('Emulator')).dy, 1),
+      );
 
-    appState.sharedPreferencesProvider.setSlotLayout(SlotLayout.twoByFour);
-    await tester.pumpAndSettle();
+      appState.sharedPreferencesProvider.setSlotLayout(SlotLayout.twoByFour);
+      await tester.pumpAndSettle();
 
-    control = _modeControl(tester);
-    expect(control.showSelectedIcon, isTrue);
-    expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
-    expect(tester.takeException(), isNull);
-  });
+      control = _modeControl(tester);
+      expect(control.showSelectedIcon, isTrue);
+      expect(control.style!.minimumSize!.resolve({}), const Size(48, 48));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
-      'mode switch keeps confirmed selection and blocks repeated input until reread',
-      (tester) async {
-    final switchGate = Completer<void>();
-    addTearDown(() {
-      if (!switchGate.isCompleted) {
-        switchGate.complete();
-      }
-    });
-    final communicator = _ModeCommunicator(initialReaderMode: false)
-      ..nextModeSetGate = switchGate;
-    final appState = _connectedState(communicator);
+    'mode switch keeps confirmed selection and blocks repeated input until reread',
+    (tester) async {
+      final switchGate = Completer<void>();
+      addTearDown(() {
+        if (!switchGate.isCompleted) {
+          switchGate.complete();
+        }
+      });
+      final communicator = _ModeCommunicator(initialReaderMode: false)
+        ..nextModeSetGate = switchGate;
+      final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    communicator.events.clear();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      communicator.events.clear();
 
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    await tester.tap(find.text('Reader'));
-    await tester.pump();
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      await tester.tap(find.text('Reader'));
+      await tester.pump();
 
-    expect(communicator.modeSets, [true]);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(_modeControl(tester).onSelectionChanged, isNull);
+      expect(communicator.modeSets, [true]);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(_modeControl(tester).onSelectionChanged, isNull);
 
-    await tester.tap(find.text('Reader'));
-    await tester.pump();
-    expect(communicator.modeSets, [true]);
+      await tester.tap(find.text('Reader'));
+      await tester.pump();
+      expect(communicator.modeSets, [true]);
 
-    switchGate.complete();
-    await tester.pumpAndSettle();
+      switchGate.complete();
+      await tester.pumpAndSettle();
 
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-    expect(communicator.modeReads, 2);
-    expect(communicator.events, ['mode:set:reader', 'mode:read']);
-  });
-
-  testWidgets(
-      'racing background refresh cannot clear pending mode or queue a duplicate command',
-      (tester) async {
-    final entryRefreshGate = Completer<void>();
-    final switchGate = Completer<void>();
-    addTearDown(() {
-      if (!entryRefreshGate.isCompleted) {
-        entryRefreshGate.complete();
-      }
-      if (!switchGate.isCompleted) {
-        switchGate.complete();
-      }
-    });
-    final communicator = _ModeCommunicator(initialReaderMode: false);
-    final appState = _connectedState(communicator);
-
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    communicator
-      ..events.clear()
-      ..nextModeReadGate = entryRefreshGate
-      ..nextModeSetGate = switchGate;
-
-    final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
-    await tester.pump();
-    expect(communicator.events, ['mode:read']);
-
-    await tester.tap(find.text('Reader'));
-    await tester.pump();
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(_modeControl(tester).onSelectionChanged, isNull);
-    expect(communicator.modeSets, isEmpty);
-
-    entryRefreshGate.complete();
-    await tester.pump();
-    await tester.pump();
-    expect(communicator.modeSets, [true]);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(_modeControl(tester).onSelectionChanged, isNull);
-
-    await tester.tap(
-      find.text('Reader'),
-      warnIfMissed: false,
-    );
-    await tester.pump();
-    expect(communicator.modeSets, [true]);
-
-    switchGate.complete();
-    await backgroundRefresh;
-    await tester.pumpAndSettle();
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-    expect(communicator.modeSets, [true]);
-  });
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+      expect(communicator.modeReads, 2);
+      expect(communicator.events, ['mode:set:reader', 'mode:read']);
+    },
+  );
 
   testWidgets(
-      'failed confirmation keeps the latest mode confirmed by a racing background refresh',
-      (tester) async {
-    final entryRefreshGate = Completer<void>();
-    addTearDown(() {
-      if (!entryRefreshGate.isCompleted) {
-        entryRefreshGate.complete();
-      }
-    });
-    final communicator = _ModeCommunicator(initialReaderMode: false);
-    final appState = _connectedState(communicator);
+    'racing background refresh cannot clear pending mode or queue a duplicate command',
+    (tester) async {
+      final entryRefreshGate = Completer<void>();
+      final switchGate = Completer<void>();
+      addTearDown(() {
+        if (!entryRefreshGate.isCompleted) {
+          entryRefreshGate.complete();
+        }
+        if (!switchGate.isCompleted) {
+          switchGate.complete();
+        }
+      });
+      final communicator = _ModeCommunicator(initialReaderMode: false);
+      final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    communicator
-      ..events.clear()
-      ..nextModeReadGate = entryRefreshGate
-      ..modeReadResults.addAll([
-        true,
-        StateError('confirmation unavailable'),
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      communicator
+        ..events.clear()
+        ..nextModeReadGate = entryRefreshGate
+        ..nextModeSetGate = switchGate;
+
+      final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
+      await tester.pump();
+      expect(communicator.events, ['mode:read']);
+
+      await tester.tap(find.text('Reader'));
+      await tester.pump();
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(_modeControl(tester).onSelectionChanged, isNull);
+      expect(communicator.modeSets, isEmpty);
+
+      entryRefreshGate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(communicator.modeSets, [true]);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(_modeControl(tester).onSelectionChanged, isNull);
+
+      await tester.tap(find.text('Reader'), warnIfMissed: false);
+      await tester.pump();
+      expect(communicator.modeSets, [true]);
+
+      switchGate.complete();
+      await backgroundRefresh;
+      await tester.pumpAndSettle();
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+      expect(communicator.modeSets, [true]);
+    },
+  );
+
+  testWidgets(
+    'failed confirmation keeps the latest mode confirmed by a racing background refresh',
+    (tester) async {
+      final entryRefreshGate = Completer<void>();
+      addTearDown(() {
+        if (!entryRefreshGate.isCompleted) {
+          entryRefreshGate.complete();
+        }
+      });
+      final communicator = _ModeCommunicator(initialReaderMode: false);
+      final appState = _connectedState(communicator);
+
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      communicator
+        ..events.clear()
+        ..nextModeReadGate = entryRefreshGate
+        ..modeReadResults.addAll([
+          true,
+          StateError('confirmation unavailable'),
+        ]);
+
+      final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
+      await tester.pump();
+      await tester.tap(find.text('Reader'));
+      await tester.pump();
+
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(_modeControl(tester).onSelectionChanged, isNull);
+      expect(communicator.modeSets, isEmpty);
+
+      entryRefreshGate.complete();
+      await backgroundRefresh;
+      await tester.pumpAndSettle();
+
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+      expect(appState.connectedDeviceStatus!.snapshot.mode.pendingMode, isNull);
+      expect(communicator.events, [
+        'mode:read',
+        'mode:set:reader',
+        'mode:read',
       ]);
+      expect(find.text('Error: Unavailable'), findsOneWidget);
+      expect(find.byType(SnackBar), findsOneWidget);
+    },
+  );
 
-    final backgroundRefresh = appState.connectedDeviceStatus!.refreshMode();
-    await tester.pump();
-    await tester.tap(find.text('Reader'));
-    await tester.pump();
+  testWidgets(
+    'first mode read failure stays aligned and retries automatically',
+    (tester) async {
+      final communicator = _ModeCommunicator(initialReaderMode: false)
+        ..modeReadResults.addAll([StateError('mode unavailable'), false]);
+      final appState = _connectedState(communicator);
 
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(_modeControl(tester).onSelectionChanged, isNull);
-    expect(communicator.modeSets, isEmpty);
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
 
-    entryRefreshGate.complete();
-    await backgroundRefresh;
-    await tester.pumpAndSettle();
+      expect(_modeControl(tester).selected, isEmpty);
+      expect(_modeControl(tester).onSelectionChanged, isNull);
+      expect(find.byKey(const Key('home-mode-retry')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const Key('home-mode-control'))).height,
+        closeTo(48, 1),
+      );
 
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-    expect(appState.connectedDeviceStatus!.snapshot.mode.pendingMode, isNull);
-    expect(communicator.events, [
-      'mode:read',
-      'mode:set:reader',
-      'mode:read',
-    ]);
-    expect(find.text('Error: Unavailable'), findsOneWidget);
-    expect(find.byType(SnackBar), findsOneWidget);
-  });
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump();
 
-  testWidgets('first mode read failure stays aligned and retries automatically',
-      (tester) async {
-    final communicator = _ModeCommunicator(initialReaderMode: false)
-      ..modeReadResults.addAll([
-        StateError('mode unavailable'),
-        false,
-      ]);
-    final appState = _connectedState(communicator);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(communicator.modeReads, 2);
+      expect(find.byKey(const Key('home-mode-retry')), findsNothing);
+    },
+  );
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-
-    expect(_modeControl(tester).selected, isEmpty);
-    expect(_modeControl(tester).onSelectionChanged, isNull);
-    expect(find.byKey(const Key('home-mode-retry')), findsNothing);
-    expect(
-      tester.getSize(find.byKey(const Key('home-mode-control'))).height,
-      closeTo(48, 1),
-    );
-
-    await tester.pump(const Duration(seconds: 15));
-    await tester.pump();
-
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(communicator.modeReads, 2);
-    expect(find.byKey(const Key('home-mode-retry')), findsNothing);
-  });
-
-  testWidgets('returning to Home retains confirmed mode without rereading',
-      (tester) async {
+  testWidgets('returning to Home retains confirmed mode without rereading', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
 
@@ -257,8 +261,9 @@ void main() {
     expect(communicator.modeReads, 1);
   });
 
-  testWidgets('mode command failure preserves confirmation and reports once',
-      (tester) async {
+  testWidgets('mode command failure preserves confirmation and reports once', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false)
       ..nextModeSetError = StateError('command failed');
     final appState = _connectedState(communicator);
@@ -277,27 +282,29 @@ void main() {
   });
 
   testWidgets(
-      'confirmed reread publishes the target when the command applies then throws',
-      (tester) async {
-    final communicator = _ModeCommunicator(initialReaderMode: false)
-      ..mutateModeBeforeSetError = true
-      ..nextModeSetError = StateError('transport lost the response');
-    final appState = _connectedState(communicator);
+    'confirmed reread publishes the target when the command applies then throws',
+    (tester) async {
+      final communicator = _ModeCommunicator(initialReaderMode: false)
+        ..mutateModeBeforeSetError = true
+        ..nextModeSetError = StateError('transport lost the response');
+      final appState = _connectedState(communicator);
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    communicator.events.clear();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      communicator.events.clear();
 
-    await tester.tap(find.text('Reader'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Reader'));
+      await tester.pumpAndSettle();
 
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-    expect(communicator.events, ['mode:set:reader', 'mode:read']);
-    expect(find.byType(SnackBar), findsNothing);
-  });
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+      expect(communicator.events, ['mode:set:reader', 'mode:read']);
+      expect(find.byType(SnackBar), findsNothing);
+    },
+  );
 
-  testWidgets('mode reread mismatch keeps the prior confirmed selection',
-      (tester) async {
+  testWidgets('mode reread mismatch keeps the prior confirmed selection', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false)
       ..ignoreModeSets = true;
     final appState = _connectedState(communicator);
@@ -314,8 +321,9 @@ void main() {
     expect(find.text('Error: Unavailable'), findsOneWidget);
   });
 
-  testWidgets('mode reread failure keeps the prior confirmed selection',
-      (tester) async {
+  testWidgets('mode reread failure keeps the prior confirmed selection', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
@@ -333,8 +341,9 @@ void main() {
     expect(find.text('Error: Unavailable'), findsOneWidget);
   });
 
-  testWidgets('Lite fixes Emulator mode and never sends a Reader command',
-      (tester) async {
+  testWidgets('Lite fixes Emulator mode and never sends a Reader command', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(
       communicator,
@@ -387,32 +396,37 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
   });
 
-  testWidgets('Home mounted while paused reads mode once when the app resumes',
-      (tester) async {
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    addTearDown(() {
+  testWidgets(
+    'Home mounted while paused reads mode once when the app resumes',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      addTearDown(() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+      final communicator = _ModeCommunicator(initialReaderMode: true);
+      final appState = _connectedState(communicator);
+
+      await _pumpHome(tester, appState);
+      tester.binding.drawFrame();
+      await tester.pump();
+      tester.binding.drawFrame();
+
+      expect(communicator.modeReads, 0);
+      expect(_modeControl(tester).selected, isEmpty);
+
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    });
-    final communicator = _ModeCommunicator(initialReaderMode: true);
-    final appState = _connectedState(communicator);
+      await tester.pumpAndSettle();
 
-    await _pumpHome(tester, appState);
-    tester.binding.drawFrame();
-    await tester.pump();
-    tester.binding.drawFrame();
+      expect(communicator.modeReads, 1);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+    },
+  );
 
-    expect(communicator.modeReads, 0);
-    expect(_modeControl(tester).selected, isEmpty);
-
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpAndSettle();
-
-    expect(communicator.modeReads, 1);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-  });
-
-  testWidgets('Home mounted while inactive initializes status immediately',
-      (tester) async {
+  testWidgets('Home mounted while inactive initializes status immediately', (
+    tester,
+  ) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     addTearDown(() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -454,8 +468,9 @@ void main() {
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
   });
 
-  testWidgets('Home entry waits to read mode when foreground RF is busy',
-      (tester) async {
+  testWidgets('Home entry waits to read mode when foreground RF is busy', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: true);
     final appState = _connectedState(communicator);
     final foregroundGate = Completer<void>();
@@ -480,51 +495,53 @@ void main() {
   });
 
   testWidgets(
-      'replaced Home stops a pending mode write before confirmation and error UI',
-      (tester) async {
-    final modeWriteGate = Completer<void>();
-    addTearDown(() {
-      if (!modeWriteGate.isCompleted) {
-        modeWriteGate.complete();
-      }
-    });
-    final oldCommunicator = _ModeCommunicator(initialReaderMode: false)
-      ..nextModeSetGate = modeWriteGate;
-    final appState = _connectedState(oldCommunicator);
+    'replaced Home stops a pending mode write before confirmation and error UI',
+    (tester) async {
+      final modeWriteGate = Completer<void>();
+      addTearDown(() {
+        if (!modeWriteGate.isCompleted) {
+          modeWriteGate.complete();
+        }
+      });
+      final oldCommunicator = _ModeCommunicator(initialReaderMode: false)
+        ..nextModeSetGate = modeWriteGate;
+      final appState = _connectedState(oldCommunicator);
 
-    await _pumpHome(tester, appState);
-    await tester.pumpAndSettle();
-    oldCommunicator.events.clear();
+      await _pumpHome(tester, appState);
+      await tester.pumpAndSettle();
+      oldCommunicator.events.clear();
 
-    await tester.tap(find.text('Reader'));
-    await tester.pump();
-    expect(oldCommunicator.modeSets, [true]);
+      await tester.tap(find.text('Reader'));
+      await tester.pump();
+      expect(oldCommunicator.modeSets, [true]);
 
-    final newCommunicator = _ModeCommunicator(initialReaderMode: false);
-    _replaceConnection(appState, newCommunicator);
-    appState.changesMade();
-    await tester.pumpAndSettle();
+      final newCommunicator = _ModeCommunicator(initialReaderMode: false);
+      _replaceConnection(appState, newCommunicator);
+      appState.changesMade();
+      await tester.pumpAndSettle();
 
-    expect(newCommunicator.modeSets, isEmpty);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(newCommunicator.modeSets, isEmpty);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
 
-    modeWriteGate.complete();
-    await tester.pumpAndSettle();
+      modeWriteGate.complete();
+      await tester.pumpAndSettle();
 
-    expect(oldCommunicator.events, ['mode:set:reader']);
-    expect(newCommunicator.modeSets, isEmpty);
-    expect(find.byType(SnackBar), findsNothing);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
+      expect(oldCommunicator.events, ['mode:set:reader']);
+      expect(newCommunicator.modeSets, isEmpty);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
 
-    await tester.tap(find.text('Reader'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Reader'));
+      await tester.pumpAndSettle();
 
-    expect(newCommunicator.modeSets, [true]);
-    expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
-  });
+      expect(newCommunicator.modeSets, [true]);
+      expect(_modeControl(tester).selected, {ConnectedDeviceMode.reader});
+    },
+  );
 
-  testWidgets('late mode result from the old connection is discarded',
-      (tester) async {
+  testWidgets('late mode result from the old connection is discarded', (
+    tester,
+  ) async {
     final oldCommunicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(oldCommunicator);
 
@@ -549,12 +566,15 @@ void main() {
     await tester.pump();
 
     expect(_modeControl(tester).selected, {ConnectedDeviceMode.emulator});
-    expect(appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
-        ConnectedDeviceMode.emulator);
+    expect(
+      appState.connectedDeviceStatus!.snapshot.mode.confirmedMode,
+      ConnectedDeviceMode.emulator,
+    );
   });
 
-  testWidgets('mode switching and slot activation remain independent',
-      (tester) async {
+  testWidgets('mode switching and slot activation remain independent', (
+    tester,
+  ) async {
     final communicator = _ModeCommunicator(initialReaderMode: false);
     final appState = _connectedState(communicator);
 
@@ -583,10 +603,7 @@ SegmentedButton<ConnectedDeviceMode> _modeControl(WidgetTester tester) =>
       ),
     );
 
-Future<void> _pumpHome(
-  WidgetTester tester,
-  ChameleonGUIState appState,
-) async {
+Future<void> _pumpHome(WidgetTester tester, ChameleonGUIState appState) async {
   SharedPreferences.setMockInitialValues({});
   await appState.sharedPreferencesProvider.load();
   await tester.pumpWidget(
@@ -613,9 +630,9 @@ ChameleonGUIState _connectedState(
     ..portName = 'mode-test-device'
     ..activeDevicePort = 'mode-test-port';
   return ChameleonGUIState(
-    SharedPreferencesProvider(),
-    firmwareCatalog: const CurrentFirmwareCatalogStub(),
-  )
+      SharedPreferencesProvider(),
+      firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    )
     ..connector = serial
     ..communicator = communicator
     ..log = Logger();
@@ -637,8 +654,8 @@ void _replaceConnection(
 
 class _ModeCommunicator extends ChameleonCommunicator {
   _ModeCommunicator({required bool initialReaderMode})
-      : readerMode = initialReaderMode,
-        super(Logger());
+    : readerMode = initialReaderMode,
+      super(Logger());
 
   bool readerMode;
   int modeReads = 0;
@@ -725,8 +742,10 @@ class _ModeCommunicator extends ChameleonCommunicator {
   Future<String> getGitCommitHash() async => 'abcdef0';
 
   @override
-  Future<List<int>> getDeviceCapabilities() async =>
-      [ChameleonCommand.setIdteckEmulatorID.value];
+  Future<List<int>> getDeviceCapabilities() async => [
+    ChameleonCommand.setIdteckEmulatorID.value,
+    ChameleonCommand.mf0UlcAuth.value,
+  ];
 }
 
 class _TestSerial extends AbstractSerial {

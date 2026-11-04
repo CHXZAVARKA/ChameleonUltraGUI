@@ -174,6 +174,557 @@
   "tag_type": "Tag type",
   "select_save_format": "Select save format",
   "key_count": "Key count",
+  "all": "All",
+  "no_name": "No name",
+  "connecting_to_ble": "Connecting to BLE device...",
+  "default_ble_password": "Default BLE connection password is 123456",
+  "connection_might_take_some_time": "First connection might take some time",
+  "too_long_name": "The name is too long",
+  "save_recovered_keys": "Save recovered keys",
+  "save_recovered_keys_where": "Where do you want to save the recovered keys?",
+  "save_recovered_keys_to_file": "Save recovered keys to file",
+  "add_recovered_keys_to_existing_dict": "Add recovered keys to existing dictionary",
+  "create_new_dict_with_recovered_keys": "Create new dictionary with recovered keys",
+  "recovery_in_progress": "Key recovery in progress, please wait...",
+  "clear_ble_bonds": "Clear bounded devices",
+  "ble_pin": "BLE PIN",
+  "enter_pin": "Enter PIN",
+  "pin_must_be_6_digits": "PIN must be 6 digits",
+  "clear_ble_bonds_confirmation": "Are you sure you want to clear BLE bounded devices? This will require you to remove bounded Chameleon in your mobile device settings before reconnecting.",
+  "ble_need_to_remove_pair": "If you changed password or unpaired all devices and can't connect you need to remove Chameleon in your device Bluetooth settings",
+  "shared_preferences_logging": "Shared preferences logging",
+  "production_logging": "Production logging",
+  "slow_down_warning": "Will slow down app, use with caution",
+  "enable_production_logging": "Enable production logging",
+  "disable_production_logging": "Disable production logging",
+  "clear_logs": "Clear logs",
+  "copy_logs_to_clipboard": "Copy logs to clipboard",
+  "recovery_library": "Recovery library",
+  "force_flashing": "Force flashing",
+  "chameleon_flashing_title_easter_egg": "Your Chameleon {model} is flashing",
+  "chameleon_flashing_title": "Installing firmware on your Chameleon {model}",
+  "ble_pairing": "BLE pairing",
+  "ats": "ATS",
+  "outdated_protocol": "Outdated protocol in firmware",
+  "outdated_protocol_description_1": "Your Chameleon is running on outdated protocol, which means firmware is outdated.",
+  "outdated_protocol_description_2": "App can't work with this version of protocol. Don't report any bugs found after that message.",
+  "outdated_protocol_description_3": "Would you like to update firmware?",
+  "skip": "Skip",
+  "update": "Update",
+  "static_nested_attack": "Run Static Nested attack on card",
+  "read_gen1_card_data": "Read Gen1 card data",
+  "card_tech": "Tech",
+  "charge": "Charge",
+  "copy_all_keys": "Copy all keys to clipboard",
+  "battery_info": "Charge: {percent}%\nVoltage: {voltage} mV",
+  "x_byte_uid": "{length} byte UID",
+  "edit_slot_data": "Edit Slot Data",
+  "export_slot_data": "Export Slot Data",
+  "frequency_to_export": "Frequency to export",
+  "save_to_file": "Save to file",
+  "export_to_new_card": "Export to new card",
+  "update_saved_card": "Update saved card",
+  "must_be_valid_hex": "Must be valid HEX",
+  "export_to_dictionary": "Export found keys",
+  "enter_name_of_card": "Enter name of card",
+  "enter_name_of_dictionary": "Enter name of dictionary",
+  "qrCodeScanner": "QR Code Scanner",
+  "qrCodeViewer": "QR Code Viewer",
+  "done": "Done",
+  "next_qr_code": "Next QR Code ({number}/{total})",
+  "qrCodeImport": "QR Code Import",
+  "startScanning": "Start Scanning",
+  "finishImport": "Finish Import",
+  "scan_next_qr_code": "Scan next QR Code ({number}/{total})",
+  "checksumOk": "Checksum OK",
+  "choose_export_method": "Choose export method",
+  "choose_export_method_description": "Choose how you want to export your settings",
+  "qr_code_settings": "QR Code Export Settings",
+  "split_size": "Split size",
+  "split_size_tooltip": "Split Size is the maximum amount of characters per QR Code. Smaller Split Size results in more, smaller QR Codes. Smaller QR Codes are easier to scan.",
+  "please_enter_a_valid_number": "Please enter a valid number",
+  "please_enter_a_number_greater_than": "Please enter a number greater than {number}",
+  "error_correction": "Error Correction",
+  "error_correction_tooltip": "Error Correction takes up more space, resulting in more QR Codes:\nL = 1; M = 0; Q = 3; H = 2;",
+  "please_enter_a_number_between": "Please enter a number between {min} and {max}",
+  "json_file": "JSON File",
+  "export_settings": "Export Settings",
+  "import_settings": "Import Settings",
+  "import_settings_description": "Choose how you want to import your settings",
+  "qr_code_import_not_supported_description": "QR Code import is only supported on mobile devices",
+  "test_qr_code": "Test QR Code",
+  "select_saved_card_to_write": "Select saved card to write",
+  "select_saved_card": "Select saved card",
+  "select_magic_card": "Select Magic card type",
+  "write_data_to_magic_card": "Write data",
+  "writing_is_not_yet_supported": "Writing such card save to Magic card is not yet supported",
+  "auto_detect_magic_card": "Auto-detect Magic card type",
+  "detected_magic_card_type": "Detected Magic card type",
+  "failed_to_detect_magic_card_type": "Failed to detect Magic card type. Maybe your Magic card doesn't support detection (Mifare Classic Gen2 or T55XX) or is missing",
+  "otp_magic_warning": "Some Magic cards are writable only once. Make sure you selected correct card. Press \"{button}\" to write data to Magic card.",
+  "keep_stable_warning": "Keep your Chameleon stable and close to the card during writing. Moving the device may cause failure or damage the card.",
+  "magic_success_write": "Card written successfully",
+  "magic_failed_write": "Something went wrong in card writing",
+  "skip_default_dictionary": "Skip default dictionary",
+  "not_mifare_classic_card": "This card probably isn't Mifare Classic card",
+  "magic_incompatible_card": "Your Magic card isn't compatible with this dump. Probably UID size or block count mismatch",
+  "some_blocks_failed_to_write": "Failed to write some blocks",
+  "continue_anyway": "Continue anyway",
+  "next": "Next",
+  "back": "Back",
+  "reset": "Reset",
+  "write_again": "Write again",
+  "confirm_deletions": "Confirm deletions",
+  "confirm_deletion": "Confirm deletion",
+  "confirm_deletion_text": "Are you sure you want to delete {name}?",
+  "delete": "Delete",
+  "total_keys": "key(s)",
+  "key": "Key",
+  "t55xx_key_prompt": "current T55XX key. Default CU key is 20206666",
+  "t55xx_new_key_prompt": "new T55XX key if you want to change it",
+  "new_key": "New key",
+  "ultralight_key_prompt": "Ultralight key (HEX, 4 bytes)",
+  "read_with_key": "Read with key",
+  "read_without_key": "Read without key",
+  "invalid_password": "Invalid password",
+  "ultralight_version": "Ultralight version",
+  "ultralight_signature": "Ultralight signature",
+  "no_key": "No key",
+  "gen1": "Gen1",
+  "gen2": "Gen2 / Generic",
+  "gen3": "Gen3",
+  "t55xx": "T55XX",
+  "connect_manually": "Connect manually",
+  "port": "Port",
+  "port_hint": "e.g. COM3, /dev/ttyUSB0",
+  "hardnested_collecting_nonces": "Collecting required nonces {nonces}/256...",
+  "hardnested_calculating_key": "Calculating key...",
+  "invalid_input": "One of the fields is filled in incorrectly",
+  "failed_to_fetch_oc_contributors": "Failed to fetch OpenCollective contributors",
+  "recovery_old_firmware": "Failed to collect nonces, is your firmware up to date?",
+  "emulate_device": "Emulated device",
+  "emulate_device_confirmation": "Are you sure you want to {mode} emulated device? You can enable this to check app functions without having Chameleon Ultra, all actions with emulated device will not be saved. You won't be able to connect to real device unless you will disable this.",
+  "prng_type": "PRNG type",
+  "prng_type_static": "Static",
+  "prng_type_weak": "Weak",
+  "prng_type_hard": "Hard",
+  "has_backdoor_support": "Backdoor",
+  "demo_firmware": "Demo, not real Chameleon Ultra. Disable in settings",
+  "trademarks_mifare": "MIFARE®, MIFARE® Classic and MIFARE® Ultralight are registered trademarks of NXP Semiconductors B.V.",
+  "trademarks_em": "EM Microelectronic-Marin, EM Microelectronic, EM and all product designations beginning with “EM” are registered trademarks of EM Microelectronic",
+  "create_card": "Create card",
+  "update_data_title": "Update card data?",
+  "update_data_message": "You have changed the UID, SAK, or ATQA. Do you want to update the card data accordingly?",
+  "create": "Create",
+  "ultralight_counter": "Ultralight counter {index}",
+  "ultralight_counter_value": "Counter value",
+  "counter_value_empty": "Counter value cannot be empty",
+  "uploading_dump": "Uploading dump to emulator...",
+  "please_update_firmware": "Update firmware for a seamless experience",
+  "override_card_type": "Override card type",
+  "override_card_type_description": "Select a specific card type to override auto-detection",
+  "dump_editor": "Dump Editor",
+  "block": "Block",
+  "value_block": "Value Block",
+  "access_conditions": "Access Conditions",
+  "block_index": "Block Index",
+  "insert_mode": "Insert Mode",
+  "color_legend": "Color Legend",
+  "ascii_view": "ASCII View",
+  "value_blocks": "Value Blocks",
+  "unsaved_changes": "Unsaved Changes",
+  "unsaved_changes_message": "You have unsaved changes. Are you sure you want to discard them?",
+  "discard": "Discard",
+  "no_value_blocks_found": "No value blocks found in dump.",
+  "invalid_data_in_sector": "Invalid data in sector",
+  "ascii": "ASCII",
+  "acl": "ACL",
+  "value": "Value",
+  "inc": "Inc",
+  "dec": "Dec",
+  "invalid_access_conditions_length": "Invalid access conditions length",
+  "failed_to_decode_access_conditions": "Failed to decode access conditions",
+  "sector_trailer": "Sector Trailer",
+  "bcc": "BCC",
+  "lock_bytes": "Lock Bytes",
+  "password": "Password",
+  "dump": "Dump",
+  "invalid_data_in_block": "Invalid data in block",
+  "logs": "Logs",
+  "facility_code": "Facility Code",
+  "issue_level": "Issue Level",
+  "must_be_between": "Must be between {a} and {b}",
+  "mifare_ultralight_emulator_settings": "Mifare Ultralight emulator settings",
+  "passwords_detected": "Passwords detected",
+  "enable_password_detection": "Enable password detection to capture Mifare Ultralight passwords from reader",
+  "password_detection": "Password detection",
+  "view_passwords": "View passwords",
+  "detected_passwords": "Detected passwords",
+  "continuous_scan": "Continuous scan",
+  "trademarks_hid": "HID™ and HID ProxCard™ are registered trademarks of HID Global Corporation",
+  "licenses": "Licenses",
+  "changelog": "Changelog",
+  "help_translate": "Help Translate",
+  "your_version": "Your Version",
+  "no_changelogs_available": "No changelogs available",
+  "changes": "Changes",
+  "recent_commits": "Recent commits",
+  "latest_commits": "Latest commits",
+  "latest_commits_from_main_branch": "Latest commits from main branch",
+  "view_commits": "View Commits",
+  "view_full_release": "View Full Release",
+  "no_changes_listed": "No changes listed",
+  "unreleased": "Unreleased",
+  "export_logs_to_file": "Export logs to file",
+  "checking_card_info": "Checking card info",
+  "checking_or_running_darkside": "Checking and running Darkside attack",
+  "backdoor_recovery_of_non_static_encrypted": "Recovering first key via backdoor",
+  "collecting_nonces": "Collecting nonces ({type})",
+  "recovering_key": "Recovering key ({type})",
+  "checking_keys": "Checking keys ({count})",
+  "tools": "Tools",
+  "wip": "WIP",
+  "device_required": "Device required",
+  "dictionary_download": "Dictionary download",
+  "dictionary_download_description": "Download external dictionaries",
+  "mifare_classic_gen4": "Mifare Classic Gen4",
+  "mifare_classic_gen4_description": "Configure Gen4 magic card",
+  "t55xx_password_cleaner": "T55XX password cleaner",
+  "t55xx_password_cleaner_description": "Removes passwords from T55XX tags",
+  "dictionary_download_success": "Dictionary {name} is downloaded. Check it in \"Saved Cards page\"",
+  "t55xx_password_cleaner_warning": "This tool may BREAK your card if it has no password (or in other cases). Use it at your own risk, we are not responsible for the damage.",
+  "select_t55xx_dictionary": "Select dictionary",
+  "no_t55xx_dictionaries": "No T55XX compatible dictionaries available. Please download some first.",
+  "download_dictionaries": "Download dictionaries",
+  "enter_new_password": "Enter new password (will be set if password will be found)",
+  "start_password_reset": "Start password reset",
+  "password_reset_progress": "Progress",
+  "password_found": "Password found",
+  "password_reset_failed": "Password reset failed",
+  "password_reset_success": "Previous password was: {password}",
+  "password_reset_no_match": "Unable to reset password. None of the password in the dictionary worked.",
+  "trying_password": "Trying password",
+  "failed_to_read_block": "Failed to read any blocks. This is password protected card or not Mifare Ultralight card",
+  "android_ble_permissions_missing": "Missing BLE or location permission. To connect via BLE, grant permissions in your device Settings app",
+  "skip_recovery": "Skip recovery",
+  "resume_recovery": "Resume recovery",
+  "language_name": "English",
+  "symmetric": "Symmetric",
+  "lf_sniffing": "LF signal analysis",
+  "@lf_sniffing": {
+    "description": "Title of the low-frequency signal capture tool. Captures a raw LF RFID signal for analysis."
+  },
+  "lf_sniffing_description": "Capture LF field or ADC samples and analyze signals",
+  "@lf_sniffing_description": {
+    "description": "Tools menu description of raw low-frequency RFID signal capture and decoding."
+  },
+  "lf_sniff_firmware_unsupported": "This firmware does not advertise LF sniffing support. Update the device firmware to enable this tool.",
+  "lf_sniff_timeout": "Capture timeout (ms)",
+  "lf_sniff_timeout_help": "1 to 10000 ms, sampled at 125 kHz",
+  "lf_sniff_capture": "Capture",
+  "lf_sniff_capture_prompt": "Run a capture to inspect LF field samples, waveform, and decode heuristics.",
+  "lf_sniff_capture_in_progress": "Capturing LF field for {timeout} ms...",
+  "lf_sniff_capture_done": "Captured {count} samples.",
+  "lf_sniff_no_samples": "No LF samples captured.",
+  "lf_sniff_summary": "Summary",
+  "lf_sniff_waveform": "Waveform",
+  "lf_sniff_zoom": "Zoom",
+  "lf_sniff_expand_waveform": "Expand",
+  "lf_sniff_decode": "Decode",
+  "lf_sniff_hex": "Hex",
+  "lf_sniff_samples": "Samples",
+  "lf_sniff_samples_value": "{value} samples",
+  "lf_sniff_range": "Range",
+  "lf_sniff_duration_value": "{duration} ms",
+  "lf_sniff_mean_value": "Mean: {value}",
+  "lf_sniff_gaps": "Gaps",
+  "lf_sniff_gap_threshold_value": "Threshold: {value}",
+  "lf_sniff_modulation": "Modulation analysis",
+  "lf_sniff_modulation_type": "Type",
+  "lf_sniff_dynamic_range": "Dynamic range",
+  "lf_sniff_nearest_clock": "Nearest clock",
+  "lf_sniff_clock_value": "RF/{divisor}",
+  "lf_sniff_half_period": "Half-period",
+  "lf_sniff_period_value": "{samples} samples ({microseconds} us)",
+  "lf_sniff_full_period": "Full period",
+  "lf_sniff_microseconds": "{value} us",
+  "lf_sniff_modulation_none": "None",
+  "lf_sniff_modulation_insufficient": "Insufficient transitions",
+  "lf_sniff_modulation_manchester": "Manchester",
+  "lf_sniff_modulation_ask_nrz": "ASK / NRZ",
+  "lf_sniff_modulation_biphase": "Biphase",
+  "lf_sniff_modulation_fsk_mixed": "FSK or mixed",
+  "lf_sniff_waveform_help": "The plot shows raw ADC values over time. Shaded regions are samples below the detected gap threshold.",
+  "lf_sniff_copy_hex": "Copy hex",
+  "lf_sniff_hex_copied": "Hex preview copied to clipboard",
+  "lf_sniff_clock_divisor": "Manchester clock divisor",
+  "lf_sniff_clock_help": "Positive divisor in carrier cycles (for example 32, 50, 64 or 128)",
+  "@lf_sniff_clock_help": {
+    "description": "Help for the LF capture clock input: a positive divisor measured in carrier cycles, with typical values of 32, 50, 64, or 128."
+  },
+  "lf_sniff_invert": "Invert logic",
+  "lf_sniff_refresh_decode": "Refresh decode",
+  "lf_sniff_copy_bits": "Copy bits",
+  "lf_sniff_bits_copied": "Decoded bitstream copied to clipboard",
+  "lf_sniff_invalid_clock": "Enter a positive clock divisor",
+  "@lf_sniff_invalid_clock": {
+    "description": "Validation error in LF signal capture requiring a positive clock divisor in carrier cycles."
+  },
+  "lf_sniff_no_decode": "No bits decoded. Try a different clock divisor or invert setting.",
+  "lf_sniff_bits": "Bits",
+  "lf_sniff_threshold": "Threshold",
+  "lf_sniff_hex_preview": "Hex preview",
+  "lf_sniff_bitstream": "Bitstream",
+  "lf_sniff_hex_help": "Showing the first {shown} bytes out of {total}. Export the capture to keep the full sample buffer.",
+  "lf_sniff_hex_color_title": "Byte colors",
+  "lf_sniff_hex_color_scale": "Threshold {threshold}, mean {mean}, peak {peak}",
+  "lf_sniff_hex_color_gap": "Gap",
+  "lf_sniff_hex_color_warmup": "Startup low",
+  "lf_sniff_hex_color_low": "Below mean",
+  "lf_sniff_hex_color_carrier": "Carrier",
+  "lf_sniff_hex_color_peak": "Peak",
+  "lf_sniff_hex_glyph_title": "Level glyphs",
+  "lf_sniff_hex_glyph_gap": "very low",
+  "lf_sniff_hex_glyph_ringing": "ringing",
+  "lf_sniff_hex_glyph_low": "low",
+  "lf_sniff_hex_glyph_mid": "mid",
+  "lf_sniff_hex_glyph_carrier": "carrier",
+  "lf_sniff_hex_glyph_high": "high",
+  "lf_sniff_hex_glyph_clipped": "clipped",
+  "lf_sniff_level_legend": "_ gap  . ringing  - low  + mid  o carrier  O high  # clipped",
+  "hf_sniffing": "HF sniffing",
+  "hf_sniffing_description": "Capture and analyze ISO14443-A traffic while the Chameleon emulates a tag",
+  "hf_sniff_firmware_unsupported": "This firmware does not advertise HF sniffing support. Update the device firmware to enable this tool.",
+  "hf_sniff_timeout": "Capture timeout (ms)",
+  "hf_sniff_timeout_help": "1 to 30000 ms. Keep the Chameleon in tag mode and present it to a reader.",
+  "hf_sniff_capture": "Capture",
+  "hf_sniff_capture_prompt": "Run a capture while the Chameleon is emulating a tag near a reader.",
+  "hf_sniff_capture_in_progress": "Capturing HF traffic for {timeout} ms...",
+  "hf_sniff_no_frames": "No HF frames captured.",
+  "hf_sniff_no_decoded_frames": "Capture completed, but no complete HF frames could be decoded.",
+  "hf_sniff_capture_done": "Captured {count} HF frame(s).",
+  "hf_sniff_summary": "Summary",
+  "hf_sniff_frames": "Frames",
+  "hf_sniff_nonces": "Nonces",
+  "hf_sniff_recovery": "Recovery",
+  "hf_sniff_raw": "Raw",
+  "hf_sniff_uid": "UID",
+  "hf_sniff_protocol": "Protocol",
+  "hf_sniff_note": "No completed SELECT seen",
+  "hf_sniff_reader_frames": "Reader frames",
+  "hf_sniff_card_frames": "Card frames",
+  "hf_sniff_auth": "Auth",
+  "hf_sniff_aids": "AIDs",
+  "hf_sniff_atc": "ATC",
+  "hf_sniff_amount": "Amount",
+  "hf_sniff_auth_type": "Auth type",
+  "hf_sniff_end": "End",
+  "hf_sniff_bits": "Bits",
+  "hf_sniff_direction_reader": "Reader to card",
+  "hf_sniff_direction_card": "Card to reader",
+  "hf_sniff_nonce_groups": "No MIFARE Classic auth exchanges were found in this capture.",
+  "hf_sniff_nonce_group_value": "Block {block} Key {keyType} uid={uid}",
+  "hf_sniff_nonce_exchange_value": "[{index}] nt={nt}  nr={nr}  ar={ar}",
+  "hf_sniff_mfkey64": "Copy mfkey64",
+  "hf_sniff_mfkey32": "Copy mfkey32v2",
+  "hf_sniff_command_copied": "Recovery command copied to clipboard",
+  "hf_sniff_recover_all": "Recover all",
+  "hf_sniff_recover_key": "Recover key",
+  "hf_sniff_nonce_single": "Only one exchange was captured. Capture a second auth round to recover the key.",
+  "hf_sniff_recovery_pending": "Recovery has not been started for this nonce group.",
+  "hf_sniff_recovery_in_progress": "Recovering key...",
+  "hf_sniff_recovery_method": "Recovered via {method}",
+  "hf_sniff_recovery_failed": "Key not found. Capture more nonce exchanges and retry.",
+  "hf_sniff_key_copied": "Recovered key copied to clipboard",
+  "hf_sniff_copy_key": "Copy key",
+  "hf_sniff_raw_help": "Showing the first {shown} bytes out of {total}. Export the capture to keep the full packed frame buffer.",
+  "hf_sniff_hex_copied": "Raw HF capture copied to clipboard",
+  "hf_sniff_copy_hex": "Copy raw hex",
+  "auto_scan_devices": "Auto scan devices",
+  "auto_connect_first_device": "Auto connect first found device",
+  "wake_time_after_button_press": "Wake time after button press (s):",
+  "wake_time": "Wake time",
+  "compare": "Compare",
+  "exit_comparison": "Exit comparison",
+  "select_dump_to_compare": "Select a dump to compare",
+  "comparing_with": "Comparing with {name}",
+  "no_dumps_to_compare": "No compatible dumps to compare",
+  "difference": "Difference",
+  "comparison": "Comparison",
+  "copy": "copy",
+  "qr_code": "QR Code",
+  "folder": "Folder",
+  "create_dictionary": "Create Dictionary",
+  "create_folder": "Create folder",
+  "edit_folder": "Edit folder",
+  "folder_color": "Folder color",
+  "move_to_folder": "Move to folder",
+  "parent_folder": "Parent folder",
+  "move_card": "Move card",
+  "move_dictionary": "Move dictionary",
+  "move_folder": "Move folder",
+  "export_folder": "Export folder",
+  "export_dictionary_folder": "Export dictionary folder",
+  "delete_folder": "Delete folder",
+  "delete_folder_title": "Delete {name}?",
+  "delete_card_folder_confirmation": "This deletes the folder, all nested folders, and every card inside them.",
+  "delete_dictionary_folder_confirmation": "This deletes the folder, all nested folders, and every dictionary inside them.",
+  "invalid_folder_export": "This is not a valid folder export.",
+  "invalid_dictionary_folder_export": "This is not a valid dictionary folder export.",
+  "folder_card_count": "{count, plural, =1{1 card} other{{count} cards}}",
+  "folder_dictionary_count": "{count, plural, =1{1 dictionary} other{{count} dictionaries}}",
+  "ascii_characters_required": "{count} ASCII characters required.",
+  "address": "Address",
+  "ndef": "NDEF",
+  "hf_sniff_load_file": "Load .trace file",
+  "hf_sniff_load_failed": "Failed to load trace file: {error}",
+  "hf_sniff_loaded": "Loaded {count} frame(s) from file.",
+  "lf_sniff_load_file": "Load .bin file",
+  "lf_sniff_load_failed": "Failed to load file: {error}",
+  "lf_sniff_loaded": "Loaded {count} sample(s) from file.",
+  "sniff_device_required_hint": "No device connected. Connect a Chameleon to capture, or load a saved file.",
+  "view_dump": "View dump",
+  "enable_vanity_sak": "Enable Vanity SAK",
+  "enable_vanity_sak_tooltip": "When enabled, SAK stored in block 0 is increased by 0x80, mimicking genuine cards, primarily 7-byte UID ones.\nDefault on for 7-byte UID cards, off for 4, since some of them replay this byte as is.",
+  "ulc_write_lock_and_counter": "Write lock bytes and counter (irreversible)",
+  "long_press_threshold": "Long press threshold (ms):",
+  "nfc_field_generator": "NFC field generator",
+  "battery_condition": "Condition: {condition}",
+  "battery_condition_critical": "Critical",
+  "battery_condition_low": "Low",
+  "battery_condition_fair": "Fair",
+  "battery_condition_good": "Good",
+  "battery_condition_excellent": "Excellent",
+  "battery_condition_unknown": "Unknown",
+  "advanced": "Advanced",
+  "raw_hf": "Raw HF commands",
+  "raw_device": "Device commands",
+  "raw_hf_description": "Exchange raw ISO 14443-A frames with a card.",
+  "raw_device_description": "Send numeric firmware commands and inspect status and data.",
+  "raw_ultra_required": "HF reader commands require a Chameleon Ultra.",
+  "raw_command": "Command ID",
+  "raw_payload": "Payload (hex)",
+  "raw_timeout": "Timeout (ms)",
+  "raw_crc_bytes": "Appending CRC requires non-empty, whole-byte data.",
+  "raw_bits": "Bits (optional)",
+  "raw_bits_help": "Auto",
+  "raw_send": "Send",
+  "raw_status": "Status",
+  "raw_activate_rf": "Activate RF field",
+  "raw_wait_response": "Wait for card response",
+  "raw_append_crc": "Append CRC",
+  "raw_auto_select": "Select card automatically",
+  "raw_keep_rf": "Keep RF field on",
+  "raw_check_crc": "Check response CRC",
+  "raw_invalid_number": "Enter a number from {lower} to {upper}.",
+  "raw_invalid_hex": "Enter complete hex bytes, up to {max} bytes.",
+  "card_number": "Card number",
+  "t55xx_block_editor": "T55xx block editor",
+  "t55xx_block_editor_description": "Write raw 32-bit blocks to T55xx tags",
+  "t55xx_block_editor_unsupported": "This firmware does not support raw T55xx writes. Update your firmware and use a Chameleon Ultra.",
+  "t55xx_block_editor_checking": "Checking firmware support…",
+  "t55xx_block_editor_page": "Page",
+  "t55xx_block_editor_data": "Block data (8 hex digits)",
+  "t55xx_block_editor_use_password": "Authenticate with password",
+  "t55xx_block_editor_sent": "Write command completed. Tag contents have not been verified.",
+  "lf_capture_source": "Capture source",
+  "lf_capture_sniff": "LF field sniff (timed)",
+  "lf_capture_adc": "LF ADC read (reader field on)",
+  "lf_plot_start": "Plot start sample (zero-based)",
+  "lf_plot_length": "Samples to plot",
+  "lf_plot_range": "Sample range: {start}–{end} (end exclusive, 8 µs/sample)",
+  "lf_hex_length": "Hex samples to display and copy",
+  "lf_sample_range_invalid": "Enter a valid sample count",
+  "lf_adc_firmware_unsupported": "LF ADC read is not supported by this firmware. Update the firmware to use it.",
+  "lf_adc_capture_in_progress": "Reading LF ADC samples…",
+  "lf_adc_binary": "Binary levels (1 at ADC ≥ 0xBF)",
+  "hf_tool_unsupported": "This firmware does not support this HF tool. Update the device firmware.",
+  "hf_auth_trace": "Active authentication trace",
+  "hf_auth_description": "Authenticate with a known MIFARE Classic key and inspect the exchange.",
+  "hf_auth_block": "Block (0–255)",
+  "hf_auth_key_type": "Key type",
+  "hf_auth_key": "Key (6 bytes, hex)",
+  "hf_auth_status": "Authentication status: 0x{status} (0 = success).",
+  "hf_auth_prompt": "Capture an authentication exchange with a card using a known key.",
+  "hf_auth_timeout_help": "1 to 30000 ms. Poll for a card before authenticating.",
+  "live_value_blocks": "Live value blocks",
+  "value_block_write": "Write value",
+  "value_block_increment": "Increment",
+  "value_block_decrement": "Decrement",
+  "value_block_done": "Card operation completed.",
+  "value_block_failed": "Card write failed. Check the key and access conditions.",
+  "value_block_unsupported": "The connected firmware does not support this operation, or capabilities could not be read.",
+  "value_block_tool_description": "Recover keys and manage value blocks directly on a MIFARE Classic card.",
+  "value_block_scan": "Scan card",
+  "value_block_scan_classic": "Place a MIFARE Classic card on the reader and scan it.",
+  "value_block_layout": "Card layout",
+  "value_block_refresh": "Read blocks",
+  "value_block_select_source": "Source",
+  "value_block_select_destination": "Destination",
+  "value_block_copy": "Copy value",
+  "value_block_manufacturer": "Manufacturer",
+  "value_block_locked": "Key needed",
+  "value_block_unread": "Not read",
+  "value_block_data": "Data",
+  "value_block_wrong_card": "Card or device changed. Scan the original card again before continuing.",
+  "value_block_no_access": "This operation needs a value block, a supported firmware command, and recovered keys with the required access.",
+  "value_block_done_unverified": "Card operation completed. Readback was unavailable; read the blocks again to verify the result.",
+  "value_block_copy_mode": "Copy between blocks",
+  "value_block_select_block": "Select a block",
+  "gen4_intro": "Ultimate / GTU cards only. All values are hexadecimal.",
+  "gen4_current_password": "Current backdoor password (4 bytes)",
+  "gen4_new_password": "New backdoor password (4 bytes)",
+  "gen4_read": "Read configuration",
+  "gen4_protocol": "Emulated protocol",
+  "gen4_uid_length": "UID length (bytes)",
+  "gen4_shadow": "Shadow mode",
+  "gen4_prewrite": "Pre-write",
+  "gen4_restore": "Restore",
+  "gen4_high_speed": "Disabled / high speed",
+  "gen4_split": "Split",
+  "gen4_shadow_warning": "Restore may fail on 06A0 cards; Split is untested on older cards.",
+  "gen4_password_help": "Save this password; it cannot be recovered.",
+  "gen4_ats_help": "Up to 16 bytes, no CRC. Leave empty to disable.",
+  "gen4_sak_help": "Avoid 04; 20 / 28 require ATS.",
+  "gen4_ul_mode": "Ultralight / NTAG variant",
+  "gen4_max_block": "Maximum accessible block (00–FF)",
+  "gen4_max_block_help": "Last block: 3F for 1K, FF for 4K.",
+  "gen4_block0": "Direct writes to block 0",
+  "gen4_factory_default": "Factory default",
+  "gen4_apply": "Apply configuration",
+  "gen4_confirm_write": "Confirm write",
+  "gen4_apply_warning": "Write these settings? Protocol, UID length, ATS and selection parameters must agree with card memory. Incorrect values can prevent card selection. Keep this card in place until verification finishes.",
+  "gen4_fuse_warning": "This permanently locks these settings, including the password. You cannot change them again. Save the password before continuing.",
+  "gen4_permanent_lock": "Permanently lock configuration",
+  "gen4_verified": "Write verified by readback.",
+  "gen4_verify_failed": "Write completed, but readback differs. Read the card again before continuing.",
+  "gen4_written_read_failed": "Configuration written. Readback pending; the current password has been updated.",
+  "gen4_uid_and_memory": "UID and advanced memory access",
+  "gen4_uid_help": "Apply protocol and UID length changes first.",
+  "gen4_uid_warning": "Write the UID using the configuration last read? Apply UID length or protocol changes first. Other manufacturer and lock bytes are preserved. A multi-block write can partially complete if the card is removed.",
+  "gen4_uid_written": "UID written. Scan the card again to verify its identity.",
+  "gen4_write_uid": "Write UID",
+  "gen4_block_address": "Block address (1 hex byte)",
+  "gen4_block_data": "Block data (16 hex bytes)",
+  "gen4_read_block": "Read block",
+  "gen4_write_block": "Write block",
+  "gen4_block_warning": "Overwrite this 16-byte block? Manufacturer data, keys, access bits and lock bytes may be affected. This applies immediately.",
+  "gen4_hex_required": "Enter {bytes} bytes of hexadecimal.",
+  "gen4_ultra_required": "HF reader operations require a Chameleon Ultra.",
+  "gen4_memory_setting": "Memory-backed setting",
+  "gen4_otp": "OTP",
+  "gen4_ntag_password": "NTAG password (not backdoor password)",
+  "gen4_signature": "Originality signature",
+  "gen4_read_setting": "Read setting",
+  "gen4_write_setting": "Write setting",
+  "gen4_memory_value_help": "{length} hex bytes, starting at block {address}.",
+  "gen4_pack_page": "PACK page",
+  "gen4_pack_page_help": "13 for 06A0 / 6666; E6 for other revisions.",
+  "gen4_confirm_lock": "Lock permanently",
+  "cancel_recovery_title": "Cancel this process?",
+  "cancel_recovery_message": "Keys already recovered will be kept. Calculations will be interrupted. Any device command already in progress will finish before stopping.",
+  "continue_recovery": "Keep running",
+  "cancelling_recovery": "Cancelling…",
   "mifare_classic_assigned_key_profile": "Assigned key profile",
   "@mifare_classic_assigned_key_profile": {
     "description": "Label for the key profile assigned to a MIFARE Classic card"
@@ -558,145 +1109,6 @@
   "@mifare_classic_maintenance_cancelled": {
     "description": "Safe failure shown when Standard writer maintenance is cancelled"
   },
-  "all": "All",
-  "no_name": "No name",
-  "connecting_to_ble": "Connecting to BLE device...",
-  "default_ble_password": "Default BLE connection password is 123456",
-  "connection_might_take_some_time": "First connection might take some time",
-  "too_long_name": "The name is too long",
-  "save_recovered_keys": "Save recovered keys",
-  "save_recovered_keys_where": "Where do you want to save the recovered keys?",
-  "save_recovered_keys_to_file": "Save recovered keys to file",
-  "add_recovered_keys_to_existing_dict": "Add recovered keys to existing dictionary",
-  "create_new_dict_with_recovered_keys": "Create new dictionary with recovered keys",
-  "recovery_in_progress": "Key recovery in progress, please wait...",
-  "clear_ble_bonds": "Clear bounded devices",
-  "ble_pin": "BLE PIN",
-  "enter_pin": "Enter PIN",
-  "pin_must_be_6_digits": "PIN must be 6 digits",
-  "clear_ble_bonds_confirmation": "Are you sure you want to clear BLE bounded devices? This will require you to remove bounded Chameleon in your mobile device settings before reconnecting.",
-  "ble_need_to_remove_pair": "If you changed password or unpaired all devices and can't connect you need to remove Chameleon in your device Bluetooth settings",
-  "shared_preferences_logging": "Shared preferences logging",
-  "production_logging": "Production logging",
-  "slow_down_warning": "Will slow down app, use with caution",
-  "enable_production_logging": "Enable production logging",
-  "disable_production_logging": "Disable production logging",
-  "clear_logs": "Clear logs",
-  "copy_logs_to_clipboard": "Copy logs to clipboard",
-  "recovery_library": "Recovery library",
-  "force_flashing": "Force flashing",
-  "chameleon_flashing_title_easter_egg": "Your Chameleon {model} is flashing",
-  "chameleon_flashing_title": "Installing firmware on your Chameleon {model}",
-  "ble_pairing": "BLE pairing",
-  "ats": "ATS",
-  "outdated_protocol": "Outdated protocol in firmware",
-  "outdated_protocol_description_1": "Your Chameleon is running on outdated protocol, which means firmware is outdated.",
-  "outdated_protocol_description_2": "App can't work with this version of protocol. Don't report any bugs found after that message.",
-  "outdated_protocol_description_3": "Would you like to update firmware?",
-  "skip": "Skip",
-  "update": "Update",
-  "static_nested_attack": "Run Static Nested attack on card",
-  "read_gen1_card_data": "Read Gen1 card data",
-  "card_tech": "Tech",
-  "charge": "Charge",
-  "copy_all_keys": "Copy all keys to clipboard",
-  "battery_info": "Charge: {percent}%\nVoltage: {voltage} mV",
-  "x_byte_uid": "{length} byte UID",
-  "edit_slot_data": "Edit Slot Data",
-  "export_slot_data": "Export Slot Data",
-  "frequency_to_export": "Frequency to export",
-  "save_to_file": "Save to file",
-  "export_to_new_card": "Export to new card",
-  "update_saved_card": "Update saved card",
-  "must_be_valid_hex": "Must be valid HEX",
-  "export_to_dictionary": "Export found keys",
-  "enter_name_of_card": "Enter name of card",
-  "enter_name_of_dictionary": "Enter name of dictionary",
-  "qrCodeScanner": "QR Code Scanner",
-  "qrCodeViewer": "QR Code Viewer",
-  "done": "Done",
-  "next_qr_code": "Next QR Code ({number}/{total})",
-  "qrCodeImport": "QR Code Import",
-  "startScanning": "Start Scanning",
-  "finishImport": "Finish Import",
-  "scan_next_qr_code": "Scan next QR Code ({number}/{total})",
-  "checksumOk": "Checksum OK",
-  "choose_export_method": "Choose export method",
-  "choose_export_method_description": "Choose how you want to export your settings",
-  "qr_code_settings": "QR Code Export Settings",
-  "split_size": "Split size",
-  "split_size_tooltip": "Split Size is the maximum amount of characters per QR Code. Smaller Split Size results in more, smaller QR Codes. Smaller QR Codes are easier to scan.",
-  "please_enter_a_valid_number": "Please enter a valid number",
-  "please_enter_a_number_greater_than": "Please enter a number greater than {number}",
-  "error_correction": "Error Correction",
-  "error_correction_tooltip": "Error Correction takes up more space, resulting in more QR Codes:\nL = 1; M = 0; Q = 3; H = 2;",
-  "please_enter_a_number_between": "Please enter a number between {min} and {max}",
-  "json_file": "JSON File",
-  "export_settings": "Export Settings",
-  "import_settings": "Import Settings",
-  "import_settings_description": "Choose how you want to import your settings",
-  "qr_code_import_not_supported_description": "QR Code import is only supported on mobile devices",
-  "test_qr_code": "Test QR Code",
-  "select_saved_card_to_write": "Select saved card to write",
-  "select_saved_card": "Select saved card",
-  "select_magic_card": "Select Magic card type",
-  "write_data_to_magic_card": "Write data",
-  "writing_is_not_yet_supported": "Writing such card save to Magic card is not yet supported",
-  "auto_detect_magic_card": "Auto-detect Magic card type",
-  "detected_magic_card_type": "Detected Magic card type",
-  "failed_to_detect_magic_card_type": "Failed to detect Magic card type. Maybe your Magic card doesn't support detection (Mifare Classic Gen2 or T55XX) or is missing",
-  "otp_magic_warning": "Some Magic cards are writable only once. Make sure you selected correct card. Press \"{button}\" to write data to Magic card.",
-  "keep_stable_warning": "Keep your Chameleon stable and close to the card during writing. Moving the device may cause failure or damage the card.",
-  "magic_success_write": "Card written successfully",
-  "magic_failed_write": "Something went wrong in card writing",
-  "skip_default_dictionary": "Skip default dictionary",
-  "not_mifare_classic_card": "This card probably isn't Mifare Classic card",
-  "magic_incompatible_card": "Your Magic card isn't compatible with this dump. Probably UID size or block count mismatch",
-  "some_blocks_failed_to_write": "Failed to write some blocks",
-  "continue_anyway": "Continue anyway",
-  "next": "Next",
-  "back": "Back",
-  "reset": "Reset",
-  "write_again": "Write again",
-  "confirm_deletions": "Confirm deletions",
-  "confirm_deletion": "Confirm deletion",
-  "confirm_deletion_text": "Are you sure you want to delete {name}?",
-  "delete": "Delete",
-  "total_keys": "key(s)",
-  "key": "Key",
-  "t55xx_key_prompt": "current T55XX key. Default CU key is 20206666",
-  "t55xx_new_key_prompt": "new T55XX key if you want to change it",
-  "new_key": "New key",
-  "ultralight_key_prompt": "Ultralight key (HEX, 4 bytes)",
-  "read_with_key": "Read with key",
-  "read_without_key": "Read without key",
-  "invalid_password": "Invalid password",
-  "ultralight_version": "Ultralight version",
-  "ultralight_signature": "Ultralight signature",
-  "no_key": "No key",
-  "gen1": "Gen1",
-  "gen2": "Gen2 / Generic",
-  "gen3": "Gen3",
-  "t55xx": "T55XX",
-  "connect_manually": "Connect manually",
-  "port": "Port",
-  "port_hint": "e.g. COM3, /dev/ttyUSB0",
-  "hardnested_collecting_nonces": "Collecting required nonces {nonces}/256...",
-  "hardnested_calculating_key": "Calculating key...",
-  "invalid_input": "One of the fields is filled in incorrectly",
-  "failed_to_fetch_oc_contributors": "Failed to fetch OpenCollective contributors",
-  "recovery_old_firmware": "Failed to collect nonces, is your firmware up to date?",
-  "emulate_device": "Emulated device",
-  "emulate_device_confirmation": "Are you sure you want to {mode} emulated device? You can enable this to check app functions without having Chameleon Ultra, all actions with emulated device will not be saved. You won't be able to connect to real device unless you will disable this.",
-  "prng_type": "PRNG type",
-  "prng_type_static": "Static",
-  "prng_type_weak": "Weak",
-  "prng_type_hard": "Hard",
-  "has_backdoor_support": "Backdoor",
-  "demo_firmware": "Demo, not real Chameleon Ultra. Disable in settings",
-  "trademarks_mifare": "MIFARE®, MIFARE® Classic and MIFARE® Ultralight are registered trademarks of NXP Semiconductors B.V.",
-  "trademarks_em": "EM Microelectronic-Marin, EM Microelectronic, EM and all product designations beginning with “EM” are registered trademarks of EM Microelectronic",
-  "create_card": "Create card",
   "generate_card_data": "Generate valid card data",
   "@generate_card_data": {
     "description": "Create/Edit Card action that generates valid identity fields and a blank dump for the selected card type."
@@ -757,264 +1169,6 @@
   "@generated_fields_note": {
     "description": "Create/Edit Card explanation that generated values match the selected card type, while unavailable manufacturer signatures and ATS remain empty."
   },
-  "update_data_title": "Update card data?",
-  "update_data_message": "You have changed the UID, SAK, or ATQA. Do you want to update the card data accordingly?",
-  "create": "Create",
-  "ultralight_counter": "Ultralight counter {index}",
-  "ultralight_counter_value": "Counter value",
-  "counter_value_empty": "Counter value cannot be empty",
-  "uploading_dump": "Uploading dump to emulator...",
-  "please_update_firmware": "Update firmware for a seamless experience",
-  "override_card_type": "Override card type",
-  "override_card_type_description": "Select a specific card type to override auto-detection",
-  "dump_editor": "Dump Editor",
-  "block": "Block",
-  "value_block": "Value Block",
-  "access_conditions": "Access Conditions",
-  "block_index": "Block Index",
-  "insert_mode": "Insert Mode",
-  "color_legend": "Color Legend",
-  "ascii_view": "ASCII View",
-  "value_blocks": "Value Blocks",
-  "unsaved_changes": "Unsaved Changes",
-  "unsaved_changes_message": "You have unsaved changes. Are you sure you want to discard them?",
-  "discard": "Discard",
-  "no_value_blocks_found": "No value blocks found in dump.",
-  "invalid_data_in_sector": "Invalid data in sector",
-  "ascii": "ASCII",
-  "acl": "ACL",
-  "value": "Value",
-  "inc": "Inc",
-  "dec": "Dec",
-  "invalid_access_conditions_length": "Invalid access conditions length",
-  "failed_to_decode_access_conditions": "Failed to decode access conditions",
-  "sector_trailer": "Sector Trailer",
-  "bcc": "BCC",
-  "lock_bytes": "Lock Bytes",
-  "password": "Password",
-  "dump": "Dump",
-  "invalid_data_in_block": "Invalid data in block",
-  "logs": "Logs",
-  "facility_code": "Facility Code",
-  "issue_level": "Issue Level",
-  "must_be_between": "Must be between {a} and {b}",
-  "mifare_ultralight_emulator_settings": "Mifare Ultralight emulator settings",
-  "passwords_detected": "Passwords detected",
-  "enable_password_detection": "Enable password detection to capture Mifare Ultralight passwords from reader",
-  "password_detection": "Password detection",
-  "view_passwords": "View passwords",
-  "detected_passwords": "Detected passwords",
-  "continuous_scan": "Continuous scan",
-  "trademarks_hid": "HID™ and HID ProxCard™ are registered trademarks of HID Global Corporation",
-  "licenses": "Licenses",
-  "changelog": "Changelog",
-  "help_translate": "Help Translate",
-  "your_version": "Your Version",
-  "no_changelogs_available": "No changelogs available",
-  "changes": "Changes",
-  "recent_commits": "Recent commits",
-  "latest_commits": "Latest commits",
-  "latest_commits_from_main_branch": "Latest commits from main branch",
-  "view_commits": "View Commits",
-  "view_full_release": "View Full Release",
-  "no_changes_listed": "No changes listed",
-  "unreleased": "Unreleased",
-  "export_logs_to_file": "Export logs to file",
-  "checking_card_info": "Checking card info",
-  "checking_or_running_darkside": "Checking and running Darkside attack",
-  "backdoor_recovery_of_non_static_encrypted": "Recovering first key via backdoor",
-  "collecting_nonces": "Collecting nonces ({type})",
-  "recovering_key": "Recovering key ({type})",
-  "checking_keys": "Checking keys ({count})",
-  "tools": "Tools",
-  "wip": "WIP",
-  "device_required": "Device required",
-  "dictionary_download": "Dictionary download",
-  "dictionary_download_description": "Download external dictionaries",
-  "mifare_classic_gen4": "Mifare Classic Gen4",
-  "mifare_classic_gen4_description": "Configure Gen4 magic card",
-  "t55xx_password_cleaner": "T55XX password cleaner",
-  "t55xx_password_cleaner_description": "Removes passwords from T55XX tags",
-  "dictionary_download_success": "Dictionary {name} is downloaded. Check it in \"Saved Cards page\"",
-  "t55xx_password_cleaner_warning": "This tool may BREAK your card if it has no password (or in other cases). Use it at your own risk, we are not responsible for the damage.",
-  "select_t55xx_dictionary": "Select dictionary",
-  "no_t55xx_dictionaries": "No T55XX compatible dictionaries available. Please download some first.",
-  "download_dictionaries": "Download dictionaries",
-  "enter_new_password": "Enter new password (will be set if password will be found)",
-  "start_password_reset": "Start password reset",
-  "password_reset_progress": "Progress",
-  "password_found": "Password found",
-  "password_reset_failed": "Password reset failed",
-  "password_reset_success": "Previous password was: {password}",
-  "password_reset_no_match": "Unable to reset password. None of the password in the dictionary worked.",
-  "trying_password": "Trying password",
-  "failed_to_read_block": "Failed to read any blocks. This is password protected card or not Mifare Ultralight card",
-  "android_ble_permissions_missing": "Missing BLE or location permission. To connect via BLE, grant permissions in your device Settings app",
-  "skip_recovery": "Skip recovery",
-  "resume_recovery": "Resume recovery",
-  "language_name": "English",
-  "symmetric": "Symmetric",
-  "lf_sniffing": "LF sniffing",
-  "lf_sniffing_description": "Capture and analyze raw LF field samples",
-  "lf_sniff_firmware_unsupported": "This firmware does not advertise LF sniffing support. Update the device firmware to enable this tool.",
-  "lf_sniff_timeout": "Capture timeout (ms)",
-  "lf_sniff_timeout_help": "1 to 10000 ms, sampled at 125 kHz",
-  "lf_sniff_capture": "Capture",
-  "lf_sniff_capture_prompt": "Run a capture to inspect LF field samples, waveform, and decode heuristics.",
-  "lf_sniff_capture_in_progress": "Capturing LF field for {timeout} ms...",
-  "lf_sniff_capture_done": "Captured {count} samples.",
-  "lf_sniff_no_samples": "No LF samples captured.",
-  "lf_sniff_summary": "Summary",
-  "lf_sniff_waveform": "Waveform",
-  "lf_sniff_zoom": "Zoom",
-  "lf_sniff_expand_waveform": "Expand",
-  "lf_sniff_decode": "Decode",
-  "lf_sniff_hex": "Hex",
-  "lf_sniff_samples": "Samples",
-  "lf_sniff_samples_value": "{value} samples",
-  "lf_sniff_range": "Range",
-  "lf_sniff_duration_value": "{duration} ms",
-  "lf_sniff_mean_value": "Mean: {value}",
-  "lf_sniff_gaps": "Gaps",
-  "lf_sniff_gap_threshold_value": "Threshold: {value}",
-  "lf_sniff_modulation": "Modulation analysis",
-  "lf_sniff_modulation_type": "Type",
-  "lf_sniff_dynamic_range": "Dynamic range",
-  "lf_sniff_nearest_clock": "Nearest clock",
-  "lf_sniff_clock_value": "RF/{divisor}",
-  "lf_sniff_half_period": "Half-period",
-  "lf_sniff_period_value": "{samples} samples ({microseconds} us)",
-  "lf_sniff_full_period": "Full period",
-  "lf_sniff_microseconds": "{value} us",
-  "lf_sniff_modulation_none": "None",
-  "lf_sniff_modulation_insufficient": "Insufficient transitions",
-  "lf_sniff_modulation_manchester": "Manchester",
-  "lf_sniff_modulation_ask_nrz": "ASK / NRZ",
-  "lf_sniff_modulation_biphase": "Biphase",
-  "lf_sniff_modulation_fsk_mixed": "FSK or mixed",
-  "lf_sniff_waveform_help": "The plot shows raw ADC values over time. Shaded regions are samples below the detected gap threshold.",
-  "lf_sniff_copy_hex": "Copy hex",
-  "lf_sniff_hex_copied": "Hex preview copied to clipboard",
-  "lf_sniff_clock_divisor": "Manchester clock divisor",
-  "lf_sniff_clock_help": "Supported: 8, 16, 32, 40, 50, 64, 100, 128",
-  "lf_sniff_invert": "Invert logic",
-  "lf_sniff_refresh_decode": "Refresh decode",
-  "lf_sniff_copy_bits": "Copy bits",
-  "lf_sniff_bits_copied": "Decoded bitstream copied to clipboard",
-  "lf_sniff_invalid_clock": "Use one of the supported clock divisors",
-  "lf_sniff_no_decode": "No bits decoded. Try a different clock divisor or invert setting.",
-  "lf_sniff_bits": "Bits",
-  "lf_sniff_threshold": "Threshold",
-  "lf_sniff_hex_preview": "Hex preview",
-  "lf_sniff_bitstream": "Bitstream",
-  "lf_sniff_hex_help": "Showing the first {shown} bytes out of {total}. Export the capture to keep the full sample buffer.",
-  "lf_sniff_hex_color_title": "Byte colors",
-  "lf_sniff_hex_color_scale": "Threshold {threshold}, mean {mean}, peak {peak}",
-  "lf_sniff_hex_color_gap": "Gap",
-  "lf_sniff_hex_color_warmup": "Startup low",
-  "lf_sniff_hex_color_low": "Below mean",
-  "lf_sniff_hex_color_carrier": "Carrier",
-  "lf_sniff_hex_color_peak": "Peak",
-  "lf_sniff_hex_glyph_title": "Level glyphs",
-  "lf_sniff_hex_glyph_gap": "very low",
-  "lf_sniff_hex_glyph_ringing": "ringing",
-  "lf_sniff_hex_glyph_low": "low",
-  "lf_sniff_hex_glyph_mid": "mid",
-  "lf_sniff_hex_glyph_carrier": "carrier",
-  "lf_sniff_hex_glyph_high": "high",
-  "lf_sniff_hex_glyph_clipped": "clipped",
-  "lf_sniff_level_legend": "_ gap  . ringing  - low  + mid  o carrier  O high  # clipped",
-  "hf_sniffing": "HF sniffing",
-  "hf_sniffing_description": "Capture and analyze ISO14443-A traffic while the Chameleon emulates a tag",
-  "hf_sniff_firmware_unsupported": "This firmware does not advertise HF sniffing support. Update the device firmware to enable this tool.",
-  "hf_sniff_timeout": "Capture timeout (ms)",
-  "hf_sniff_timeout_help": "1 to 30000 ms. Keep the Chameleon in tag mode and present it to a reader.",
-  "hf_sniff_capture": "Capture",
-  "hf_sniff_capture_prompt": "Run a capture while the Chameleon is emulating a tag near a reader.",
-  "hf_sniff_capture_in_progress": "Capturing HF traffic for {timeout} ms...",
-  "hf_sniff_no_frames": "No HF frames captured.",
-  "hf_sniff_no_decoded_frames": "Capture completed, but no complete HF frames could be decoded.",
-  "hf_sniff_capture_done": "Captured {count} HF frame(s).",
-  "hf_sniff_summary": "Summary",
-  "hf_sniff_frames": "Frames",
-  "hf_sniff_nonces": "Nonces",
-  "hf_sniff_recovery": "Recovery",
-  "hf_sniff_raw": "Raw",
-  "hf_sniff_uid": "UID",
-  "hf_sniff_protocol": "Protocol",
-  "hf_sniff_note": "No completed SELECT seen",
-  "hf_sniff_reader_frames": "Reader frames",
-  "hf_sniff_card_frames": "Card frames",
-  "hf_sniff_auth": "Auth",
-  "hf_sniff_aids": "AIDs",
-  "hf_sniff_atc": "ATC",
-  "hf_sniff_amount": "Amount",
-  "hf_sniff_auth_type": "Auth type",
-  "hf_sniff_end": "End",
-  "hf_sniff_bits": "Bits",
-  "hf_sniff_direction_reader": "Reader to card",
-  "hf_sniff_direction_card": "Card to reader",
-  "hf_sniff_nonce_groups": "No MIFARE Classic auth exchanges were found in this capture.",
-  "hf_sniff_nonce_group_value": "Block {block} Key {keyType} uid={uid}",
-  "hf_sniff_nonce_exchange_value": "[{index}] nt={nt}  nr={nr}  ar={ar}",
-  "hf_sniff_mfkey64": "Copy mfkey64",
-  "hf_sniff_mfkey32": "Copy mfkey32v2",
-  "hf_sniff_command_copied": "Recovery command copied to clipboard",
-  "hf_sniff_recover_all": "Recover all",
-  "hf_sniff_recover_key": "Recover key",
-  "hf_sniff_nonce_single": "Only one exchange was captured. Capture a second auth round to recover the key.",
-  "hf_sniff_recovery_pending": "Recovery has not been started for this nonce group.",
-  "hf_sniff_recovery_in_progress": "Recovering key...",
-  "hf_sniff_recovery_method": "Recovered via {method}",
-  "hf_sniff_recovery_failed": "Key not found. Capture more nonce exchanges and retry.",
-  "hf_sniff_key_copied": "Recovered key copied to clipboard",
-  "hf_sniff_copy_key": "Copy key",
-  "hf_sniff_raw_help": "Showing the first {shown} bytes out of {total}. Export the capture to keep the full packed frame buffer.",
-  "hf_sniff_hex_copied": "Raw HF capture copied to clipboard",
-  "hf_sniff_copy_hex": "Copy raw hex",
-  "auto_scan_devices": "Auto scan devices",
-  "auto_connect_first_device": "Auto connect first found device",
-  "wake_time_after_button_press": "Wake time after button press (s):",
-  "wake_time": "Wake time",
-  "compare": "Compare",
-  "exit_comparison": "Exit comparison",
-  "select_dump_to_compare": "Select a dump to compare",
-  "comparing_with": "Comparing with {name}",
-  "no_dumps_to_compare": "No compatible dumps to compare",
-  "difference": "Difference",
-  "comparison": "Comparison",
-  "copy": "copy",
-  "qr_code": "QR Code",
-  "folder": "Folder",
-  "create_dictionary": "Create Dictionary",
-  "create_folder": "Create folder",
-  "edit_folder": "Edit folder",
-  "folder_color": "Folder color",
-  "move_to_folder": "Move to folder",
-  "parent_folder": "Parent folder",
-  "move_card": "Move card",
-  "move_dictionary": "Move dictionary",
-  "move_folder": "Move folder",
-  "export_folder": "Export folder",
-  "export_dictionary_folder": "Export dictionary folder",
-  "delete_folder": "Delete folder",
-  "delete_folder_title": "Delete {name}?",
-  "delete_card_folder_confirmation": "This deletes the folder, all nested folders, and every card inside them.",
-  "delete_dictionary_folder_confirmation": "This deletes the folder, all nested folders, and every dictionary inside them.",
-  "invalid_folder_export": "This is not a valid folder export.",
-  "invalid_dictionary_folder_export": "This is not a valid dictionary folder export.",
-  "folder_card_count": "{count, plural, =1{1 card} other{{count} cards}}",
-  "folder_dictionary_count": "{count, plural, =1{1 dictionary} other{{count} dictionaries}}",
-  "ascii_characters_required": "{count} ASCII characters required.",
-  "address": "Address",
-  "ndef": "NDEF",
-  "hf_sniff_load_file": "Load .trace file",
-  "hf_sniff_load_failed": "Failed to load trace file: {error}",
-  "hf_sniff_loaded": "Loaded {count} frame(s) from file.",
-  "lf_sniff_load_file": "Load .bin file",
-  "lf_sniff_load_failed": "Failed to load file: {error}",
-  "lf_sniff_loaded": "Loaded {count} sample(s) from file.",
-  "sniff_device_required_hint": "No device connected. Connect a Chameleon to capture, or load a saved file.",
   "firmware": "Firmware",
   "@firmware": {
     "description": "Home status pill label identifying the firmware installed on the connected Chameleon device."
@@ -1250,5 +1404,485 @@
   "animation_mode_update_failed": "The LED animation mode could not be saved or confirmed.",
   "@animation_mode_update_failed": {
     "description": "Device Settings error shown when changing the LED animation mode fails or the required device read-back does not confirm the requested mode"
+  },
+  "@view_dump": {
+    "description": "Button in card reading and saved-card tools that opens the captured memory dump for viewing or editing."
+  },
+  "@enable_vanity_sak": {
+    "description": "Card creation, editing and Magic-card writing option that sets bit 0x80 in the SAK byte stored in manufacturer block 0."
+  },
+  "@enable_vanity_sak_tooltip": {
+    "description": "Explains stored block-0 Vanity SAK versus the anti-collision SAK and the defaults for four-byte and seven-byte UIDs."
+  },
+  "@ulc_write_lock_and_counter": {
+    "description": "Ultralight C writing checkbox explicitly opting into irreversible lock-byte and counter writes."
+  },
+  "@long_press_threshold": {
+    "description": "Device button settings label for the duration in milliseconds that distinguishes a long press."
+  },
+  "@nfc_field_generator": {
+    "description": "Name of the configurable device-button function that generates an NFC reader field."
+  },
+  "@battery_condition": {
+    "description": "Battery tooltip reporting the condition category supplied by firmware, distinct from charge percentage. The condition parameter is a localized category name.",
+    "placeholders": {
+      "condition": {
+        "type": "String",
+        "example": "Good"
+      }
+    }
+  },
+  "@battery_condition_critical": {
+    "description": "Firmware-reported battery condition category shown in the connected-device battery tooltip."
+  },
+  "@battery_condition_low": {
+    "description": "Firmware-reported low battery condition category shown in the connected-device battery tooltip."
+  },
+  "@battery_condition_fair": {
+    "description": "Firmware-reported fair battery condition category shown in the connected-device battery tooltip."
+  },
+  "@battery_condition_good": {
+    "description": "Firmware-reported good battery condition category shown in the connected-device battery tooltip."
+  },
+  "@battery_condition_excellent": {
+    "description": "Firmware-reported excellent battery condition category shown in the connected-device battery tooltip."
+  },
+  "@battery_condition_unknown": {
+    "description": "Battery condition category when firmware cannot classify the battery condition."
+  },
+  "@advanced": {
+    "description": "Heading for advanced RFID tools in the tools menu."
+  },
+  "@raw_hf": {
+    "description": "Tools menu title for exchanging raw ISO 14443-A frames with a physical HF card."
+  },
+  "@raw_device": {
+    "description": "Tools menu title for sending numeric Chameleon firmware protocol commands."
+  },
+  "@raw_hf_description": {
+    "description": "Tools menu description of raw ISO 14443-A card-frame exchange."
+  },
+  "@raw_device_description": {
+    "description": "Tools menu description of numeric firmware command submission and response inspection."
+  },
+  "@raw_ultra_required": {
+    "description": "Raw HF tool notice that the reader operations require the Ultra model rather than Lite."
+  },
+  "@raw_command": {
+    "description": "Raw firmware tool input label for the numeric 16-bit firmware command identifier."
+  },
+  "@raw_payload": {
+    "description": "Raw command input label for payload bytes encoded as hexadecimal."
+  },
+  "@raw_timeout": {
+    "description": "Raw command input label for the response timeout in milliseconds."
+  },
+  "@raw_crc_bytes": {
+    "description": "Raw HF validation error: CRC appending requires non-empty data containing complete bytes."
+  },
+  "@raw_bits": {
+    "description": "Raw HF input label for an optional transmitted bit count, allowing a partial final byte."
+  },
+  "@raw_bits_help": {
+    "description": "Raw HF bit-count input hint: derive the bit count automatically from the payload size."
+  },
+  "@raw_send": {
+    "description": "Button that sends the configured raw card frame or numeric firmware command."
+  },
+  "@raw_status": {
+    "description": "Raw firmware response label for the status word returned by the device."
+  },
+  "@raw_activate_rf": {
+    "description": "Raw HF option to activate the reader RF field before transmission."
+  },
+  "@raw_wait_response": {
+    "description": "Raw HF option to wait for the physical card's reply."
+  },
+  "@raw_append_crc": {
+    "description": "Raw HF option to append the ISO 14443-A CRC to the transmitted frame."
+  },
+  "@raw_auto_select": {
+    "description": "Raw HF option to select the card automatically before frame exchange."
+  },
+  "@raw_keep_rf": {
+    "description": "Raw HF option to retain the reader RF field after the exchange."
+  },
+  "@raw_check_crc": {
+    "description": "Raw HF option to validate the CRC of the card response."
+  },
+  "@raw_invalid_number": {
+    "description": "Raw command numeric validation error. Lower and upper are inclusive integer input bounds.",
+    "placeholders": {
+      "lower": {
+        "type": "int",
+        "example": "0"
+      },
+      "upper": {
+        "type": "int",
+        "example": "65535"
+      }
+    }
+  },
+  "@raw_invalid_hex": {
+    "description": "Raw command hexadecimal validation error. Max is the maximum complete payload byte count, not the number of hex digits.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "64"
+      }
+    }
+  },
+  "@card_number": {
+    "description": "Structured ioProx identity field label for the card number, distinct from facility code and format version."
+  },
+  "@t55xx_block_editor": {
+    "description": "Advanced tool title for writing individual raw T55xx memory blocks."
+  },
+  "@t55xx_block_editor_description": {
+    "description": "Tools menu description of raw 32-bit T55xx block writing."
+  },
+  "@t55xx_block_editor_unsupported": {
+    "description": "T55xx editor capability notice when firmware does not support raw writes; requires compatible firmware and Ultra hardware."
+  },
+  "@t55xx_block_editor_checking": {
+    "description": "T55xx editor progress text while reading the device's supported command list."
+  },
+  "@t55xx_block_editor_page": {
+    "description": "T55xx editor selector label for the memory page containing the target block."
+  },
+  "@t55xx_block_editor_data": {
+    "description": "T55xx editor input label requiring exactly eight hexadecimal digits for one 32-bit block."
+  },
+  "@t55xx_block_editor_use_password": {
+    "description": "T55xx editor option enabling password authentication for the write."
+  },
+  "@t55xx_block_editor_sent": {
+    "description": "T55xx write completion message: the command returned, but card memory has not been read back or verified."
+  },
+  "@lf_capture_source": {
+    "description": "LF signal tool selector label for the source of captured samples."
+  },
+  "@lf_capture_sniff": {
+    "description": "LF capture source that observes the external LF field for the configured duration."
+  },
+  "@lf_capture_adc": {
+    "description": "LF capture source that reads the ADC with the device reader field enabled."
+  },
+  "@lf_plot_start": {
+    "description": "LF waveform plot input for the first sample index, counted from zero."
+  },
+  "@lf_plot_length": {
+    "description": "LF waveform plot input for the number of samples displayed."
+  },
+  "@lf_plot_range": {
+    "description": "LF waveform displayed sample interval. Start is inclusive, end is exclusive, and each sample spans eight microseconds.",
+    "placeholders": {
+      "end": {
+        "type": "int",
+        "example": "4000"
+      },
+      "start": {
+        "type": "int",
+        "example": "0"
+      }
+    }
+  },
+  "@lf_hex_length": {
+    "description": "LF signal tool input limiting the number of samples shown or copied as hexadecimal."
+  },
+  "@lf_sample_range_invalid": {
+    "description": "LF signal range validation error for an invalid sample count or sample index."
+  },
+  "@lf_adc_firmware_unsupported": {
+    "description": "LF ADC tool notice that the connected firmware lacks the required ADC capture command."
+  },
+  "@lf_adc_capture_in_progress": {
+    "description": "LF signal tool progress message while acquiring ADC samples."
+  },
+  "@lf_adc_binary": {
+    "description": "LF signal option to display binary levels using the firmware-compatible ADC threshold 0xBF."
+  },
+  "@hf_tool_unsupported": {
+    "description": "HF tools capability notice when the connected firmware lacks the selected tool's command."
+  },
+  "@hf_auth_trace": {
+    "description": "Tools menu title for capturing an active MIFARE Classic authentication exchange."
+  },
+  "@hf_auth_description": {
+    "description": "Active authentication tool description: a known MIFARE Classic key is used, and the exchange is captured for inspection."
+  },
+  "@hf_auth_block": {
+    "description": "Active authentication input label for the target block address in the range zero through 255."
+  },
+  "@hf_auth_key_type": {
+    "description": "Active authentication selector label distinguishing Key A from Key B."
+  },
+  "@hf_auth_key": {
+    "description": "Active authentication input label requiring the six-byte MIFARE Classic key in hexadecimal."
+  },
+  "@hf_auth_status": {
+    "description": "Active authentication result. Status is the hexadecimal device status without the 0x prefix; zero indicates success.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "00"
+      }
+    }
+  },
+  "@hf_auth_prompt": {
+    "description": "Active authentication tool guidance to capture an exchange using a known card key."
+  },
+  "@hf_auth_timeout_help": {
+    "description": "Active authentication timeout guidance in milliseconds; the device polls for a card before authentication."
+  },
+  "@live_value_blocks": {
+    "description": "Tools menu title for reading and modifying value blocks on a physical MIFARE Classic card."
+  },
+  "@value_block_write": {
+    "description": "Live value-block action that writes an absolute numeric value into the selected data block."
+  },
+  "@value_block_increment": {
+    "description": "Live value-block action that increments the selected stored value by the entered amount."
+  },
+  "@value_block_decrement": {
+    "description": "Live value-block action that decrements the selected stored value by the entered amount."
+  },
+  "@value_block_done": {
+    "description": "Live value-block message confirming completion of the card operation; verification is reported separately where unavailable."
+  },
+  "@value_block_failed": {
+    "description": "Live value-block write failure with guidance to check authentication keys and sector access conditions."
+  },
+  "@value_block_unsupported": {
+    "description": "Live value-block notice when firmware support is absent or the supported-command list could not be read."
+  },
+  "@value_block_tool_description": {
+    "description": "Tools menu description of key recovery and direct MIFARE Classic value-block management."
+  },
+  "@value_block_scan": {
+    "description": "Live value-block button that scans the physical card and starts a new card-bound state."
+  },
+  "@value_block_scan_classic": {
+    "description": "Live value-block guidance requiring a MIFARE Classic card on the reader for scanning."
+  },
+  "@value_block_layout": {
+    "description": "Live value-block heading above the card's sector and block memory layout."
+  },
+  "@value_block_refresh": {
+    "description": "Live value-block button that reads card blocks using the available recovered keys."
+  },
+  "@value_block_select_source": {
+    "description": "Live value-block label for the selected source block."
+  },
+  "@value_block_select_destination": {
+    "description": "Live value-block label for the selected destination block of a copy operation."
+  },
+  "@value_block_copy": {
+    "description": "Live value-block action copying a value through the card's restore and transfer commands."
+  },
+  "@value_block_manufacturer": {
+    "description": "Live value-block memory-layout label for the manufacturer block, which is excluded from value mutations."
+  },
+  "@value_block_locked": {
+    "description": "Live value-block memory-layout label for a block requiring an authentication key."
+  },
+  "@value_block_unread": {
+    "description": "Live value-block memory-layout label for a block whose contents have not been read."
+  },
+  "@value_block_data": {
+    "description": "Live value-block memory-layout label for an ordinary data block without a decoded value."
+  },
+  "@value_block_wrong_card": {
+    "description": "Live value-block safety error when card identity or device connection no longer matches the scanned card session."
+  },
+  "@value_block_no_access": {
+    "description": "Live value-block explanation that the operation requires a valid value block, firmware support and keys with suitable access permissions."
+  },
+  "@value_block_done_unverified": {
+    "description": "Live value-block result: the mutation completed but readback was unavailable, so its contents remain unverified."
+  },
+  "@value_block_copy_mode": {
+    "description": "Live value-block mode switch enabling copy operations between different data blocks."
+  },
+  "@value_block_select_block": {
+    "description": "Live value-block guidance to select a memory block before choosing an operation."
+  },
+  "@gen4_intro": {
+    "description": "Gen4 configuration tool introduction limiting support to Ultimate or GTU cards and specifying hexadecimal input values."
+  },
+  "@gen4_current_password": {
+    "description": "Gen4 input for the current four-byte backdoor password used to access configuration."
+  },
+  "@gen4_new_password": {
+    "description": "Gen4 input for the new four-byte backdoor password to store in card configuration."
+  },
+  "@gen4_read": {
+    "description": "Gen4 action that reads the current configuration from the card."
+  },
+  "@gen4_protocol": {
+    "description": "Gen4 selector for the protocol emulated by the card."
+  },
+  "@gen4_uid_length": {
+    "description": "Gen4 selector for the emulated UID length in bytes."
+  },
+  "@gen4_shadow": {
+    "description": "Gen4 selector for the card's shadow-memory operating mode."
+  },
+  "@gen4_prewrite": {
+    "description": "Name of the Gen4 shadow-memory pre-write mode."
+  },
+  "@gen4_restore": {
+    "description": "Name of the Gen4 shadow-memory restore mode."
+  },
+  "@gen4_high_speed": {
+    "description": "Name of the Gen4 mode with shadow memory disabled, also known as high-speed mode."
+  },
+  "@gen4_split": {
+    "description": "Name of the Gen4 split shadow-memory mode."
+  },
+  "@gen4_shadow_warning": {
+    "description": "Gen4 compatibility warning: restore can fail on revision 06A0, and split mode is untested on older cards."
+  },
+  "@gen4_password_help": {
+    "description": "Gen4 backdoor password warning that the credential cannot be recovered after it is lost."
+  },
+  "@gen4_ats_help": {
+    "description": "Gen4 ATS input guidance: at most sixteen bytes without CRC, with an empty value disabling ATS."
+  },
+  "@gen4_sak_help": {
+    "description": "Gen4 SAK input compatibility guidance: avoid hexadecimal 04, and values 20 or 28 require ATS."
+  },
+  "@gen4_ul_mode": {
+    "description": "Gen4 selector for the MIFARE Ultralight or NTAG emulation variant."
+  },
+  "@gen4_max_block": {
+    "description": "Gen4 input for the highest accessible memory block, as one hexadecimal byte."
+  },
+  "@gen4_max_block_help": {
+    "description": "Gen4 highest-block guidance: hexadecimal 3F for 1K and FF for 4K memory layouts."
+  },
+  "@gen4_block0": {
+    "description": "Gen4 option controlling direct writes to manufacturer block zero."
+  },
+  "@gen4_factory_default": {
+    "description": "Gen4 action or mode label selecting the factory-default configuration."
+  },
+  "@gen4_apply": {
+    "description": "Gen4 button applying the edited configuration to the physical card."
+  },
+  "@gen4_confirm_write": {
+    "description": "Title of a Gen4 confirmation dialog before changing physical card configuration or memory."
+  },
+  "@gen4_apply_warning": {
+    "description": "Gen4 configuration write confirmation warning that selection parameters must match memory and that the card must remain present through verification."
+  },
+  "@gen4_fuse_warning": {
+    "description": "Gen4 permanent-lock confirmation: configuration and password become immutable, so the password must be saved first."
+  },
+  "@gen4_permanent_lock": {
+    "description": "Gen4 action that irreversibly locks card configuration."
+  },
+  "@gen4_verified": {
+    "description": "Gen4 write result confirming that readback matches the requested configuration."
+  },
+  "@gen4_verify_failed": {
+    "description": "Gen4 result where the write completed but the readback differs; the user must read the card again before continuing."
+  },
+  "@gen4_written_read_failed": {
+    "description": "Gen4 intermediate write result: configuration was written, verification is still pending, and the stored current password was updated."
+  },
+  "@gen4_uid_and_memory": {
+    "description": "Gen4 section heading for UID changes and advanced card-memory access."
+  },
+  "@gen4_uid_help": {
+    "description": "Gen4 UID editing guidance requiring protocol and UID-length changes to be applied first."
+  },
+  "@gen4_uid_warning": {
+    "description": "Gen4 UID write confirmation: uses the last-read configuration, preserves unrelated manufacturer and lock bytes, and may partially complete if the card is removed."
+  },
+  "@gen4_uid_written": {
+    "description": "Gen4 UID write result requiring a new scan to verify card identity."
+  },
+  "@gen4_write_uid": {
+    "description": "Gen4 action that writes a new UID into the card's manufacturer memory."
+  },
+  "@gen4_block_address": {
+    "description": "Gen4 memory input label for a block address encoded as one hexadecimal byte."
+  },
+  "@gen4_block_data": {
+    "description": "Gen4 memory input label requiring sixteen bytes of block data in hexadecimal."
+  },
+  "@gen4_read_block": {
+    "description": "Gen4 action that reads the selected memory block."
+  },
+  "@gen4_write_block": {
+    "description": "Gen4 action that writes the selected memory block."
+  },
+  "@gen4_block_warning": {
+    "description": "Gen4 raw block write confirmation warning that manufacturer data, keys, access bits or lock bytes may be overwritten immediately."
+  },
+  "@gen4_hex_required": {
+    "description": "Gen4 hexadecimal validation error. Bytes is a displayed exact byte count or allowed byte-count range, not a hex-digit count.",
+    "placeholders": {
+      "bytes": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "@gen4_ultra_required": {
+    "description": "Gen4 notice that HF reader operations require Ultra hardware."
+  },
+  "@gen4_memory_setting": {
+    "description": "Gen4 selector label for a configuration value stored in card memory."
+  },
+  "@gen4_otp": {
+    "description": "Gen4 memory-setting name for one-time programmable bytes."
+  },
+  "@gen4_ntag_password": {
+    "description": "Gen4 memory-setting name for the NTAG authentication password, explicitly distinct from the Gen4 backdoor password."
+  },
+  "@gen4_signature": {
+    "description": "Gen4 memory-setting name for the card originality signature."
+  },
+  "@gen4_read_setting": {
+    "description": "Gen4 action that reads the selected memory-backed setting."
+  },
+  "@gen4_write_setting": {
+    "description": "Gen4 action that writes the selected memory-backed setting."
+  },
+  "@gen4_memory_value_help": {
+    "description": "Gen4 memory-setting input guidance. Address is a hexadecimal starting block, and length is the number of bytes to read or write.",
+    "placeholders": {
+      "address": {
+        "type": "String",
+        "example": "04"
+      },
+      "length": {
+        "type": "int",
+        "example": "16"
+      }
+    }
+  },
+  "@gen4_pack_page": {
+    "description": "Gen4 input label for the NTAG PACK response page."
+  },
+  "@gen4_pack_page_help": {
+    "description": "Gen4 PACK-page guidance using hexadecimal page 13 for revisions 06A0 or 6666 and E6 for other revisions."
+  },
+  "@gen4_confirm_lock": {
+    "description": "Final Gen4 confirmation button that permanently locks configuration."
+  },
+  "@cancel_recovery_title": {
+    "description": "Confirmation title before cooperatively cancelling RFID key recovery or dictionary checking."
+  },
+  "@cancel_recovery_message": {
+    "description": "Cancellation confirmation explaining that found keys are preserved, native calculations are interrupted and the current device command must settle before stopping."
+  },
+  "@continue_recovery": {
+    "description": "Cancellation confirmation button that keeps the current recovery operation running."
+  },
+  "@cancelling_recovery": {
+    "description": "Progress label after cancellation was requested while the current work is settling."
   }
 }

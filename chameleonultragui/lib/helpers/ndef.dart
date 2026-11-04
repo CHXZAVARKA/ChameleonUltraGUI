@@ -306,16 +306,12 @@ class NdefContainer {
 
   NdefContainer._({
     required this.mappingName,
-    required List<({int block, int offset})> locations,
+    required this._locations,
     required List<int> region,
-    required int tlvOffset,
-    required int messageOffset,
-    required int messageLength,
-  })  : _locations = locations,
-        _region = Uint8List.fromList(region),
-        _tlvOffset = tlvOffset,
-        _messageOffset = messageOffset,
-        _messageLength = messageLength;
+    required this._tlvOffset,
+    required this._messageOffset,
+    required this._messageLength,
+  })  : _region = Uint8List.fromList(region);
 
   Uint8List get message => Uint8List.fromList(
       _region.sublist(_messageOffset, _messageOffset + _messageLength));

@@ -30,44 +30,49 @@ void main() {
     await SharedPreferencesProvider().load();
   });
 
-  test('slot layout defaults globally and survives preferences reload',
-      () async {
-    final preferences = SharedPreferencesProvider();
-    var notifications = 0;
-    void listener() => notifications++;
-    preferences.addListener(listener);
-    addTearDown(() => preferences.removeListener(listener));
+  test(
+    'slot layout defaults globally and survives preferences reload',
+    () async {
+      final preferences = SharedPreferencesProvider();
+      var notifications = 0;
+      void listener() => notifications++;
+      preferences.addListener(listener);
+      addTearDown(() => preferences.removeListener(listener));
 
-    expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
+      expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
 
-    preferences.setSlotLayout(SlotLayout.twoByFour);
-    await Future<void>.delayed(Duration.zero);
+      preferences.setSlotLayout(SlotLayout.twoByFour);
+      await Future<void>.delayed(Duration.zero);
 
-    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
-    expect(notifications, 1);
+      expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+      expect(notifications, 1);
 
-    await preferences.load();
-    expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
+      await preferences.load();
+      expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
 
-    final stored = await SharedPreferences.getInstance();
-    expect(stored.getKeys(), contains('slot_layout'));
-    expect(
-      stored.getKeys(),
-      isNot(contains(matches(RegExp('model|port|serial|connection')))),
-    );
-  });
+      final stored = await SharedPreferences.getInstance();
+      expect(stored.getKeys(), contains('slot_layout'));
+      expect(
+        stored.getKeys(),
+        isNot(contains(matches(RegExp('model|port|serial|connection')))),
+      );
+    },
+  );
 
-  test('slot layout falls back to eight across for an invalid preference',
-      () async {
-    SharedPreferences.setMockInitialValues({'slot_layout': 37});
-    final preferences = SharedPreferencesProvider();
-    await preferences.load();
+  test(
+    'slot layout falls back to eight across for an invalid preference',
+    () async {
+      SharedPreferences.setMockInitialValues({'slot_layout': 37});
+      final preferences = SharedPreferencesProvider();
+      await preferences.load();
 
-    expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
-  });
+      expect(preferences.getSlotLayout(), SlotLayout.eightAcross);
+    },
+  );
 
-  testWidgets('Home uses a named Material segmented slot layout selector',
-      (tester) async {
+  testWidgets('Home uses a named Material segmented slot layout selector', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     final preferences = SharedPreferencesProvider();
     final appState = _connectedState(_SlotCommunicator());
@@ -94,16 +99,12 @@ void main() {
     final selectorLabel = tester.getSemantics(selector).label;
     expect(selectorLabel, contains('Slot layout'));
     expect(selectorLabel, isNot(contains('•')));
+    expect(find.bySemanticsLabel('Eight slots in one row'), findsOneWidget);
+    expect(find.bySemanticsLabel('Two rows of four slots'), findsOneWidget);
     expect(
-      find.bySemanticsLabel('Eight slots in one row'),
+      find.byKey(const Key('home-slot-grid-eight-across')),
       findsOneWidget,
     );
-    expect(
-      find.bySemanticsLabel('Two rows of four slots'),
-      findsOneWidget,
-    );
-    expect(
-        find.byKey(const Key('home-slot-grid-eight-across')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('home-slot-layout-two-by-four')));
     await tester.pumpAndSettle();
@@ -113,8 +114,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('two-by-four keeps row-major slots tappable at 360px',
-      (tester) async {
+  testWidgets('two-by-four keeps row-major slots tappable at 360px', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -158,8 +160,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('slot layout survives remount and a different device session',
-      (tester) async {
+  testWidgets('slot layout survives remount and a different device session', (
+    tester,
+  ) async {
     final preferences = SharedPreferencesProvider();
     final appState = _connectedState(_SlotCommunicator());
     preferences.setSlotLayout(SlotLayout.twoByFour);
@@ -191,15 +194,14 @@ void main() {
     expect(preferences.getSlotLayout(), SlotLayout.twoByFour);
     expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
     final selector = tester.widget<SegmentedButton<SlotLayout>>(
-      find.byWidgetPredicate(
-        (widget) => widget is SegmentedButton<SlotLayout>,
-      ),
+      find.byWidgetPredicate((widget) => widget is SegmentedButton<SlotLayout>),
     );
     expect(selector.selected, {SlotLayout.twoByFour});
   });
 
-  testWidgets('layout switch keeps slot focus after direct arrow activation',
-      (tester) async {
+  testWidgets('layout switch keeps slot focus after direct arrow activation', (
+    tester,
+  ) async {
     final preferences = SharedPreferencesProvider();
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
@@ -207,10 +209,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
-    for (var attempt = 0;
-        attempt < 12 &&
-            !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
-        attempt++) {
+    for (
+      var attempt = 0;
+      attempt < 12 &&
+          !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
+      attempt++
+    ) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
     }
@@ -226,75 +230,82 @@ void main() {
   });
 
   testWidgets(
-      'eight-across restores scroll and focus after a two-by-four roundtrip',
-      (tester) async {
-    tester.view.physicalSize = const Size(360, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final preferences = SharedPreferencesProvider();
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
+    'eight-across restores scroll and focus after a two-by-four roundtrip',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final preferences = SharedPreferencesProvider();
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
 
-    final scrollFinder = find.byKey(const Key('home-slot-grid-scroll'));
-    final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
-    for (var attempt = 0;
+      final scrollFinder = find.byKey(const Key('home-slot-grid-scroll'));
+      final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
+      for (
+        var attempt = 0;
         attempt < 12 &&
             !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
-        attempt++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pump();
-    }
-    expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
-    for (var step = 0; step < 7; step++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    }
-    await tester.pumpAndSettle();
-    final before = tester
-        .state<ScrollableState>(
-          find.descendant(
-            of: scrollFinder,
-            matching: find.byType(Scrollable),
-          ),
-        )
-        .position
-        .pixels;
-    expect(before, greaterThan(40));
+        attempt++
+      ) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(tester.widget<Focus>(focusFinder).focusNode!.hasFocus, isTrue);
+      for (var step = 0; step < 7; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      }
+      await tester.pumpAndSettle();
+      final before = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: scrollFinder,
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position
+          .pixels;
+      expect(before, greaterThan(40));
 
-    preferences.setSlotLayout(SlotLayout.twoByFour);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('home-slot-grid-two-by-four')), findsOneWidget);
+      preferences.setSlotLayout(SlotLayout.twoByFour);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('home-slot-grid-two-by-four')),
+        findsOneWidget,
+      );
 
-    preferences.setSlotLayout(SlotLayout.eightAcross);
-    await tester.pumpAndSettle();
+      preferences.setSlotLayout(SlotLayout.eightAcross);
+      await tester.pumpAndSettle();
 
-    final after = tester
-        .state<ScrollableState>(
-          find.descendant(
-            of: scrollFinder,
-            matching: find.byType(Scrollable),
-          ),
-        )
-        .position
-        .pixels;
-    expect(after, closeTo(before, 0.1));
+      final after = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: scrollFinder,
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position
+          .pixels;
+      expect(after, closeTo(before, 0.1));
 
-    expect(communicator.activations, List.generate(7, (index) => index + 1));
+      expect(communicator.activations, List.generate(7, (index) => index + 1));
 
-    await tester.tap(find.byKey(const Key('home-slot-7')));
-    await tester.pumpAndSettle();
-    expect(
-      communicator.activations,
-      [...List.generate(7, (index) => index + 1), 6],
-    );
-  });
+      await tester.tap(find.byKey(const Key('home-slot-7')));
+      await tester.pumpAndSettle();
+      expect(communicator.activations, [
+        ...List.generate(7, (index) => index + 1),
+        6,
+      ]);
+    },
+  );
 
   for (final layout in SlotLayout.values) {
-    testWidgets('${layout.name} blocks duplicate activation while pending',
-        (tester) async {
+    testWidgets('${layout.name} blocks duplicate activation while pending', (
+      tester,
+    ) async {
       final gate = Completer<void>();
       final preferences = SharedPreferencesProvider();
       preferences.setSlotLayout(layout);
@@ -320,8 +331,9 @@ void main() {
     });
   }
 
-  testWidgets('Home shows eight numbered HF and LF slot columns',
-      (tester) async {
+  testWidgets('Home shows eight numbered HF and LF slot columns', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -343,8 +355,9 @@ void main() {
     expect(find.byIcon(Icons.arrow_forward), findsNothing);
   });
 
-  testWidgets('Home polls only active slot once per second while present',
-      (tester) async {
+  testWidgets('Home polls only active slot once per second while present', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -366,69 +379,70 @@ void main() {
   });
 
   testWidgets(
-      'returning to Home uses confirmed cache without a full status reload',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
+    'returning to Home uses confirmed cache without a full status reload',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
 
-    final initialTypeReads = communicator.slotTypeReads;
-    final initialEnabledReads = communicator.enabledSlotReads;
-    final initialNameReads = communicator.slotNameReads;
-    final initialModeReads = communicator.modeReads;
+      final initialTypeReads = communicator.slotTypeReads;
+      final initialEnabledReads = communicator.enabledSlotReads;
+      final initialNameReads = communicator.slotNameReads;
+      final initialModeReads = communicator.modeReads;
 
-    await _pumpPage(tester, appState, const SizedBox.shrink());
-    await tester.pump();
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
+      await _pumpPage(tester, appState, const SizedBox.shrink());
+      await tester.pump();
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
 
-    expect(communicator.slotTypeReads, initialTypeReads);
-    expect(communicator.enabledSlotReads, initialEnabledReads);
-    expect(communicator.slotNameReads, initialNameReads);
-    expect(communicator.modeReads, initialModeReads);
-    expect(find.byKey(const Key('home-slot-grid')), findsOneWidget);
-  });
+      expect(communicator.slotTypeReads, initialTypeReads);
+      expect(communicator.enabledSlotReads, initialEnabledReads);
+      expect(communicator.slotNameReads, initialNameReads);
+      expect(communicator.modeReads, initialModeReads);
+      expect(find.byKey(const Key('home-slot-grid')), findsOneWidget);
+    },
+  );
 
-  testWidgets('physical slot change leaves no old pointer selection highlight',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'physical slot change leaves no old pointer selection highlight',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
 
-    final oldSlot = find.byKey(const Key('home-slot-5'));
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: tester.getCenter(oldSlot));
-    addTearDown(mouse.removePointer);
-    await tester.pump();
-    await mouse.down(tester.getCenter(oldSlot));
-    await mouse.up();
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('home-active-slot-5')), findsOneWidget);
+      final oldSlot = find.byKey(const Key('home-slot-5'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: tester.getCenter(oldSlot));
+      addTearDown(mouse.removePointer);
+      await tester.pump();
+      await mouse.down(tester.getCenter(oldSlot));
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('home-active-slot-5')), findsOneWidget);
 
-    communicator.activeSlot = 5;
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
+      communicator.activeSlot = 5;
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('home-active-slot-5')), findsNothing);
-    expect(find.byKey(const Key('home-active-slot-6')), findsOneWidget);
-    final oldSlotSurface = tester.widget<AnimatedContainer>(
-      find.descendant(
-        of: oldSlot,
-        matching: find.byType(AnimatedContainer),
-      ),
-    );
-    expect((oldSlotSurface.decoration! as BoxDecoration).color, isNull);
+      expect(find.byKey(const Key('home-active-slot-5')), findsNothing);
+      expect(find.byKey(const Key('home-active-slot-6')), findsOneWidget);
+      final oldSlotSurface = tester.widget<AnimatedContainer>(
+        find.descendant(of: oldSlot, matching: find.byType(AnimatedContainer)),
+      );
+      expect((oldSlotSurface.decoration! as BoxDecoration).color, isNull);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pumpAndSettle();
-    expect(communicator.activations.last, 6);
-    expect(find.byKey(const Key('home-active-slot-7')), findsOneWidget);
-  });
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(communicator.activations.last, 6);
+      expect(find.byKey(const Key('home-active-slot-7')), findsOneWidget);
+    },
+  );
 
-  testWidgets('Home describes and draws enabled, disabled, and empty marks',
-      (tester) async {
+  testWidgets('Home describes and draws enabled, disabled, and empty marks', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     final communicator = _SlotCommunicator()
       ..slotTypes = List.generate(
@@ -459,10 +473,7 @@ void main() {
       find.byKey(const Key('home-slot-1-lf-mark-disabled')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const Key('home-slot-2-hf-mark-empty')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('home-slot-2-hf-mark-empty')), findsOneWidget);
     final hfEnabled = tester.widget<DecoratedBox>(
       find.descendant(
         of: find.byKey(const Key('home-slot-1-hf-mark-enabled')),
@@ -470,7 +481,9 @@ void main() {
       ),
     );
     expect(
-        (hfEnabled.decoration as BoxDecoration).color, Colors.green.shade700);
+      (hfEnabled.decoration as BoxDecoration).color,
+      Colors.green.shade700,
+    );
     final lfDisabled = tester.widget<DecoratedBox>(
       find.descendant(
         of: find.byKey(const Key('home-slot-1-lf-mark-disabled')),
@@ -485,9 +498,7 @@ void main() {
       tester.getCenter(find.text('HF')).dx,
       lessThan(
         tester
-            .getCenter(
-              find.byKey(const Key('home-slot-1-hf-mark-enabled')),
-            )
+            .getCenter(find.byKey(const Key('home-slot-1-hf-mark-enabled')))
             .dx,
       ),
     );
@@ -495,9 +506,7 @@ void main() {
       tester.getCenter(find.text('LF')).dx,
       lessThan(
         tester
-            .getCenter(
-              find.byKey(const Key('home-slot-1-lf-mark-disabled')),
-            )
+            .getCenter(find.byKey(const Key('home-slot-1-lf-mark-disabled')))
             .dx,
       ),
     );
@@ -511,8 +520,9 @@ void main() {
       ),
       findsOneWidget,
     );
-    final slotSemantics =
-        tester.getSemantics(find.byKey(const Key('home-slot-1')));
+    final slotSemantics = tester.getSemantics(
+      find.byKey(const Key('home-slot-1')),
+    );
     expect(slotSemantics.label, contains('Lab pass'));
     expect(slotSemantics.label, contains('Enabled'));
     expect(slotSemantics.label, contains('Disabled'));
@@ -540,8 +550,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('Home uses lighter HF and LF shades in dark theme',
-      (tester) async {
+  testWidgets('Home uses lighter HF and LF shades in dark theme', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()
       ..slotTypes = List.generate(
         8,
@@ -569,7 +580,9 @@ void main() {
       ),
     );
     expect(
-        (hfEnabled.decoration as BoxDecoration).color, Colors.green.shade300);
+      (hfEnabled.decoration as BoxDecoration).color,
+      Colors.green.shade300,
+    );
     final lfDisabled = tester.widget<DecoratedBox>(
       find.descendant(
         of: find.byKey(const Key('home-slot-1-lf-mark-disabled')),
@@ -582,8 +595,9 @@ void main() {
     );
   });
 
-  testWidgets('active slot frame stays white in light and dark themes',
-      (tester) async {
+  testWidgets('active slot frame stays white in light and dark themes', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -622,8 +636,9 @@ void main() {
     expect(frameColor, Colors.white);
   });
 
-  testWidgets('Home explains unknown enabled state and unavailable slot data',
-      (tester) async {
+  testWidgets('Home explains unknown enabled state and unavailable slot data', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     final unknownEnabled = _SlotCommunicator()..failEnabled = true;
     var appState = _connectedState(unknownEnabled);
@@ -656,8 +671,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('narrow Home slots have distinct 48px pointer targets',
-      (tester) async {
+  testWidgets('narrow Home slots have distinct 48px pointer targets', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -671,7 +687,9 @@ void main() {
     await _pumpPage(
       tester,
       appState,
-      Scaffold(body: Center(child: HomeSlotGrid(status: status))),
+      Scaffold(
+        body: Center(child: HomeSlotGrid(status: status)),
+      ),
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -775,123 +793,124 @@ void main() {
   });
 
   testWidgets(
-      'Home blocks repeated activation and moves frame after command reply',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
-    communicator.commandEvents.clear();
-    final activationGate = Completer<void>();
-    communicator.activationGate = activationGate;
+    'Home blocks repeated activation and moves frame after command reply',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
+      communicator.commandEvents.clear();
+      final activationGate = Completer<void>();
+      communicator.activationGate = activationGate;
 
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
 
-    expect(communicator.commandEvents, ['activate:1']);
-    expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
-    expect(
-      find.byKey(const Key('home-slot-2-hf-mark-empty')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('home-slot-2-lf-mark-empty')),
-      findsNothing,
-    );
-    final progressRect =
-        tester.getRect(find.byKey(const Key('home-slot-2-progress')));
-    final slotRect = tester.getRect(find.byKey(const Key('home-slot-2')));
-    expect(progressRect.width, greaterThanOrEqualTo(24));
-    expect(progressRect.center.dx, closeTo(slotRect.center.dx, 1));
-    expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
-    expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
-    await tester.tap(find.byKey(const Key('home-slot-3')));
-    await tester.pump();
-    expect(communicator.activations, [1]);
+      expect(communicator.commandEvents, ['activate:1']);
+      expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
+      expect(find.byKey(const Key('home-slot-2-hf-mark-empty')), findsNothing);
+      expect(find.byKey(const Key('home-slot-2-lf-mark-empty')), findsNothing);
+      final progressRect = tester.getRect(
+        find.byKey(const Key('home-slot-2-progress')),
+      );
+      final slotRect = tester.getRect(find.byKey(const Key('home-slot-2')));
+      expect(progressRect.width, greaterThanOrEqualTo(24));
+      expect(progressRect.center.dx, closeTo(slotRect.center.dx, 1));
+      expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
+      expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
+      await tester.tap(find.byKey(const Key('home-slot-3')));
+      await tester.pump();
+      expect(communicator.activations, [1]);
 
-    activationGate.complete();
-    await tester.pumpAndSettle();
+      activationGate.complete();
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
-    expect(find.byKey(const Key('home-active-slot-1')), findsNothing);
-    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+      expect(find.byKey(const Key('home-active-slot-1')), findsNothing);
+      expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'successful slot reply does not wait for a redundant confirmation',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
-    final initialActiveReads = communicator.activeSlotReads;
-    communicator.scriptedActiveSlotReads.add(
-      StateError('must not be consumed by activation'),
-    );
+    'successful slot reply does not wait for a redundant confirmation',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
+      final initialActiveReads = communicator.activeSlotReads;
+      communicator.scriptedActiveSlotReads.add(
+        StateError('must not be consumed by activation'),
+      );
 
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
-    final slots = appState.connectedDeviceStatus!.snapshot.slots;
-    expect(communicator.activations, [1]);
-    expect(slots.activeSlot.value, 1);
-    expect(slots.pendingActivation, isNull);
-    expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
-    expect(communicator.activeSlotReads, initialActiveReads);
-    expect(communicator.scriptedActiveSlotReads, hasLength(1));
-    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
-    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
-    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
-  });
-
-  testWidgets('slot frame moves on the command reply without a blocking reread',
-      (tester) async {
-    final activationGate = Completer<void>();
-    final communicator = _SlotCommunicator()..activationGate = activationGate;
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
-    communicator.commandEvents.clear();
-
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
-
-    expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
-    expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
-
-    activationGate.complete();
-    await tester.pump();
-    await tester.pump();
-
-    expect(communicator.commandEvents, ['activate:1']);
-    expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
-    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
-  });
+      final slots = appState.connectedDeviceStatus!.snapshot.slots;
+      expect(communicator.activations, [1]);
+      expect(slots.activeSlot.value, 1);
+      expect(slots.pendingActivation, isNull);
+      expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
+      expect(communicator.activeSlotReads, initialActiveReads);
+      expect(communicator.scriptedActiveSlotReads, hasLength(1));
+      expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+      expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+      expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+    },
+  );
 
   testWidgets(
-      'lost activation reply confirms an applied slot without another tap',
-      (tester) async {
-    final communicator = _SlotCommunicator()
-      ..failActivation = true
-      ..applyActivationBeforeFailure = true;
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const HomePage());
-    await tester.pumpAndSettle();
-    communicator.commandEvents.clear();
+    'slot frame moves on the command reply without a blocking reread',
+    (tester) async {
+      final activationGate = Completer<void>();
+      final communicator = _SlotCommunicator()..activationGate = activationGate;
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
+      communicator.commandEvents.clear();
 
-    await tester.tap(find.byKey(const Key('home-slot-2')));
-    await tester.pump();
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
 
-    expect(communicator.activations, [1]);
-    expect(communicator.commandEvents, ['activate:1', 'read-active']);
-    expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
-    expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
-  });
+      expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
+      expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
 
-  testWidgets('arrow and number keys activate slots immediately',
-      (tester) async {
+      activationGate.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(communicator.commandEvents, ['activate:1']);
+      expect(find.byKey(const Key('home-slot-2-progress')), findsNothing);
+      expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'lost activation reply confirms an applied slot without another tap',
+    (tester) async {
+      final communicator = _SlotCommunicator()
+        ..failActivation = true
+        ..applyActivationBeforeFailure = true;
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const HomePage());
+      await tester.pumpAndSettle();
+      communicator.commandEvents.clear();
+
+      await tester.tap(find.byKey(const Key('home-slot-2')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(communicator.activations, [1]);
+      expect(communicator.commandEvents, ['activate:1', 'read-active']);
+      expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
+      expect(find.byKey(const Key('home-slot-activation-error')), findsNothing);
+    },
+  );
+
+  testWidgets('arrow and number keys activate slots immediately', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -925,8 +944,9 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-8')), findsOneWidget);
   });
 
-  testWidgets('full refresh cannot clear a queued Home activation',
-      (tester) async {
+  testWidgets('full refresh cannot clear a queued Home activation', (
+    tester,
+  ) async {
     final refreshGate = Completer<void>();
     final activationGate = Completer<void>();
     final communicator = _SlotCommunicator()
@@ -939,20 +959,14 @@ void main() {
 
     await tester.tap(find.byKey(const Key('home-slot-2')));
     await tester.pump();
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
-      1,
-    );
+    expect(appState.connectedDeviceStatus!.snapshot.slots.pendingActivation, 1);
 
     refreshGate.complete();
     await tester.pump();
     await tester.pump();
 
     expect(communicator.activations, [1]);
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
-      1,
-    );
+    expect(appState.connectedDeviceStatus!.snapshot.slots.pendingActivation, 1);
     expect(find.byKey(const Key('home-slot-2-progress')), findsOneWidget);
     expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
     expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
@@ -961,10 +975,7 @@ void main() {
     await tester.tap(find.byKey(const Key('home-slot-4')));
     await tester.pump();
     expect(communicator.activations, [1]);
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.pendingActivation,
-      1,
-    );
+    expect(appState.connectedDeviceStatus!.snapshot.slots.pendingActivation, 1);
 
     activationGate.complete();
     await tester.pumpAndSettle();
@@ -974,8 +985,9 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
-  testWidgets('Home activation failure preserves frame and shows one error',
-      (tester) async {
+  testWidgets('Home activation failure preserves frame and shows one error', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()..failActivation = true;
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -987,14 +999,12 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-1')), findsOneWidget);
     expect(find.byKey(const Key('home-active-slot-2')), findsNothing);
     expect(find.byKey(const Key('home-slot-activation-error')), findsOneWidget);
-    expect(
-      find.byKey(const Key('home-slot-activation-error')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('home-slot-activation-error')), findsOneWidget);
   });
 
-  testWidgets('firmware rejection does not use ambiguous-result recovery',
-      (tester) async {
+  testWidgets('firmware rejection does not use ambiguous-result recovery', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -1013,8 +1023,9 @@ void main() {
     expect(find.byKey(const Key('home-slot-activation-error')), findsOneWidget);
   });
 
-  testWidgets('old Home activation cannot report into a replacement session',
-      (tester) async {
+  testWidgets('old Home activation cannot report into a replacement session', (
+    tester,
+  ) async {
     final oldGate = Completer<void>();
     final oldCommunicator = _SlotCommunicator()..activationGate = oldGate;
     final appState = _connectedState(oldCommunicator);
@@ -1045,8 +1056,9 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-3')), findsOneWidget);
   });
 
-  testWidgets('unpumped replacement suppresses an old activation error',
-      (tester) async {
+  testWidgets('unpumped replacement suppresses an old activation error', (
+    tester,
+  ) async {
     final oldGate = Completer<void>();
     final oldCommunicator = _SlotCommunicator()
       ..activationGate = oldGate
@@ -1068,8 +1080,9 @@ void main() {
     expect(find.byType(SnackBar), findsNothing);
   });
 
-  testWidgets('Home skips busy active polling without making slots stale',
-      (tester) async {
+  testWidgets('Home skips busy active polling without making slots stale', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -1086,10 +1099,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(communicator.activeSlotReads, readsBeforeBusyTick);
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.staleFacets,
-      isEmpty,
-    );
+    expect(appState.connectedDeviceStatus!.snapshot.slots.staleFacets, isEmpty);
     gate.complete();
     await foreground;
     await tester.pump();
@@ -1097,8 +1107,9 @@ void main() {
     expect(communicator.activeSlotReads, readsBeforeBusyTick + 1);
   });
 
-  testWidgets('passive active poll failure is silent, stale, and retries',
-      (tester) async {
+  testWidgets('passive active poll failure is silent, stale, and retries', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -1127,8 +1138,9 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
-  testWidgets('Home automatically repairs stale slot facts without a button',
-      (tester) async {
+  testWidgets('Home automatically repairs stale slot facts without a button', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -1169,8 +1181,9 @@ void main() {
     expect(find.byKey(const Key('home-slot-refresh')), findsNothing);
   });
 
-  testWidgets('Home pauses polling and refreshes active slot on resume',
-      (tester) async {
+  testWidgets('Home pauses polling and refreshes active slot on resume', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
@@ -1180,18 +1193,14 @@ void main() {
     final typeReads = communicator.slotTypeReads;
     final modeReads = communicator.modeReads;
 
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.paused,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
     expect(communicator.activeSlotReads, activeReads);
     expect(communicator.batteryReads, batteryReads);
 
     communicator.activeSlot = 1;
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
 
     expect(communicator.activeSlotReads, activeReads + 1);
@@ -1201,18 +1210,21 @@ void main() {
     expect(find.byKey(const Key('home-active-slot-2')), findsOneWidget);
   });
 
-  testWidgets('Tab focuses slots and arrows activate directly in Reader mode',
-      (tester) async {
+  testWidgets('Tab focuses slots and arrows activate directly in Reader mode', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()..readerMode = true;
     final appState = _connectedState(communicator);
     await _pumpPage(tester, appState, const HomePage());
     await tester.pumpAndSettle();
 
     final focusFinder = find.byKey(const Key('home-slot-grid-focus'));
-    for (var attempt = 0;
-        attempt < 12 &&
-            !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
-        attempt++) {
+    for (
+      var attempt = 0;
+      attempt < 12 &&
+          !(tester.widget<Focus>(focusFinder).focusNode?.hasFocus ?? false);
+      attempt++
+    ) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
     }
@@ -1230,8 +1242,9 @@ void main() {
     );
   });
 
-  testWidgets('loading marks pulse only when reduced motion is off',
-      (tester) async {
+  testWidgets('loading marks pulse only when reduced motion is off', (
+    tester,
+  ) async {
     final reducedMotionGate = Completer<void>();
     final reducedMotionCommunicator = _SlotCommunicator()
       ..nextTypesGate = reducedMotionGate;
@@ -1283,8 +1296,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Home and Slot Manager share one confirmed slot snapshot',
-      (tester) async {
+  testWidgets('Home and Slot Manager share one confirmed slot snapshot', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1322,8 +1336,9 @@ void main() {
     expect(find.textContaining('Office'), findsOneWidget);
   });
 
-  testWidgets('name failure keeps confirmed types and enabled state visible',
-      (tester) async {
+  testWidgets('name failure keeps confirmed types and enabled state visible', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1355,8 +1370,9 @@ void main() {
     expect(find.text('Unavailable (Mifare Classic 1K)'), findsOneWidget);
   });
 
-  testWidgets('first slot read failure stays connected and offers refresh',
-      (tester) async {
+  testWidgets('first slot read failure stays connected and offers refresh', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()..failAll = true;
     final appState = _connectedState(communicator);
     final serial = appState.connector! as _TestSerial;
@@ -1374,8 +1390,9 @@ void main() {
     expect(serial.disconnects, 0);
   });
 
-  testWidgets('later failure preserves confirmed cache and marks it stale',
-      (tester) async {
+  testWidgets('later failure preserves confirmed cache and marks it stale', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1397,17 +1414,17 @@ void main() {
     expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
-  testWidgets('slot facets keep independent unavailable and stale certainty',
-      (tester) async {
+  testWidgets('slot facets keep independent unavailable and stale certainty', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()..failNames = true;
     final appState = _connectedState(communicator);
 
     await _pumpPage(tester, appState, const SlotManagerPage());
     await tester.pumpAndSettle();
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.unavailableFacets,
-      {SlotFacet.names},
-    );
+    expect(appState.connectedDeviceStatus!.snapshot.slots.unavailableFacets, {
+      SlotFacet.names,
+    });
 
     communicator.failTypes = true;
     await appState.connectedDeviceStatus!.refreshSlots();
@@ -1421,42 +1438,45 @@ void main() {
     expect(slots.slots.first.hf.name.isConfirmed, isFalse);
   });
 
-  testWidgets('active slot alone is confirmed then becomes independently stale',
-      (tester) async {
-    final communicator = _SlotCommunicator()
-      ..failTypes = true
-      ..failEnabled = true
-      ..failNames = true;
-    final appState = _connectedState(communicator);
+  testWidgets(
+    'active slot alone is confirmed then becomes independently stale',
+    (tester) async {
+      final communicator = _SlotCommunicator()
+        ..failTypes = true
+        ..failEnabled = true
+        ..failNames = true;
+      final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const SlotManagerPage());
-    await tester.pumpAndSettle();
-    var slots = appState.connectedDeviceStatus!.snapshot.slots;
-    expect(slots.availability, SlotsAvailability.partial);
-    expect(slots.activeSlot.value, 0);
-    expect(slots.unavailableFacets, {
-      SlotFacet.types,
-      SlotFacet.enabledStates,
-      SlotFacet.names,
-    });
+      await _pumpPage(tester, appState, const SlotManagerPage());
+      await tester.pumpAndSettle();
+      var slots = appState.connectedDeviceStatus!.snapshot.slots;
+      expect(slots.availability, SlotsAvailability.partial);
+      expect(slots.activeSlot.value, 0);
+      expect(slots.unavailableFacets, {
+        SlotFacet.types,
+        SlotFacet.enabledStates,
+        SlotFacet.names,
+      });
 
-    communicator.failActive = true;
-    await appState.connectedDeviceStatus!.refreshSlots();
-    await tester.pump();
+      communicator.failActive = true;
+      await appState.connectedDeviceStatus!.refreshSlots();
+      await tester.pump();
 
-    slots = appState.connectedDeviceStatus!.snapshot.slots;
-    expect(slots.availability, SlotsAvailability.stale);
-    expect(slots.activeSlot.value, 0);
-    expect(slots.staleFacets, {SlotFacet.activeSlot});
-    expect(slots.unavailableFacets, {
-      SlotFacet.types,
-      SlotFacet.enabledStates,
-      SlotFacet.names,
-    });
-  });
+      slots = appState.connectedDeviceStatus!.snapshot.slots;
+      expect(slots.availability, SlotsAvailability.stale);
+      expect(slots.activeSlot.value, 0);
+      expect(slots.staleFacets, {SlotFacet.activeSlot});
+      expect(slots.unavailableFacets, {
+        SlotFacet.types,
+        SlotFacet.enabledStates,
+        SlotFacet.names,
+      });
+    },
+  );
 
-  testWidgets('Slot Manager shows cache immediately while entry refreshes',
-      (tester) async {
+  testWidgets('Slot Manager shows cache immediately while entry refreshes', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1479,8 +1499,9 @@ void main() {
     expect(find.textContaining('Lab'), findsOneWidget);
   });
 
-  testWidgets('Slot Manager entry refresh waits for busy foreground RF work',
-      (tester) async {
+  testWidgets('Slot Manager entry refresh waits for busy foreground RF work', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final foregroundGate = Completer<void>();
@@ -1507,8 +1528,9 @@ void main() {
     expect(communicator.slotTypeReads, 1);
   });
 
-  testWidgets('Slot Manager entry refresh waits for busy background RF work',
-      (tester) async {
+  testWidgets('Slot Manager entry refresh waits for busy background RF work', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final backgroundGate = Completer<void>();
@@ -1535,8 +1557,9 @@ void main() {
     expect(communicator.slotTypeReads, 1);
   });
 
-  testWidgets('late slot result from a replaced communicator is discarded',
-      (tester) async {
+  testWidgets('late slot result from a replaced communicator is discarded', (
+    tester,
+  ) async {
     final gate = Completer<void>();
     final oldCommunicator = _SlotCommunicator()..nextTypesGate = gate;
     final appState = _connectedState(oldCommunicator);
@@ -1581,11 +1604,14 @@ void main() {
     expect(communicator.slotNameReads, 0);
     expect(communicator.activeSlotReads, 0);
     expect(
-        disposedStatus.snapshot.slots.availability, SlotsAvailability.loading);
+      disposedStatus.snapshot.slots.availability,
+      SlotsAvailability.loading,
+    );
   });
 
-  testWidgets('Home activation publishes only the re-read active slot',
-      (tester) async {
+  testWidgets('Home activation publishes only the re-read active slot', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1600,8 +1626,9 @@ void main() {
     expect(appState.connectedDeviceStatus!.snapshot.slots.activeSlot.value, 1);
   });
 
-  testWidgets('confirmed activation repairs the only stale slot facet',
-      (tester) async {
+  testWidgets('confirmed activation repairs the only stale slot facet', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1625,59 +1652,58 @@ void main() {
   });
 
   testWidgets(
-      'waiting entry refresh preserves a newer confirmed activation when its active read fails',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
+    'waiting entry refresh preserves a newer confirmed activation when its active read fails',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const SlotManagerPage());
-    await tester.pumpAndSettle();
-    final status = appState.connectedDeviceStatus!;
-    expect(status.snapshot.slots.activeSlot.value, 0);
+      await _pumpPage(tester, appState, const SlotManagerPage());
+      await tester.pumpAndSettle();
+      final status = appState.connectedDeviceStatus!;
+      expect(status.snapshot.slots.activeSlot.value, 0);
 
-    await _pumpPage(tester, appState, const SizedBox.shrink());
-    await tester.pumpAndSettle();
+      await _pumpPage(tester, appState, const SizedBox.shrink());
+      await tester.pumpAndSettle();
 
-    final foregroundGate = Completer<void>();
-    final foregroundStarted = Completer<void>();
-    final foreground = appState.rfOperations.runForeground(() async {
-      foregroundStarted.complete();
-      await foregroundGate.future;
-    });
-    await foregroundStarted.future;
+      final foregroundGate = Completer<void>();
+      final foregroundStarted = Completer<void>();
+      final foreground = appState.rfOperations.runForeground(() async {
+        foregroundStarted.complete();
+        await foregroundGate.future;
+      });
+      await foregroundStarted.future;
 
-    communicator.scriptedActiveSlotReads.add(1);
-    final observedActiveSlots = <int?>[];
-    status.addListener(
-      () => observedActiveSlots.add(status.snapshot.slots.activeSlot.value),
-    );
+      communicator.scriptedActiveSlotReads.add(1);
+      final observedActiveSlots = <int?>[];
+      status.addListener(
+        () => observedActiveSlots.add(status.snapshot.slots.activeSlot.value),
+      );
 
-    await _pumpPage(tester, appState, const SlotManagerPage());
-    await tester.pump();
-    final entryRefresh = status.refreshSlots();
-    final activation = status.activateSlot(1);
+      await _pumpPage(tester, appState, const SlotManagerPage());
+      await tester.pump();
+      final entryRefresh = status.refreshSlots();
+      final activation = status.activateSlot(1);
 
-    foregroundGate.complete();
-    await foreground;
-    expect(await activation, isTrue);
-    await entryRefresh;
-    await tester.pump();
+      foregroundGate.complete();
+      await foreground;
+      expect(await activation, isTrue);
+      await entryRefresh;
+      await tester.pump();
 
-    final slots = status.snapshot.slots;
-    expect(slots.activeSlot.value, 1);
-    expect(slots.activeSlot.isConfirmed, isTrue);
-    expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
-    expect(slots.availability, SlotsAvailability.available);
-    final activationPublication = observedActiveSlots.indexOf(1);
-    expect(activationPublication, isNonNegative);
-    expect(
-      observedActiveSlots.skip(activationPublication),
-      everyElement(1),
-    );
-  });
+      final slots = status.snapshot.slots;
+      expect(slots.activeSlot.value, 1);
+      expect(slots.activeSlot.isConfirmed, isTrue);
+      expect(slots.staleFacets, isNot(contains(SlotFacet.activeSlot)));
+      expect(slots.availability, SlotsAvailability.available);
+      final activationPublication = observedActiveSlots.indexOf(1);
+      expect(activationPublication, isNonNegative);
+      expect(observedActiveSlots.skip(activationPublication), everyElement(1));
+    },
+  );
 
-  testWidgets('invalid fallback read keeps the previous active slot stale',
-      (tester) async {
+  testWidgets('invalid fallback read keeps the previous active slot stale', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1699,8 +1725,9 @@ void main() {
     expect(slots.availability, SlotsAvailability.stale);
   });
 
-  testWidgets('failed reply publishes a confirmed unchanged active slot',
-      (tester) async {
+  testWidgets('failed reply publishes a confirmed unchanged active slot', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
 
@@ -1723,145 +1750,146 @@ void main() {
   });
 
   testWidgets(
-      'slot mutation reconciles one shared snapshot across Home and Slot Manager',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    'slot mutation reconciles one shared snapshot across Home and Slot Manager',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(
-      tester,
-      appState,
-      const Column(
-        children: [
-          Expanded(child: HomePage()),
-          Expanded(child: SlotManagerPage()),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-    final status = appState.connectedDeviceStatus!;
-    final initialReads = communicator.slotTypeReads;
-
-    await status.mutateSlots((mutation) async {
-      await mutation.run(
-        (communicator) => communicator.setSlotTagName(
-          0,
-          'Workshop',
-          TagFrequency.hf,
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(
+        tester,
+        appState,
+        const Column(
+          children: [
+            Expanded(child: HomePage()),
+            Expanded(child: SlotManagerPage()),
+          ],
         ),
       );
-    });
-    await tester.pump();
+      await tester.pumpAndSettle();
+      final status = appState.connectedDeviceStatus!;
+      final initialReads = communicator.slotTypeReads;
 
-    expect(communicator.slotTypeReads, initialReads + 1);
-    expect(status.snapshot.slots.slots.first.hf.name.value, 'Workshop');
-    expect(
-      tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
-      contains('Workshop'),
-    );
-    expect(find.textContaining('Workshop'), findsOneWidget);
-  });
+      await status.mutateSlots((mutation) async {
+        await mutation.run(
+          (communicator) =>
+              communicator.setSlotTagName(0, 'Workshop', TagFrequency.hf),
+        );
+      });
+      await tester.pump();
 
-  testWidgets(
-      'queued activation stays pending through slot mutation reconciliation',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    final status = appState.connectedDeviceStatus!;
-    await status.refreshSlots();
-    final initialSlotReads = communicator.slotTypeReads;
-    final mutationGate = Completer<void>();
-    final mutationStarted = Completer<void>();
-    final activationGate = Completer<void>();
-    communicator.activationGate = activationGate;
-    addTearDown(() {
-      if (!mutationGate.isCompleted) {
-        mutationGate.complete();
-      }
-      if (!activationGate.isCompleted) {
-        activationGate.complete();
-      }
-    });
-
-    final mutation = status.mutateSlots<void>((_) async {
-      mutationStarted.complete();
-      await mutationGate.future;
-    });
-    await mutationStarted.future;
-
-    final activation = status.activateSlot(1);
-    expect(status.snapshot.slots.pendingActivation, 1);
-    expect(await status.activateSlot(1), isFalse);
-
-    mutationGate.complete();
-    await mutation;
-
-    expect(communicator.slotTypeReads, initialSlotReads + 1);
-    expect(status.snapshot.slots.activeSlot.value, 0);
-    expect(status.snapshot.slots.pendingActivation, 1);
-    expect(communicator.activations, [1]);
-    expect(await status.activateSlot(1), isFalse);
-
-    activationGate.complete();
-    expect(await activation, isTrue);
-    expect(status.snapshot.slots.activeSlot.value, 1);
-    expect(status.snapshot.slots.pendingActivation, isNull);
-    expect(communicator.activations, [1]);
-  });
+      expect(communicator.slotTypeReads, initialReads + 1);
+      expect(status.snapshot.slots.slots.first.hf.name.value, 'Workshop');
+      expect(
+        tester.getSemantics(find.byKey(const Key('home-slot-1'))).label,
+        contains('Workshop'),
+      );
+      expect(find.textContaining('Workshop'), findsOneWidget);
+    },
+  );
 
   testWidgets(
-      'queued activation keeps the active slot confirmed by reconciliation',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    final status = appState.connectedDeviceStatus!;
-    await status.refreshSlots();
-    final mutationGate = Completer<void>();
-    final mutationStarted = Completer<void>();
-    final activationGate = Completer<void>();
-    communicator
-      ..activationGate = activationGate
-      ..failActivation = true;
-    addTearDown(() {
-      if (!mutationGate.isCompleted) {
-        mutationGate.complete();
-      }
-      if (!activationGate.isCompleted) {
-        activationGate.complete();
-      }
-    });
+    'queued activation stays pending through slot mutation reconciliation',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      final status = appState.connectedDeviceStatus!;
+      await status.refreshSlots();
+      final initialSlotReads = communicator.slotTypeReads;
+      final mutationGate = Completer<void>();
+      final mutationStarted = Completer<void>();
+      final activationGate = Completer<void>();
+      communicator.activationGate = activationGate;
+      addTearDown(() {
+        if (!mutationGate.isCompleted) {
+          mutationGate.complete();
+        }
+        if (!activationGate.isCompleted) {
+          activationGate.complete();
+        }
+      });
 
-    final mutation = status.mutateSlots<void>((_) async {
-      mutationStarted.complete();
-      await mutationGate.future;
-    });
-    await mutationStarted.future;
+      final mutation = status.mutateSlots<void>((_) async {
+        mutationStarted.complete();
+        await mutationGate.future;
+      });
+      await mutationStarted.future;
 
-    final activation = status.activateSlot(2);
-    communicator.activeSlot = 1;
-    mutationGate.complete();
-    await mutation;
+      final activation = status.activateSlot(1);
+      expect(status.snapshot.slots.pendingActivation, 1);
+      expect(await status.activateSlot(1), isFalse);
 
-    expect(status.snapshot.slots.activeSlot.value, 1);
-    expect(status.snapshot.slots.pendingActivation, 2);
-    expect(await status.activateSlot(2), isFalse);
+      mutationGate.complete();
+      await mutation;
 
-    activationGate.complete();
-    expect(await activation, isFalse);
-    expect(status.snapshot.slots.activeSlot.value, 1);
-    expect(
-      status.snapshot.slots.staleFacets,
-      isNot(contains(SlotFacet.activeSlot)),
-    );
-    expect(status.snapshot.slots.pendingActivation, isNull);
-  });
+      expect(communicator.slotTypeReads, initialSlotReads + 1);
+      expect(status.snapshot.slots.activeSlot.value, 0);
+      expect(status.snapshot.slots.pendingActivation, 1);
+      expect(communicator.activations, [1]);
+      expect(await status.activateSlot(1), isFalse);
 
-  testWidgets('queued mode switch stays pending through slot reconciliation',
-      (tester) async {
+      activationGate.complete();
+      expect(await activation, isTrue);
+      expect(status.snapshot.slots.activeSlot.value, 1);
+      expect(status.snapshot.slots.pendingActivation, isNull);
+      expect(communicator.activations, [1]);
+    },
+  );
+
+  testWidgets(
+    'queued activation keeps the active slot confirmed by reconciliation',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      final status = appState.connectedDeviceStatus!;
+      await status.refreshSlots();
+      final mutationGate = Completer<void>();
+      final mutationStarted = Completer<void>();
+      final activationGate = Completer<void>();
+      communicator
+        ..activationGate = activationGate
+        ..failActivation = true;
+      addTearDown(() {
+        if (!mutationGate.isCompleted) {
+          mutationGate.complete();
+        }
+        if (!activationGate.isCompleted) {
+          activationGate.complete();
+        }
+      });
+
+      final mutation = status.mutateSlots<void>((_) async {
+        mutationStarted.complete();
+        await mutationGate.future;
+      });
+      await mutationStarted.future;
+
+      final activation = status.activateSlot(2);
+      communicator.activeSlot = 1;
+      mutationGate.complete();
+      await mutation;
+
+      expect(status.snapshot.slots.activeSlot.value, 1);
+      expect(status.snapshot.slots.pendingActivation, 2);
+      expect(await status.activateSlot(2), isFalse);
+
+      activationGate.complete();
+      expect(await activation, isFalse);
+      expect(status.snapshot.slots.activeSlot.value, 1);
+      expect(
+        status.snapshot.slots.staleFacets,
+        isNot(contains(SlotFacet.activeSlot)),
+      );
+      expect(status.snapshot.slots.pendingActivation, isNull);
+    },
+  );
+
+  testWidgets('queued mode switch stays pending through slot reconciliation', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
@@ -1884,13 +1912,10 @@ void main() {
       }
     });
 
-    final mutation = status.mutateSlots<void>(
-      (_) async {
-        mutationStarted.complete();
-        await mutationGate.future;
-      },
-      reconcileMode: true,
-    );
+    final mutation = status.mutateSlots<void>((_) async {
+      mutationStarted.complete();
+      await mutationGate.future;
+    }, reconcileMode: true);
     await mutationStarted.future;
 
     final modeSwitch = status.switchMode(ConnectedDeviceMode.reader);
@@ -1923,8 +1948,9 @@ void main() {
     );
   });
 
-  testWidgets('queued mode switch keeps the mode confirmed by reconciliation',
-      (tester) async {
+  testWidgets('queued mode switch keeps the mode confirmed by reconciliation', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
@@ -1946,13 +1972,10 @@ void main() {
       }
     });
 
-    final mutation = status.mutateSlots<void>(
-      (_) async {
-        mutationStarted.complete();
-        await mutationGate.future;
-      },
-      reconcileMode: true,
-    );
+    final mutation = status.mutateSlots<void>((_) async {
+      mutationStarted.complete();
+      await mutationGate.future;
+    }, reconcileMode: true);
     await mutationStarted.future;
 
     final modeSwitch = status.switchMode(ConnectedDeviceMode.reader);
@@ -1977,8 +2000,7 @@ void main() {
   });
 
   for (final disconnect in [false, true]) {
-    testWidgets(
-        'pending mode write stops before confirmation after connection '
+    testWidgets('pending mode write stops before confirmation after connection '
         '${disconnect ? 'disconnect' : 'replacement'}', (tester) async {
       final modeWriteGate = Completer<void>();
       final modeWriteStarted = Completer<void>();
@@ -2036,8 +2058,9 @@ void main() {
     });
   }
 
-  testWidgets('partial slot mutation failure still reconciles device state',
-      (tester) async {
+  testWidgets('partial slot mutation failure still reconciles device state', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
@@ -2070,35 +2093,37 @@ void main() {
   });
 
   testWidgets(
-      'slot reconciliation failure keeps primary error and confirmed cache stale',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    final status = appState.connectedDeviceStatus!;
-    await status.refreshSlots();
-    final confirmed = status.snapshot.slots;
-    final mutationError = StateError('primary mutation failure');
-    communicator.failAll = true;
+    'slot reconciliation failure keeps primary error and confirmed cache stale',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      final status = appState.connectedDeviceStatus!;
+      await status.refreshSlots();
+      final confirmed = status.snapshot.slots;
+      final mutationError = StateError('primary mutation failure');
+      communicator.failAll = true;
 
-    Object? thrown;
-    try {
-      await status.mutateSlots<void>((_) async {
-        throw mutationError;
-      });
-    } catch (error) {
-      thrown = error;
-    }
+      Object? thrown;
+      try {
+        await status.mutateSlots<void>((_) async {
+          throw mutationError;
+        });
+      } catch (error) {
+        thrown = error;
+      }
 
-    expect(thrown, same(mutationError));
-    final stale = status.snapshot.slots;
-    expect(stale.availability, SlotsAvailability.stale);
-    expect(stale.staleFacets, SlotFacet.values.toSet());
-    expect(stale.slots, confirmed.slots);
-    expect(stale.activeSlot, confirmed.activeSlot);
-  });
+      expect(thrown, same(mutationError));
+      final stale = status.snapshot.slots;
+      expect(stale.availability, SlotsAvailability.stale);
+      expect(stale.staleFacets, SlotFacet.values.toSet());
+      expect(stale.slots, confirmed.slots);
+      expect(stale.activeSlot, confirmed.activeSlot);
+    },
+  );
 
-  testWidgets('slot mutation reconciles actual mode when workflow changes it',
-      (tester) async {
+  testWidgets('slot mutation reconciles actual mode when workflow changes it', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator();
     final appState = _connectedState(communicator);
     final status = appState.connectedDeviceStatus!;
@@ -2118,190 +2143,201 @@ void main() {
   });
 
   testWidgets(
-      'failed mode reconciliation preserves confirmation as unavailable and later repairs',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    final status = appState.connectedDeviceStatus!;
-    await status.refreshMode();
-    await status.refreshSlots();
-    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    'failed mode reconciliation preserves confirmation as unavailable and later repairs',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      final status = appState.connectedDeviceStatus!;
+      await status.refreshMode();
+      await status.refreshSlots();
+      expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
 
-    communicator.failModeRead = true;
-    final result = await status.mutateSlots(
-      (mutation) async {
+      communicator.failModeRead = true;
+      final result = await status.mutateSlots((mutation) async {
         await mutation.run(
           (communicator) => communicator.setReaderDeviceMode(true),
         );
         return 7;
-      },
-      reconcileMode: true,
-    );
+      }, reconcileMode: true);
 
-    expect(result, 7);
-    expect(status.snapshot.slots.availability, SlotsAvailability.available);
-    expect(status.snapshot.mode.availability, ModeAvailability.unavailable);
-    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
-    expect(status.snapshot.mode.pendingMode, isNull);
+      expect(result, 7);
+      expect(status.snapshot.slots.availability, SlotsAvailability.available);
+      expect(status.snapshot.mode.availability, ModeAvailability.unavailable);
+      expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+      expect(status.snapshot.mode.pendingMode, isNull);
 
-    communicator.failModeRead = false;
-    await status.refreshMode();
-    expect(status.snapshot.mode.availability, ModeAvailability.available);
-    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
-  });
-
-  testWidgets('queued slot mutation never starts after connection replacement',
-      (tester) async {
-    final oldCommunicator = _SlotCommunicator();
-    final appState = _connectedState(oldCommunicator);
-    final status = appState.connectedDeviceStatus!;
-    final foregroundGate = Completer<void>();
-    final foregroundStarted = Completer<void>();
-    final foreground = appState.rfOperations.runForeground(() async {
-      foregroundStarted.complete();
-      await foregroundGate.future;
-    });
-    await foregroundStarted.future;
-    var mutationStarted = false;
-    final result = status.mutateSlots<void>((_) async {
-      mutationStarted = true;
-    }).then<Object?>((_) => null, onError: (Object error) => error);
-
-    _replaceConnection(appState, _SlotCommunicator());
-    foregroundGate.complete();
-    await foreground;
-
-    expect(await result, isA<SlotMutationConnectionChanged>());
-    expect(mutationStarted, isFalse);
-    expect(oldCommunicator.slotTypeReads, 0);
-  });
+      communicator.failModeRead = false;
+      await status.refreshMode();
+      expect(status.snapshot.mode.availability, ModeAvailability.available);
+      expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.reader);
+    },
+  );
 
   testWidgets(
-      'running slot mutation stops later steps and publication after replacement',
-      (tester) async {
-    final oldCommunicator = _SlotCommunicator();
-    final appState = _connectedState(oldCommunicator);
-    final status = appState.connectedDeviceStatus!;
-    final firstStepGate = Completer<void>();
-    final firstStepStarted = Completer<void>();
-    final result = status.mutateSlots<void>((mutation) async {
-      await mutation.run((_) async {
-        firstStepStarted.complete();
-        await firstStepGate.future;
+    'queued slot mutation never starts after connection replacement',
+    (tester) async {
+      final oldCommunicator = _SlotCommunicator();
+      final appState = _connectedState(oldCommunicator);
+      final status = appState.connectedDeviceStatus!;
+      final foregroundGate = Completer<void>();
+      final foregroundStarted = Completer<void>();
+      final foreground = appState.rfOperations.runForeground(() async {
+        foregroundStarted.complete();
+        await foregroundGate.future;
       });
-      await mutation.run(
-        (communicator) => communicator.setSlotTagName(
-          0,
-          'Must not run',
-          TagFrequency.hf,
+      await foregroundStarted.future;
+      var mutationStarted = false;
+      final result = status
+          .mutateSlots<void>((_) async {
+            mutationStarted = true;
+          })
+          .then<Object?>((_) => null, onError: (Object error) => error);
+
+      _replaceConnection(appState, _SlotCommunicator());
+      foregroundGate.complete();
+      await foreground;
+
+      expect(await result, isA<SlotMutationConnectionChanged>());
+      expect(mutationStarted, isFalse);
+      expect(oldCommunicator.slotTypeReads, 0);
+    },
+  );
+
+  testWidgets(
+    'running slot mutation stops later steps and publication after replacement',
+    (tester) async {
+      final oldCommunicator = _SlotCommunicator();
+      final appState = _connectedState(oldCommunicator);
+      final status = appState.connectedDeviceStatus!;
+      final firstStepGate = Completer<void>();
+      final firstStepStarted = Completer<void>();
+      final result = status
+          .mutateSlots<void>((mutation) async {
+            await mutation.run((_) async {
+              firstStepStarted.complete();
+              await firstStepGate.future;
+            });
+            await mutation.run(
+              (communicator) => communicator.setSlotTagName(
+                0,
+                'Must not run',
+                TagFrequency.hf,
+              ),
+            );
+          })
+          .then<Object?>((_) => null, onError: (Object error) => error);
+      await firstStepStarted.future;
+
+      _replaceConnection(appState, _SlotCommunicator());
+      firstStepGate.complete();
+
+      expect(await result, isA<SlotMutationConnectionChanged>());
+      expect(
+        oldCommunicator.commandEvents,
+        isNot(contains(contains('Must not run'))),
+      );
+      expect(oldCommunicator.slotTypeReads, 0);
+      expect(oldCommunicator.enabledSlotReads, 0);
+      expect(oldCommunicator.slotNameReads, 0);
+      expect(oldCommunicator.activeSlotReads, 0);
+    },
+  );
+
+  testWidgets(
+    'Slot Manager upload owns RF and reconciles slots and mode once',
+    (tester) async {
+      final modeGate = Completer<void>();
+      final modeStarted = Completer<void>();
+      final communicator = _SlotCommunicator()
+        ..modeWriteGate = modeGate
+        ..modeWriteStarted = modeStarted;
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const SlotManagerPage());
+      await tester.pumpAndSettle();
+      final status = appState.connectedDeviceStatus!;
+      final initialTypeReads = communicator.slotTypeReads;
+      final state = tester.state<SlotManagerPageState>(
+        find.byType(SlotManagerPage),
+      );
+      final localizations = AppLocalizations.of(
+        tester.element(find.byType(SlotManagerPage)),
+      )!;
+
+      final upload = state.onTap(
+        CardSave(uid: '01 02 03 04 05', name: 'Badge', tag: TagType.em410X),
+        (_, _) {},
+        localizations,
+      );
+      await modeStarted.future;
+      await status.refreshBattery();
+      expect(communicator.batteryReads, 0);
+
+      modeGate.complete();
+      await upload;
+      await tester.pump();
+
+      expect(
+        communicator.commandEvents,
+        containsAllInOrder([
+          'mode:false',
+          'enable:0:lf:true',
+          'activate:0',
+          'type:0:em410X',
+          'default:0:em410X',
+          'em410x',
+          'name:0:lf:Badge',
+          'save-slots',
+        ]),
+      );
+      expect(communicator.slotTypeReads, initialTypeReads + 1);
+      expect(status.snapshot.slots.slots.first.lf.name.value, 'Badge');
+      expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
+    },
+  );
+
+  testWidgets(
+    'Slot Manager repairs invalid seven-byte MIFARE 4K anticollision data',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
+      await _pumpPage(tester, appState, const SlotManagerPage());
+      await tester.pumpAndSettle();
+      final state = tester.state<SlotManagerPageState>(
+        find.byType(SlotManagerPage),
+      );
+      final localizations = AppLocalizations.of(
+        tester.element(find.byType(SlotManagerPage)),
+      )!;
+      final dump = List.generate(256, (_) => Uint8List(16));
+
+      await tester.runAsync(
+        () => state.onTap(
+          CardSave(
+            uid: '04 01 02 03 04 05 06',
+            name: 'Seven-byte 4K',
+            tag: TagType.mifare4K,
+            sak: 0x00,
+            atqa: Uint8List.fromList([0x98, 0x16]),
+            data: dump,
+            extraData: CardSaveExtra(mifareClassicDumpComplete: true),
+          ),
+          (_, _) {},
+          localizations,
         ),
       );
-    }).then<Object?>((_) => null, onError: (Object error) => error);
-    await firstStepStarted.future;
 
-    _replaceConnection(appState, _SlotCommunicator());
-    firstStepGate.complete();
+      final antiCollision = communicator.lastMf1AntiCollision;
+      expect(antiCollision, isNotNull);
+      expect(antiCollision!.uid, hasLength(7));
+      expect(antiCollision.sak, 0x18);
+      expect(antiCollision.atqa, [0x00, 0x42]);
+      expect(communicator.mf1BlockBytesWritten, 4096);
+    },
+  );
 
-    expect(await result, isA<SlotMutationConnectionChanged>());
-    expect(oldCommunicator.commandEvents,
-        isNot(contains(contains('Must not run'))));
-    expect(oldCommunicator.slotTypeReads, 0);
-    expect(oldCommunicator.enabledSlotReads, 0);
-    expect(oldCommunicator.slotNameReads, 0);
-    expect(oldCommunicator.activeSlotReads, 0);
-  });
-
-  testWidgets('Slot Manager upload owns RF and reconciles slots and mode once',
-      (tester) async {
-    final modeGate = Completer<void>();
-    final modeStarted = Completer<void>();
-    final communicator = _SlotCommunicator()
-      ..modeWriteGate = modeGate
-      ..modeWriteStarted = modeStarted;
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const SlotManagerPage());
-    await tester.pumpAndSettle();
-    final status = appState.connectedDeviceStatus!;
-    final initialTypeReads = communicator.slotTypeReads;
-    final state = tester.state<SlotManagerPageState>(
-      find.byType(SlotManagerPage),
-    );
-    final localizations = AppLocalizations.of(
-      tester.element(find.byType(SlotManagerPage)),
-    )!;
-
-    final upload = state.onTap(
-      CardSave(uid: '01 02 03 04 05', name: 'Badge', tag: TagType.em410X),
-      (_, __) {},
-      localizations,
-    );
-    await modeStarted.future;
-    await status.refreshBattery();
-    expect(communicator.batteryReads, 0);
-
-    modeGate.complete();
-    await upload;
-    await tester.pump();
-
-    expect(
-      communicator.commandEvents,
-      containsAllInOrder([
-        'mode:false',
-        'enable:0:lf:true',
-        'activate:0',
-        'type:0:em410X',
-        'default:0:em410X',
-        'em410x',
-        'name:0:lf:Badge',
-        'save-slots',
-      ]),
-    );
-    expect(communicator.slotTypeReads, initialTypeReads + 1);
-    expect(status.snapshot.slots.slots.first.lf.name.value, 'Badge');
-    expect(status.snapshot.mode.confirmedMode, ConnectedDeviceMode.emulator);
-  });
-
-  testWidgets(
-      'Slot Manager repairs invalid seven-byte MIFARE 4K anticollision data',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
-    await _pumpPage(tester, appState, const SlotManagerPage());
-    await tester.pumpAndSettle();
-    final state = tester.state<SlotManagerPageState>(
-      find.byType(SlotManagerPage),
-    );
-    final localizations = AppLocalizations.of(
-      tester.element(find.byType(SlotManagerPage)),
-    )!;
-    final dump = List.generate(256, (_) => Uint8List(16));
-
-    await tester.runAsync(
-      () => state.onTap(
-        CardSave(
-          uid: '04 01 02 03 04 05 06',
-          name: 'Seven-byte 4K',
-          tag: TagType.mifare4K,
-          sak: 0x00,
-          atqa: Uint8List.fromList([0x98, 0x16]),
-          data: dump,
-          extraData: CardSaveExtra(mifareClassicDumpComplete: true),
-        ),
-        (_, __) {},
-        localizations,
-      ),
-    );
-
-    final antiCollision = communicator.lastMf1AntiCollision;
-    expect(antiCollision, isNotNull);
-    expect(antiCollision!.uid, hasLength(7));
-    expect(antiCollision.sak, 0x18);
-    expect(antiCollision.atqa, [0x00, 0x42]);
-    expect(communicator.mf1BlockBytesWritten, 4096);
-  });
-
-  testWidgets('Slot Settings enable and delete paths reconcile shared slots',
-      (tester) async {
+  testWidgets('Slot Settings enable and delete paths reconcile shared slots', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({'confirm_delete': false});
     await SharedPreferencesProvider().load();
     final communicator = _SlotCommunicator()
@@ -2346,278 +2382,261 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       communicator.commandEvents,
-      containsAllInOrder([
-        'delete:0:lf',
-        'name:0:lf:Empty',
-        'save-slots',
-      ]),
+      containsAllInOrder(['delete:0:lf', 'name:0:lf:Empty', 'save-slots']),
     );
     expect(status.snapshot.slots.slots.first.lf.type.value, TagType.unknown);
     expect(status.snapshot.slots.slots.first.lf.name.value, 'Empty');
   });
 
   testWidgets(
-      'Slot Settings keeps unavailable fields inert and retries shared status',
-      (tester) async {
-    tester.view.physicalSize = const Size(360, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final semantics = tester.ensureSemantics();
-    final communicator = _SlotCommunicator()..failAll = true;
-    final appState = _connectedState(communicator);
+    'Slot Settings keeps unavailable fields inert and retries shared status',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final semantics = tester.ensureSemantics();
+      final communicator = _SlotCommunicator()..failAll = true;
+      final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
+      await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
 
-    expect(
-      appState.connectedDeviceStatus!.snapshot.slots.availability,
-      SlotsAvailability.unavailable,
-    );
-    expect(find.text('Empty'), findsNothing);
-    expect(find.text('Unavailable'), findsNWidgets(6));
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-edit-hf')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-delete-hf')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      find.bySemanticsLabel('HF enabled: Unavailable'),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('slot-settings-refresh')), findsOneWidget);
+      expect(
+        appState.connectedDeviceStatus!.snapshot.slots.availability,
+        SlotsAvailability.unavailable,
+      );
+      expect(find.text('Empty'), findsNothing);
+      expect(find.text('Unavailable'), findsNWidgets(6));
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('slot-settings-edit-hf')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const Key('slot-settings-delete-hf')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.bySemanticsLabel('HF enabled: Unavailable'), findsOneWidget);
+      expect(find.byKey(const Key('slot-settings-refresh')), findsOneWidget);
 
-    communicator.commandEvents.clear();
-    for (final key in const [
-      'slot-settings-edit-hf',
-      'slot-settings-delete-hf',
-      'slot-settings-enable-hf',
-    ]) {
-      await tester.tap(find.byKey(Key(key)), warnIfMissed: false);
+      communicator.commandEvents.clear();
+      for (final key in const [
+        'slot-settings-edit-hf',
+        'slot-settings-delete-hf',
+        'slot-settings-enable-hf',
+      ]) {
+        await tester.tap(find.byKey(Key(key)), warnIfMissed: false);
+        await tester.pump();
+      }
+      expect(communicator.commandEvents, isEmpty);
+      expect(find.byType(SlotEditMenu), findsNothing);
+
+      communicator.failAll = false;
+      await tester.tap(find.byKey(const Key('slot-settings-refresh')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Office'), findsOneWidget);
+      expect(find.text('Mifare Classic 1K'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('slot-settings-edit-hf')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<Switch>(find.byKey(const Key('slot-settings-enable-hf')))
+            .onChanged,
+        isNotNull,
+      );
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'Slot Settings keeps confirmed fields when enabled state is unavailable',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final communicator = _SlotCommunicator()
+        ..failEnabled = true
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) =>
+              index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+        );
+      final appState = _connectedState(communicator);
+
+      await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+      await tester.pumpAndSettle();
+
+      final slots = appState.connectedDeviceStatus!.snapshot.slots;
+      expect(slots.availability, SlotsAvailability.partial);
+      expect(slots.unavailableFacets, {SlotFacet.enabledStates});
+      expect(find.text('Office'), findsOneWidget);
+      expect(find.text('Garage'), findsOneWidget);
+      expect(find.text('Mifare Classic 1K'), findsOneWidget);
+      expect(find.text('EM410X'), findsOneWidget);
+      expect(find.text('Unavailable'), findsNWidgets(2));
+      expect(find.bySemanticsLabel('HF enabled: Unavailable'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('slot-settings-edit-hf')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const Key('slot-settings-delete-hf')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      communicator.commandEvents.clear();
+      await tester.tap(
+        find.byKey(const Key('slot-settings-edit-hf')),
+        warnIfMissed: false,
+      );
       await tester.pump();
-    }
-    expect(communicator.commandEvents, isEmpty);
-    expect(find.byType(SlotEditMenu), findsNothing);
+      expect(find.byType(SlotEditMenu), findsNothing);
+      expect(communicator.commandEvents, isEmpty);
 
-    communicator.failAll = false;
-    await tester.tap(find.byKey(const Key('slot-settings-refresh')));
-    await tester.pumpAndSettle();
+      communicator.failEnabled = false;
+      await tester.tap(find.byKey(const Key('slot-settings-refresh')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+      await tester.pump();
 
-    expect(find.text('Office'), findsOneWidget);
-    expect(find.text('Mifare Classic 1K'), findsOneWidget);
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-edit-hf')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(
-      tester
-          .widget<Switch>(
-            find.byKey(const Key('slot-settings-enable-hf')),
-          )
-          .onChanged,
-      isNotNull,
-    );
-    semantics.dispose();
-  });
+      final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
+      expect(edit.name, 'Office');
+      expect(edit.isEnabled, isTrue);
+      expect(edit.slotType, TagType.mifare1K);
+      semantics.dispose();
+    },
+  );
 
   testWidgets(
-      'Slot Settings keeps confirmed fields when enabled state is unavailable',
-      (tester) async {
-    final semantics = tester.ensureSemantics();
-    final communicator = _SlotCommunicator()
-      ..failEnabled = true
-      ..slotTypes = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) =>
-            index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+    'open Slot Settings marks cached enabled state stale without inventing off',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final communicator = _SlotCommunicator()
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..enabledSlots = List.generate(
+          8,
+          (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) =>
+              index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+        );
+      final appState = _connectedState(communicator);
+      final status = appState.connectedDeviceStatus!;
+
+      await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Switch>(find.byKey(const Key('slot-settings-enable-hf')))
+            .value,
+        isTrue,
       );
-    final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
-    await tester.pumpAndSettle();
+      communicator.failEnabled = true;
+      await status.refreshSlots();
+      await tester.pump();
 
-    final slots = appState.connectedDeviceStatus!.snapshot.slots;
-    expect(slots.availability, SlotsAvailability.partial);
-    expect(slots.unavailableFacets, {SlotFacet.enabledStates});
-    expect(find.text('Office'), findsOneWidget);
-    expect(find.text('Garage'), findsOneWidget);
-    expect(find.text('Mifare Classic 1K'), findsOneWidget);
-    expect(find.text('EM410X'), findsOneWidget);
-    expect(find.text('Unavailable'), findsNWidgets(2));
-    expect(
-      find.bySemanticsLabel('HF enabled: Unavailable'),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-edit-hf')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-delete-hf')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-
-    communicator.commandEvents.clear();
-    await tester.tap(
-      find.byKey(const Key('slot-settings-edit-hf')),
-      warnIfMissed: false,
-    );
-    await tester.pump();
-    expect(find.byType(SlotEditMenu), findsNothing);
-    expect(communicator.commandEvents, isEmpty);
-
-    communicator.failEnabled = false;
-    await tester.tap(find.byKey(const Key('slot-settings-refresh')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
-    await tester.pump();
-
-    final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
-    expect(edit.name, 'Office');
-    expect(edit.isEnabled, isTrue);
-    expect(edit.slotType, TagType.mifare1K);
-    semantics.dispose();
-  });
-
-  testWidgets(
-      'open Slot Settings marks cached enabled state stale without inventing off',
-      (tester) async {
-    final semantics = tester.ensureSemantics();
-    final communicator = _SlotCommunicator()
-      ..slotTypes = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..enabledSlots = List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) =>
-            index == 0 ? SlotNames(hf: 'Office', lf: 'Garage') : SlotNames(),
+      expect(status.snapshot.slots.availability, SlotsAvailability.stale);
+      expect(status.snapshot.slots.staleFacets, {SlotFacet.enabledStates});
+      expect(find.text('Office'), findsOneWidget);
+      expect(find.text('Garage'), findsOneWidget);
+      expect(find.text('Mifare Classic 1K'), findsOneWidget);
+      expect(find.text('EM410X'), findsOneWidget);
+      expect(find.text('Unavailable'), findsNWidgets(2));
+      final hfSwitch = tester.widget<Switch>(
+        find.byKey(const Key('slot-settings-enable-hf')),
       );
-    final appState = _connectedState(communicator);
-    final status = appState.connectedDeviceStatus!;
+      expect(hfSwitch.value, isTrue);
+      expect(hfSwitch.onChanged, isNull);
+      expect(
+        tester
+            .getSemantics(find.byKey(const Key('slot-settings-enable-hf')))
+            .label,
+        contains('Enabled (Unavailable)'),
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('slot-settings-edit-hf')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const Key('slot-settings-delete-hf')),
+            )
+            .onPressed,
+        isNotNull,
+      );
 
-    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<Switch>(
-            find.byKey(const Key('slot-settings-enable-hf')),
-          )
-          .value,
-      isTrue,
-    );
-
-    communicator.failEnabled = true;
-    await status.refreshSlots();
-    await tester.pump();
-
-    expect(status.snapshot.slots.availability, SlotsAvailability.stale);
-    expect(status.snapshot.slots.staleFacets, {SlotFacet.enabledStates});
-    expect(find.text('Office'), findsOneWidget);
-    expect(find.text('Garage'), findsOneWidget);
-    expect(find.text('Mifare Classic 1K'), findsOneWidget);
-    expect(find.text('EM410X'), findsOneWidget);
-    expect(find.text('Unavailable'), findsNWidgets(2));
-    final hfSwitch = tester.widget<Switch>(
-      find.byKey(const Key('slot-settings-enable-hf')),
-    );
-    expect(hfSwitch.value, isTrue);
-    expect(hfSwitch.onChanged, isNull);
-    expect(
-      tester
-          .getSemantics(find.byKey(const Key('slot-settings-enable-hf')))
-          .label,
-      contains('Enabled (Unavailable)'),
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-edit-hf')),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.byKey(const Key('slot-settings-delete-hf')),
-          )
-          .onPressed,
-      isNotNull,
-    );
-
-    communicator.commandEvents.clear();
-    await tester.tap(
-      find.byKey(const Key('slot-settings-enable-hf')),
-      warnIfMissed: false,
-    );
-    await tester.tap(
-      find.byKey(const Key('slot-settings-edit-hf')),
-      warnIfMissed: false,
-    );
-    await tester.pump();
-    expect(communicator.commandEvents, isEmpty);
-    expect(find.byType(SlotEditMenu), findsNothing);
-    semantics.dispose();
-  });
+      communicator.commandEvents.clear();
+      await tester.tap(
+        find.byKey(const Key('slot-settings-enable-hf')),
+        warnIfMissed: false,
+      );
+      await tester.tap(
+        find.byKey(const Key('slot-settings-edit-hf')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(communicator.commandEvents, isEmpty);
+      expect(find.byType(SlotEditMenu), findsNothing);
+      semantics.dispose();
+    },
+  );
 
   testWidgets(
-      'Slot Settings passes confirmed empty fields without placeholders',
-      (tester) async {
-    final communicator = _SlotCommunicator();
-    final appState = _connectedState(communicator);
+    'Slot Settings passes confirmed empty fields without placeholders',
+    (tester) async {
+      final communicator = _SlotCommunicator();
+      final appState = _connectedState(communicator);
 
-    await _pumpPage(tester, appState, const SlotSettings(slot: 1));
-    await tester.pumpAndSettle();
+      await _pumpPage(tester, appState, const SlotSettings(slot: 1));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Empty'), findsNWidgets(4));
-    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
-    await tester.pump();
+      expect(find.text('Empty'), findsNWidgets(4));
+      await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+      await tester.pump();
 
-    final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
-    expect(edit.name, isEmpty);
-    expect(edit.isEnabled, isFalse);
-    expect(edit.slotType, TagType.unknown);
-  });
+      final edit = tester.widget<SlotEditMenu>(find.byType(SlotEditMenu));
+      expect(edit.name, isEmpty);
+      expect(edit.isEnabled, isFalse);
+      expect(edit.slotType, TagType.unknown);
+    },
+  );
 
-  testWidgets('Slot Settings keeps raw confirmed names for export',
-      (tester) async {
+  testWidgets('Slot Settings keeps raw confirmed names for export', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()
       ..slotTypes = List.generate(
         8,
@@ -2649,70 +2668,103 @@ void main() {
   });
 
   testWidgets(
-      'open Slot Settings adopts replacement status and mutates its communicator',
-      (tester) async {
-    final oldCommunicator = _SlotCommunicator()
+    'open Slot Settings adopts replacement status and mutates its communicator',
+    (tester) async {
+      final oldCommunicator = _SlotCommunicator()
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..enabledSlots = List.generate(
+          8,
+          (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) =>
+              index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+        );
+      final appState = _connectedState(oldCommunicator);
+      final oldStatus = appState.connectedDeviceStatus!;
+      await oldStatus.refreshSlots();
+      await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Old HF'), findsOneWidget);
+
+      oldCommunicator.commandEvents.clear();
+      final newCommunicator = _SlotCommunicator()
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..enabledSlots = List.generate(
+          8,
+          (index) => EnabledSlotInfo(hf: false, lf: index == 0),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotNames(hf: 'Replacement HF', lf: 'Replacement LF')
+              : SlotNames(),
+        );
+      _replaceConnection(appState, newCommunicator);
+      final newStatus = appState.connectedDeviceStatus!;
+      appState.changesMade();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Replacement HF'), findsOneWidget);
+      expect(find.text('Old HF'), findsNothing);
+      expect(oldCommunicator.commandEvents, isEmpty);
+      expect(newCommunicator.activations, [0]);
+
+      newCommunicator.commandEvents.clear();
+      await tester.tap(find.byKey(const Key('slot-settings-enable-hf')));
+      await tester.pumpAndSettle();
+      expect(newCommunicator.commandEvents, contains('enable:0:hf:true'));
+      expect(newStatus.snapshot.slots.slots.first.hf.enabled.value, isTrue);
+      expect(oldCommunicator.commandEvents, isEmpty);
+      expect(find.text('Replacement HF'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Slot Edit preserves the sparse ACTProx format ID', (
+    tester,
+  ) async {
+    final communicator = _ActProxSlotCommunicator()
       ..slotTypes = List.generate(
         8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..enabledSlots = List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) =>
-            index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+        (index) => index == 0 ? SlotTypes(lf: TagType.hidProx) : SlotTypes(),
       );
-    final appState = _connectedState(oldCommunicator);
-    final oldStatus = appState.connectedDeviceStatus!;
-    await oldStatus.refreshSlots();
-    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+    final appState = _connectedState(communicator);
+    addTearDown(appState.dispose);
+    await _pumpPage(
+      tester,
+      appState,
+      const SlotEditMenu(
+        name: 'ACTProx',
+        isEnabled: true,
+        slotType: TagType.hidProx,
+        frequency: TagFrequency.lf,
+        slot: 0,
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Old HF'), findsOneWidget);
-
-    oldCommunicator.commandEvents.clear();
-    final newCommunicator = _SlotCommunicator()
-      ..slotTypes = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..enabledSlots = List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: false, lf: index == 0),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotNames(hf: 'Replacement HF', lf: 'Replacement LF')
-            : SlotNames(),
-      );
-    _replaceConnection(appState, newCommunicator);
-    final newStatus = appState.connectedDeviceStatus!;
-    appState.changesMade();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Replacement HF'), findsOneWidget);
-    expect(find.text('Old HF'), findsNothing);
-    expect(oldCommunicator.commandEvents, isEmpty);
-    expect(newCommunicator.activations, [0]);
-
-    newCommunicator.commandEvents.clear();
-    await tester.tap(find.byKey(const Key('slot-settings-enable-hf')));
-    await tester.pumpAndSettle();
-    expect(newCommunicator.commandEvents, contains('enable:0:hf:true'));
-    expect(newStatus.snapshot.slots.slots.first.hf.enabled.value, isTrue);
-    expect(oldCommunicator.commandEvents, isEmpty);
-    expect(find.text('Replacement HF'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    final selector = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>),
+    );
+    expect(selector.value, 42);
+    expect(selector.items!.map((item) => item.value), contains(42));
+    expect(find.text('HID ACTProx 36-bit'), findsOneWidget);
   });
 
-  testWidgets('Slot Edit keeps ordinary read failures local to the dialog',
-      (tester) async {
+  testWidgets('Slot Edit keeps ordinary read failures local to the dialog', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()..failActivation = true;
     final appState = _connectedState(communicator);
     final serial = appState.connector! as _TestSerial;
@@ -2737,47 +2789,49 @@ void main() {
   });
 
   testWidgets(
-      'stale Slot Edit failure never disconnects a replacement connector',
-      (tester) async {
-    final activationGate = Completer<void>();
-    final oldCommunicator = _SlotCommunicator()
-      ..activationGate = activationGate;
-    final appState = _connectedState(oldCommunicator);
+    'stale Slot Edit failure never disconnects a replacement connector',
+    (tester) async {
+      final activationGate = Completer<void>();
+      final oldCommunicator = _SlotCommunicator()
+        ..activationGate = activationGate;
+      final appState = _connectedState(oldCommunicator);
 
-    await _pumpPage(
-      tester,
-      appState,
-      const SlotEditMenu(
-        name: 'Garage',
-        isEnabled: true,
-        slotType: TagType.em410X,
-        frequency: TagFrequency.lf,
-        slot: 0,
-      ),
-    );
-    await tester.pump();
-    expect(oldCommunicator.commandEvents, contains('activate:0'));
+      await _pumpPage(
+        tester,
+        appState,
+        const SlotEditMenu(
+          name: 'Garage',
+          isEnabled: true,
+          slotType: TagType.em410X,
+          frequency: TagFrequency.lf,
+          slot: 0,
+        ),
+      );
+      await tester.pump();
+      expect(oldCommunicator.commandEvents, contains('activate:0'));
 
-    final replacementSerial = _TestSerial(log: Logger())
-      ..connected = true
-      ..device = ChameleonDevice.ultra
-      ..connectionType = ConnectionType.usb
-      ..portName = 'replacement-port'
-      ..activeDevicePort = 'replacement';
-    appState
-      ..connector = replacementSerial
-      ..communicator = _SlotCommunicator();
-    activationGate.complete();
-    await tester.pump();
-    await tester.pump();
+      final replacementSerial = _TestSerial(log: Logger())
+        ..connected = true
+        ..device = ChameleonDevice.ultra
+        ..connectionType = ConnectionType.usb
+        ..portName = 'replacement-port'
+        ..activeDevicePort = 'replacement';
+      appState
+        ..connector = replacementSerial
+        ..communicator = _SlotCommunicator();
+      activationGate.complete();
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.byIcon(Icons.error_outline), findsOneWidget);
-    expect(replacementSerial.disconnects, 0);
-    expect(replacementSerial.connected, isTrue);
-  });
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+      expect(replacementSerial.disconnects, 0);
+      expect(replacementSerial.connected, isTrue);
+    },
+  );
 
-  testWidgets('Slot Edit save reconciles renamed slot through shared status',
-      (tester) async {
+  testWidgets('Slot Edit save reconciles renamed slot through shared status', (
+    tester,
+  ) async {
     final communicator = _SlotCommunicator()
       ..slotTypes = List.generate(
         8,
@@ -2827,125 +2881,124 @@ void main() {
   });
 
   testWidgets(
-      'open Slot Edit blocks stale save and quick settings after replacement',
-      (tester) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final oldCommunicator = _SlotCommunicator()
-      ..slotTypes = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..enabledSlots = List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) =>
-            index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+    'open Slot Edit blocks stale save and quick settings after replacement',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final oldCommunicator = _SlotCommunicator()
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..enabledSlots = List.generate(
+          8,
+          (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) =>
+              index == 0 ? SlotNames(hf: 'Old HF', lf: 'Old LF') : SlotNames(),
+        );
+      final appState = _connectedState(oldCommunicator);
+      final oldStatus = appState.connectedDeviceStatus!;
+      final oldSerial = appState.connector! as _TestSerial;
+      var oldPublications = 0;
+      oldStatus.addListener(() => oldPublications++);
+
+      await _pumpPage(tester, appState, const SlotSettings(slot: 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SlotEditMenu), findsOneWidget);
+      for (final key in _classicQuickSettingKeys) {
+        expect(find.byKey(Key(key)), findsOneWidget);
+      }
+      await tester.enterText(find.byType(TextFormField).first, 'Stale edit');
+
+      oldCommunicator.commandEvents.clear();
+      oldPublications = 0;
+      final newCommunicator = _SlotCommunicator()
+        ..slotTypes = List.generate(
+          8,
+          (index) => index == 0
+              ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
+              : SlotTypes(),
+        )
+        ..enabledSlots = List.generate(
+          8,
+          (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
+        )
+        ..slotNames = List.generate(
+          8,
+          (index) =>
+              index == 0 ? SlotNames(hf: 'New HF', lf: 'New LF') : SlotNames(),
+        );
+      _replaceConnection(appState, newCommunicator);
+      final replacementSerial = appState.connector! as _TestSerial;
+      appState.changesMade();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(const SlotMutationConnectionChanged().toString()),
+        findsOneWidget,
       );
-    final appState = _connectedState(oldCommunicator);
-    final oldStatus = appState.connectedDeviceStatus!;
-    final oldSerial = appState.connector! as _TestSerial;
-    var oldPublications = 0;
-    oldStatus.addListener(() => oldPublications++);
-
-    await _pumpPage(tester, appState, const SlotSettings(slot: 0));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
-    await tester.pumpAndSettle();
-    expect(find.byType(SlotEditMenu), findsOneWidget);
-    for (final key in _classicQuickSettingKeys) {
-      expect(find.byKey(Key(key)), findsOneWidget);
-    }
-    await tester.enterText(find.byType(TextFormField).first, 'Stale edit');
-
-    oldCommunicator.commandEvents.clear();
-    oldPublications = 0;
-    final newCommunicator = _SlotCommunicator()
-      ..slotTypes = List.generate(
-        8,
-        (index) => index == 0
-            ? SlotTypes(hf: TagType.mifare1K, lf: TagType.em410X)
-            : SlotTypes(),
-      )
-      ..enabledSlots = List.generate(
-        8,
-        (index) => EnabledSlotInfo(hf: index == 0, lf: index == 0),
-      )
-      ..slotNames = List.generate(
-        8,
-        (index) =>
-            index == 0 ? SlotNames(hf: 'New HF', lf: 'New LF') : SlotNames(),
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const Key('slot-edit-save'), skipOffstage: false),
+            )
+            .onPressed,
+        isNull,
       );
-    _replaceConnection(appState, newCommunicator);
-    final replacementSerial = appState.connector! as _TestSerial;
-    appState.changesMade();
-    await tester.pumpAndSettle();
+      newCommunicator.commandEvents.clear();
+      await tester.tap(
+        find.byKey(const Key('slot-edit-save'), skipOffstage: false),
+        warnIfMissed: false,
+      );
+      for (final key in _classicQuickSettingKeys) {
+        final setting = find.byKey(Key(key), skipOffstage: false);
+        await tester.tap(setting, warnIfMissed: false);
+        await tester.pump();
+      }
 
-    expect(
-      find.text(const SlotMutationConnectionChanged().toString()),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<TextButton>(find.byKey(
-            const Key('slot-edit-save'),
-            skipOffstage: false,
-          ))
-          .onPressed,
-      isNull,
-    );
-    newCommunicator.commandEvents.clear();
-    await tester.tap(
-      find.byKey(
-        const Key('slot-edit-save'),
-        skipOffstage: false,
-      ),
-      warnIfMissed: false,
-    );
-    for (final key in _classicQuickSettingKeys) {
-      final setting = find.byKey(Key(key), skipOffstage: false);
-      await tester.tap(setting, warnIfMissed: false);
-      await tester.pump();
-    }
+      expect(oldCommunicator.commandEvents, isEmpty);
+      expect(newCommunicator.commandEvents, isEmpty);
+      expect(oldPublications, 0);
+      expect(oldSerial.disconnects, 0);
+      expect(replacementSerial.disconnects, 0);
 
-    expect(oldCommunicator.commandEvents, isEmpty);
-    expect(newCommunicator.commandEvents, isEmpty);
-    expect(oldPublications, 0);
-    expect(oldSerial.disconnects, 0);
-    expect(replacementSerial.disconnects, 0);
+      await tester.tap(
+        find.byKey(const Key('slot-edit-connection-changed-close')),
+      );
+      await tester.pumpAndSettle();
+      newCommunicator.commandEvents.clear();
+      await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const Key('slot-edit-connection-changed-close')),
-    );
-    await tester.pumpAndSettle();
-    newCommunicator.commandEvents.clear();
-    await tester.tap(find.byKey(const Key('slot-settings-edit-hf')));
-    await tester.pumpAndSettle();
+      expect(find.byType(SlotEditMenu), findsOneWidget);
+      expect(
+        find.text(const SlotMutationConnectionChanged().toString()),
+        findsNothing,
+      );
+      final newSetting = find.byKey(const Key('slot-edit-setting-gen1a'));
+      await tester.ensureVisible(newSetting);
+      final settingRect = tester.getRect(newSetting);
+      await tester.tapAt(
+        Offset(
+          settingRect.left + settingRect.width * 0.75,
+          settingRect.center.dy,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(SlotEditMenu), findsOneWidget);
-    expect(
-      find.text(const SlotMutationConnectionChanged().toString()),
-      findsNothing,
-    );
-    final newSetting = find.byKey(const Key('slot-edit-setting-gen1a'));
-    await tester.ensureVisible(newSetting);
-    final settingRect = tester.getRect(newSetting);
-    await tester.tapAt(
-      Offset(
-          settingRect.left + settingRect.width * 0.75, settingRect.center.dy),
-    );
-    await tester.pumpAndSettle();
-
-    expect(newCommunicator.commandEvents, contains('setting-gen1a:false'));
-    expect(oldCommunicator.commandEvents, isEmpty);
-  });
+      expect(newCommunicator.commandEvents, contains('setting-gen1a:false'));
+      expect(oldCommunicator.commandEvents, isEmpty);
+    },
+  );
 }
 
 const _classicQuickSettingKeys = [
@@ -2958,20 +3011,22 @@ const _classicQuickSettingKeys = [
 ];
 
 Future<void> _pumpPage(
-        WidgetTester tester, ChameleonGUIState appState, Widget page,
-        {ThemeData? theme}) =>
-    tester.pumpWidget(
-      ChangeNotifierProvider<ChameleonGUIState>.value(
-        value: appState,
-        child: MaterialApp(
-          theme: theme,
-          locale: const Locale('en'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: page,
-        ),
-      ),
-    );
+  WidgetTester tester,
+  ChameleonGUIState appState,
+  Widget page, {
+  ThemeData? theme,
+}) => tester.pumpWidget(
+  ChangeNotifierProvider<ChameleonGUIState>.value(
+    value: appState,
+    child: MaterialApp(
+      theme: theme,
+      locale: const Locale('en'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: page,
+    ),
+  ),
+);
 
 void _replaceConnection(
   ChameleonGUIState appState,
@@ -2995,9 +3050,9 @@ ChameleonGUIState _connectedState(ChameleonCommunicator communicator) {
     ..portName = 'test-port'
     ..activeDevicePort = 'test-port';
   return ChameleonGUIState(
-    SharedPreferencesProvider(),
-    firmwareCatalog: const CurrentFirmwareCatalogStub(),
-  )
+      SharedPreferencesProvider(),
+      firmwareCatalog: const CurrentFirmwareCatalogStub(),
+    )
     ..connector = serial
     ..communicator = communicator
     ..log = Logger();
@@ -3058,9 +3113,8 @@ class _SlotCommunicator extends ChameleonCommunicator {
     return slotTypes ??
         List.generate(
           8,
-          (index) => SlotTypes(
-            hf: index == 0 ? TagType.mifare1K : TagType.unknown,
-          ),
+          (index) =>
+              SlotTypes(hf: index == 0 ? TagType.mifare1K : TagType.unknown),
         );
   }
 
@@ -3081,10 +3135,7 @@ class _SlotCommunicator extends ChameleonCommunicator {
       throw StateError('slot names unavailable');
     }
     return slotNames ??
-        List.generate(
-          8,
-          (index) => SlotNames(hf: index == 0 ? name : ''),
-        );
+        List.generate(8, (index) => SlotNames(hf: index == 0 ? name : ''));
   }
 
   @override
@@ -3197,20 +3248,20 @@ class _SlotCommunicator extends ChameleonCommunicator {
 
   @override
   Future<CardData> mf1GetAntiCollData() async => CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x08,
-        atqa: Uint8List.fromList([0x00, 0x04]),
-        ats: Uint8List(0),
-      );
+    uid: Uint8List.fromList([1, 2, 3, 4]),
+    sak: 0x08,
+    atqa: Uint8List.fromList([0x00, 0x04]),
+    ats: Uint8List(0),
+  );
 
   @override
   Future<EmulatorSettings> getMf1EmulatorSettings() async => EmulatorSettings(
-        isDetectionEnabled: false,
-        isGen1a: true,
-        isGen2: true,
-        isAntiColl: true,
-        writeMode: MifareWriteMode.normal,
-      );
+    isDetectionEnabled: false,
+    isGen1a: true,
+    isGen2: true,
+    isAntiColl: true,
+    writeMode: MifareWriteMode.normal,
+  );
 
   @override
   Future<Mf1PrngType> getMf1PrngType() async => Mf1PrngType.weak;
@@ -3292,8 +3343,10 @@ class _SlotCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<List<int>> getDeviceCapabilities() async =>
-      [ChameleonCommand.setIdteckEmulatorID.value];
+  Future<List<int>> getDeviceCapabilities() async => [
+    ChameleonCommand.setIdteckEmulatorID.value,
+    ChameleonCommand.mf0UlcAuth.value,
+  ];
 }
 
 class _TestSerial extends AbstractSerial {
@@ -3319,4 +3372,10 @@ class _TestSerial extends AbstractSerial {
 
   @override
   Future<bool> write(Uint8List command, {bool firmware = false}) async => true;
+}
+
+class _ActProxSlotCommunicator extends _SlotCommunicator {
+  @override
+  Future<HIDCard> getHIDProxEmulatorID() async =>
+      HIDCard.fromUID('2A 00 00 00 FF 00 00 00 FF FF 00 03 84');
 }

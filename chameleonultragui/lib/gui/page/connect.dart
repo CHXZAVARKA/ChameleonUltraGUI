@@ -401,7 +401,7 @@ class _ConnectPageState extends State<ConnectPage> {
                         ? 'assets/black-ultra-standing-front.webp'
                         : 'assets/black-lite-standing-front.webp',
                     fit: BoxFit.fitHeight,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
                 const SizedBox(height: 8),

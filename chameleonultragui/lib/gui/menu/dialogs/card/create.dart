@@ -1,11 +1,14 @@
+import 'package:provider/provider.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/vanity_sak.dart';
+import 'package:chameleonultragui/helpers/general.dart';
+import 'package:chameleonultragui/gui/component/ioprox_fields.dart';
+import 'package:chameleonultragui/gui/component/mifare/vanity_sak_checkbox.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
-import 'package:flutter/material.dart';
-import 'package:chameleonultragui/helpers/general.dart';
-import 'package:chameleonultragui/sharedprefsprovider.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:chameleonultragui/main.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:chameleonultragui/gui/component/generated_card_identity_fields.dart';
 import 'package:chameleonultragui/helpers/card_generator.dart';
@@ -41,10 +44,28 @@ class CardCreateMenuState extends State<CardCreateMenu> {
   TextEditingController issueLevelController = TextEditingController();
   TextEditingController oemController = TextEditingController();
 
+  final ioProxVersionController = TextEditingController();
+  final ioProxFacilityCodeController = TextEditingController();
+  final ioProxCardNumberController = TextEditingController();
+
+  @override
+  void dispose() {
+    uidController.removeListener(refreshVanitySak);
+    ioProxVersionController.dispose();
+    ioProxFacilityCodeController.dispose();
+    ioProxCardNumberController.dispose();
+    super.dispose();
+  }
+
   Color pickerColor = Colors.deepOrange;
   Color currentColor = Colors.deepOrange;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final CardIdentityControllers identityControllers;
+  bool vanitySak = false;
+  void refreshVanitySak() {
+    final value = mfClassicVanitySakFromUidHex(uidController.text);
+    if (value != null && mounted) setState(() => vanitySak = value);
+  }
 
   @override
   void initState() {
@@ -61,6 +82,7 @@ class CardCreateMenuState extends State<CardCreateMenu> {
       issueLevel: issueLevelController,
       oem: oemController,
     );
+    uidController.addListener(refreshVanitySak);
     _resetCounterControllers();
   }
 
@@ -91,78 +113,81 @@ class CardCreateMenuState extends State<CardCreateMenu> {
                 controller: nameController,
                 validator: (value) => validateName(value, localizations),
                 decoration: InputDecoration(
-                    labelText: localizations.name,
-                    hintText: localizations.enter_name_of_card,
-                    prefix: Transform(
-                        transform: Matrix4.translationValues(0, 7, 0),
-                        child: IconButton(
-                          icon: Icon(
-                              (chameleonTagToFrequency(selectedType) ==
-                                      TagFrequency.hf)
-                                  ? Icons.credit_card
-                                  : Icons.wifi,
-                              color: currentColor),
-                          onPressed: () async {
-                            showDialog(
-                              context: context,
-                              builder: (BuildContext context) {
-                                return AlertDialog(
-                                  title: Text(localizations.pick_color),
-                                  content: SingleChildScrollView(
-                                    child: ColorPicker(
-                                      pickerColor: pickerColor,
-                                      onColorChanged: (Color color) {
-                                        setState(() {
-                                          pickerColor = color;
-                                        });
-                                      },
-                                      pickerAreaHeightPercent: 0.8,
-                                    ),
-                                  ),
-                                  actions: <Widget>[
-                                    TextButton(
-                                      onPressed: () {
-                                        setState(() => currentColor =
-                                            pickerColor = Colors.deepOrange);
-                                        Navigator.pop(context);
-                                      },
-                                      child: Text(localizations.reset_default),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.pop(context);
-                                      },
-                                      child: Text(localizations.cancel),
-                                    ),
-                                    TextButton(
-                                      child: Text(localizations.ok),
-                                      onPressed: () {
-                                        setState(
-                                            () => currentColor = pickerColor);
-                                        Navigator.pop(context);
-                                      },
-                                    ),
-                                  ],
-                                );
-                              },
+                  labelText: localizations.name,
+                  hintText: localizations.enter_name_of_card,
+                  prefix: Transform(
+                    transform: Matrix4.translationValues(0, 7, 0),
+                    child: IconButton(
+                      icon: Icon(
+                        (chameleonTagToFrequency(selectedType) ==
+                                TagFrequency.hf)
+                            ? Icons.credit_card
+                            : Icons.wifi,
+                        color: currentColor,
+                      ),
+                      onPressed: () async {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: Text(localizations.pick_color),
+                              content: SingleChildScrollView(
+                                child: ColorPicker(
+                                  pickerColor: pickerColor,
+                                  onColorChanged: (Color color) {
+                                    setState(() {
+                                      pickerColor = color;
+                                    });
+                                  },
+                                  pickerAreaHeightPercent: 0.8,
+                                ),
+                              ),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () {
+                                    setState(
+                                      () => currentColor = pickerColor =
+                                          Colors.deepOrange,
+                                    );
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text(localizations.reset_default),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text(localizations.cancel),
+                                ),
+                                TextButton(
+                                  child: Text(localizations.ok),
+                                  onPressed: () {
+                                    setState(() => currentColor = pickerColor);
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                              ],
                             );
                           },
-                        ))),
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               DropdownButton<TagType>(
                 value: selectedType,
-                items: [
-                  ...getTagTypesByFrequency(TagFrequency.hf),
-                  ...getTagTypesByFrequency(TagFrequency.lf)
-                ].map<DropdownMenuItem<TagType>>((TagType type) {
-                  return DropdownMenuItem<TagType>(
-                    value: type,
-                    child: Text(
-                      chameleonTagToString(type, localizations),
-                    ),
-                  );
-                }).toList(),
+                items:
+                    [
+                      ...getTagTypesByFrequency(TagFrequency.hf),
+                      ...getTagTypesByFrequency(TagFrequency.lf),
+                    ].map<DropdownMenuItem<TagType>>((TagType type) {
+                      return DropdownMenuItem<TagType>(
+                        value: type,
+                        child: Text(chameleonTagToString(type, localizations)),
+                      );
+                    }).toList(),
                 onChanged: (TagType? newValue) {
                   if (newValue! != TagType.unknown) {
                     setState(() {
@@ -173,11 +198,23 @@ class CardCreateMenuState extends State<CardCreateMenu> {
                   appState.changesMade();
                 },
               ),
-              GeneratedCardIdentityFields(
-                type: selectedType,
-                controllers: identityControllers,
-                ultralightCounters: ultralightCounterControllers,
-              ),
+              if (selectedType == TagType.ioProx)
+                IoProxFields(
+                  versionController: ioProxVersionController,
+                  facilityCodeController: ioProxFacilityCodeController,
+                  cardNumberController: ioProxCardNumberController,
+                )
+              else
+                GeneratedCardIdentityFields(
+                  type: selectedType,
+                  controllers: identityControllers,
+                  ultralightCounters: ultralightCounterControllers,
+                ),
+              if (isMifareClassic(selectedType))
+                VanitySakCheckbox(
+                  value: vanitySak,
+                  onChanged: (v) => setState(() => vanitySak = v ?? false),
+                ),
             ],
           ),
         ),
@@ -196,14 +233,21 @@ class CardCreateMenuState extends State<CardCreateMenu> {
             }
 
             String finalUid;
-            if (selectedType == TagType.hidProx) {
+            if (selectedType == TagType.ioProx) {
+              finalUid = IoProxCard.fromFields(
+                version: int.parse(ioProxVersionController.text),
+                facilityCode: int.parse(ioProxFacilityCodeController.text),
+                cardNumber: int.parse(ioProxCardNumberController.text),
+              ).toString();
+            } else if (selectedType == TagType.hidProx) {
               int hidType = int.parse(hidTypeController.text);
               int facilityCode = int.parse(facilityCodeController.text);
               int issueLevel = int.parse(issueLevelController.text);
               int oem = int.parse(oemController.text);
 
-              Uint8List uid =
-                  hexToBytes(uidController.text.replaceAll(' ', ''));
+              Uint8List uid = hexToBytes(
+                uidController.text.replaceAll(' ', ''),
+              );
 
               HIDCard hidCard = HIDCard(
                 hidType: hidType,
@@ -223,8 +267,8 @@ class CardCreateMenuState extends State<CardCreateMenu> {
                 : hexToBytes(sakController.text)[0];
             final atqa =
                 chameleonTagToFrequency(selectedType) == TagFrequency.lf
-                    ? Uint8List(0)
-                    : hexToBytes(atqaController.text);
+                ? Uint8List(0)
+                : hexToBytes(atqaController.text);
             final ats = chameleonTagToFrequency(selectedType) == TagFrequency.lf
                 ? Uint8List(0)
                 : hexToBytes(atsController.text);
@@ -234,29 +278,32 @@ class CardCreateMenuState extends State<CardCreateMenu> {
               uid: hexToBytes(uidController.text),
               sak: sak,
               atqa: atqa,
+              vanitySak: vanitySak,
             );
 
             var tag = CardSave(
-                name: nameController.text,
-                sak: sak,
-                atqa: atqa,
-                uid: finalUid,
-                extraData: CardSaveExtra(
-                  mifareClassicDumpComplete:
-                      isMifareClassic(selectedType) ? true : null,
-                  ultralightSignature:
-                      hexToBytes(ultralightSignatureController.text),
-                  ultralightVersion:
-                      hexToBytes(ultralightVersionController.text),
-                  ultralightCounters: ultralightCounterControllers
-                      .map((controller) => int.parse(controller.text))
-                      .toList(),
+              name: nameController.text,
+              sak: sak,
+              atqa: atqa,
+              uid: finalUid,
+              extraData: CardSaveExtra(
+                mifareClassicDumpComplete: isMifareClassic(selectedType)
+                    ? true
+                    : null,
+                ultralightSignature: hexToBytes(
+                  ultralightSignatureController.text,
                 ),
-                tag: selectedType,
-                data: blocks,
-                folderId: widget.folderId,
-                color: currentColor,
-                ats: ats);
+                ultralightVersion: hexToBytes(ultralightVersionController.text),
+                ultralightCounters: ultralightCounterControllers
+                    .map((controller) => int.parse(controller.text))
+                    .toList(),
+              ),
+              tag: selectedType,
+              data: blocks,
+              folderId: widget.folderId,
+              color: currentColor,
+              ats: ats,
+            );
 
             var tags = appState.sharedPreferencesProvider.getCards();
             tags.add(tag);

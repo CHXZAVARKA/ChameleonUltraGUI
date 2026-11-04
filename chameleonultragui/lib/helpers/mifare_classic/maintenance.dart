@@ -214,29 +214,23 @@ class MifareClassicMaintenancePlan {
   final int dataBlockCount;
 
   MifareClassicMaintenancePlan._({
-    required Object ownerToken,
-    required MifareClassicGeometry geometry,
+    required this._ownerToken,
+    required this._geometry,
     required Uint8List expectedUid,
-    required int expectedSak,
+    required this._expectedSak,
     required Uint8List expectedAtqa,
     required Uint8List expectedManufacturerBlock,
-    required _MifareClassicCredential manufacturerReadCredential,
-    required int capacityBlock,
-    required _MifareClassicCredential capacityCredential,
+    required this._manufacturerReadCredential,
+    required this._capacityBlock,
+    required this._capacityCredential,
     required List<_MifareClassicMaintenancePrecondition> preconditions,
     required List<_MifareClassicMaintenanceOperation> operations,
     required this.unchangedBlocks,
     required this.dataBlockCount,
-  })  : _ownerToken = ownerToken,
-        _geometry = geometry,
-        _expectedUid = Uint8List.fromList(expectedUid),
-        _expectedSak = expectedSak,
+  })  : _expectedUid = Uint8List.fromList(expectedUid),
         _expectedAtqa = Uint8List.fromList(expectedAtqa),
         _expectedManufacturerBlock =
             Uint8List.fromList(expectedManufacturerBlock),
-        _manufacturerReadCredential = manufacturerReadCredential,
-        _capacityBlock = capacityBlock,
-        _capacityCredential = capacityCredential,
         _preconditions = List.unmodifiable(preconditions),
         _operations = List.unmodifiable(operations);
 

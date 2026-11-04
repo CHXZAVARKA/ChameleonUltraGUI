@@ -37,7 +37,7 @@ void main() {
         'UID': '01020304',
         'SAK': '09',
         'ATQA': '0400',
-        if (cardSize != null) 'CardSize': cardSize,
+        'CardSize': ?cardSize,
       },
       'blocks': sourceBlocks ??
           {

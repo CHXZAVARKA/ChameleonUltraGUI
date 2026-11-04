@@ -18,10 +18,14 @@ void main() {
 
   test('profile includes only found slots with six-byte keys', () async {
     final appState = ChameleonGUIState(SharedPreferencesProvider());
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final checkMarks =
-        List.filled(80, ChameleonKeyCheckmark.none, growable: false);
+    final localizations = await AppLocalizations.delegate.load(
+      const Locale('en'),
+    );
+    final checkMarks = List.filled(
+      80,
+      ChameleonKeyCheckmark.none,
+      growable: false,
+    );
     final validKeys = List.generate(80, (_) => Uint8List(0), growable: false);
     checkMarks[0] = ChameleonKeyCheckmark.found;
     validKeys[0] = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
@@ -45,213 +49,243 @@ void main() {
     expect(profile.assignedKey(0, 1), isNull);
   });
 
-  test('EV1 signature defaults are exported only after live authentication',
-      () async {
-    final communicator = _RecordingCommunicator(
-      acceptedSingleKey: gMifareClassicKeys[3],
-      acceptedDictionaryKey: gMifareClassicKeys[3],
-      acceptAllSingleKeys: true,
-    );
-    final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..connector = _TestSerial(log: Logger())
-      ..communicator = communicator
-      ..log = Logger();
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final checkMarks =
-        List.filled(80, ChameleonKeyCheckmark.disabled, growable: false);
-    final recovery = MifareClassicRecovery(
-      appState: appState,
-      update: () {},
-      localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
-      isMifareClassicEV1: true,
-      checkMarks: checkMarks,
-    );
+  test(
+    'EV1 signature defaults are exported only after live authentication',
+    () async {
+      final communicator = _RecordingCommunicator(
+        acceptedSingleKey: gMifareClassicKeys[3],
+        acceptedDictionaryKey: gMifareClassicKeys[3],
+        acceptAllSingleKeys: true,
+      );
+      final appState = ChameleonGUIState(SharedPreferencesProvider())
+        ..connector = _TestSerial(log: Logger())
+        ..communicator = communicator
+        ..log = Logger();
+      final localizations = await AppLocalizations.delegate.load(
+        const Locale('en'),
+      );
+      final checkMarks = List.filled(
+        80,
+        ChameleonKeyCheckmark.disabled,
+        growable: false,
+      );
+      final recovery = MifareClassicRecovery(
+        appState: appState,
+        update: () {},
+        localizations: localizations,
+        mifareClassicType: MifareClassicType.m1k,
+        isMifareClassicEV1: true,
+        checkMarks: checkMarks,
+      );
 
-    expect(recovery.getSectorState(16, 0), ChameleonKeyCheckmark.disabled);
-    expect(recovery.getSectorKey(16, 0), isEmpty);
-    expect(recovery.hasVerifiedKeys, isFalse);
-    expect(
-      () => recovery.createKeyProfile(name: 'EV1 defaults'),
-      throwsFormatException,
-    );
+      expect(recovery.getSectorState(16, 0), ChameleonKeyCheckmark.disabled);
+      expect(recovery.getSectorKey(16, 0), isEmpty);
+      expect(recovery.hasVerifiedKeys, isFalse);
+      expect(
+        () => recovery.createKeyProfile(name: 'EV1 defaults'),
+        throwsFormatException,
+      );
 
-    await recovery.checkKeys(skipDefaultDictionary: true);
-    final profile = recovery.createKeyProfile(name: 'Verified EV1');
+      await recovery.checkKeys(skipDefaultDictionary: true);
+      final profile = recovery.createKeyProfile(name: 'Verified EV1');
 
-    expect(
-        profile.assignments.map((assignment) => assignment.sector), [16, 17]);
-    expect(profile.keyCount, 4);
-    expect(communicator.calls, [
-      'single:67:96:5C8FF9990DA2',
-      'single:67:97:D01AFEEB890A',
-      'single:71:96:75CCB59C9BED',
-      'single:71:97:4B791BEA7BCC',
-    ]);
-  });
-
-  test('rechecking EV1 preserves a verified alternative signature key',
-      () async {
-    final alternativeKey = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
-    final communicator = _RecordingCommunicator(
-      acceptedSingleKey: alternativeKey,
-      acceptedDictionaryKey: alternativeKey,
-    );
-    final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..connector = _TestSerial(log: Logger())
-      ..communicator = communicator
-      ..log = Logger();
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final recovery = MifareClassicRecovery(
-      appState: appState,
-      update: () {},
-      localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
-      isMifareClassicEV1: true,
-      checkMarks:
-          List.filled(80, ChameleonKeyCheckmark.disabled, growable: false),
-      selectedKeyProfile: MifareClassicKeyProfile(
-        name: 'Alternative EV1 key',
-        cardType: 'm1k',
-        sectorCount: 18,
-        assignments: [
-          MifareClassicKeyAssignment(sector: 16, keyA: alternativeKey),
-        ],
-      ),
-    );
-
-    await recovery.checkKeys(skipDefaultDictionary: true);
-    expect(recovery.getSectorKey(16, 0), orderedEquals(alternativeKey));
-
-    communicator.calls.clear();
-    await recovery.checkKeys(skipDefaultDictionary: true);
-
-    expect(recovery.getSectorKey(16, 0), orderedEquals(alternativeKey));
-    expect(
-      recovery
-          .createKeyProfile(name: 'Verified alternative')
-          .assignments
-          .single
-          .keyA,
-      orderedEquals(alternativeKey),
-    );
-    expect(
-      communicator.calls,
-      [
+      expect(profile.assignments.map((assignment) => assignment.sector), [
+        16,
+        17,
+      ]);
+      expect(profile.keyCount, 4);
+      expect(communicator.calls, [
+        'single:67:96:5C8FF9990DA2',
         'single:67:97:D01AFEEB890A',
         'single:71:96:75CCB59C9BED',
         'single:71:97:4B791BEA7BCC',
-      ],
-    );
-  });
+      ]);
+    },
+  );
 
   test(
-      'assigned profile is checked first and dictionary fills unresolved slots',
-      () async {
-    final profileA = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
-    final wrongProfileB = Uint8List.fromList([6, 5, 4, 3, 2, 1]);
-    final dictionaryKey =
-        Uint8List.fromList([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-    final communicator = _RecordingCommunicator(
-      acceptedSingleKey: profileA,
-      acceptedDictionaryKey: dictionaryKey,
-    );
-    final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..connector = _TestSerial(log: Logger())
-      ..communicator = communicator
-      ..log = Logger();
-    final checkMarks =
-        List.filled(80, ChameleonKeyCheckmark.disabled, growable: false);
-    checkMarks[0] = ChameleonKeyCheckmark.none;
-    checkMarks[40 + 1] = ChameleonKeyCheckmark.none;
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final recovery = MifareClassicRecovery(
-      appState: appState,
-      update: () {},
-      localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
-      checkMarks: checkMarks,
-      selectedDictionary: Dictionary(
-        id: 'dictionary',
-        name: 'Fallback',
-        keys: [dictionaryKey],
-        keyLength: 12,
-      ),
-      selectedKeyProfile: MifareClassicKeyProfile(
-        name: 'Assigned',
-        cardType: 'm1k',
-        sectorCount: 16,
-        assignments: [
-          MifareClassicKeyAssignment(sector: 0, keyA: profileA),
-          MifareClassicKeyAssignment(sector: 1, keyB: wrongProfileB),
-        ],
-      ),
-    );
+    'rechecking EV1 preserves a verified alternative signature key',
+    () async {
+      final alternativeKey = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+      final communicator = _RecordingCommunicator(
+        acceptedSingleKey: alternativeKey,
+        acceptedDictionaryKey: alternativeKey,
+      );
+      final appState = ChameleonGUIState(SharedPreferencesProvider())
+        ..connector = _TestSerial(log: Logger())
+        ..communicator = communicator
+        ..log = Logger();
+      final localizations = await AppLocalizations.delegate.load(
+        const Locale('en'),
+      );
+      final recovery = MifareClassicRecovery(
+        appState: appState,
+        update: () {},
+        localizations: localizations,
+        mifareClassicType: MifareClassicType.m1k,
+        isMifareClassicEV1: true,
+        checkMarks: List.filled(
+          80,
+          ChameleonKeyCheckmark.disabled,
+          growable: false,
+        ),
+        selectedKeyProfile: MifareClassicKeyProfile(
+          name: 'Alternative EV1 key',
+          cardType: 'm1k',
+          sectorCount: 18,
+          assignments: [
+            MifareClassicKeyAssignment(sector: 16, keyA: alternativeKey),
+          ],
+        ),
+      );
 
-    await recovery.checkKeys(skipDefaultDictionary: true);
+      await recovery.checkKeys(skipDefaultDictionary: true);
+      expect(recovery.getSectorKey(16, 0), orderedEquals(alternativeKey));
 
-    expect(communicator.calls, [
-      'single:3:96:010203040506',
-      'single:7:97:060504030201',
-      'multiple:7:97:FFFFFFFFFFFF',
-    ]);
-    expect(recovery.getSectorKey(0, 0), orderedEquals(profileA));
-    expect(recovery.getSectorKey(1, 1), orderedEquals(dictionaryKey));
-    expect(recovery.allKeysExists, isTrue);
-  });
+      communicator.calls.clear();
+      await recovery.checkKeys(skipDefaultDictionary: true);
 
-  test('device errors do not fall through to dictionary key scanning',
-      () async {
-    final profileKey = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
-    final dictionaryKey = Uint8List.fromList(List.filled(6, 0xFF));
-    final communicator = _RecordingCommunicator(
-      acceptedSingleKey: profileKey,
-      acceptedDictionaryKey: dictionaryKey,
-      forcedSingleStatus: 0x66,
-    );
-    final appState = ChameleonGUIState(SharedPreferencesProvider())
-      ..connector = _TestSerial(log: Logger())
-      ..communicator = communicator
-      ..log = Logger();
-    final checkMarks =
-        List.filled(80, ChameleonKeyCheckmark.disabled, growable: false);
-    checkMarks[0] = ChameleonKeyCheckmark.none;
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
-    final recovery = MifareClassicRecovery(
-      appState: appState,
-      update: () {},
-      localizations: localizations,
-      mifareClassicType: MifareClassicType.m1k,
-      checkMarks: checkMarks,
-      selectedDictionary: Dictionary(
-        id: 'dictionary',
-        name: 'Fallback',
-        keys: [dictionaryKey],
-        keyLength: 12,
-      ),
-      selectedKeyProfile: MifareClassicKeyProfile(
-        name: 'Assigned',
-        cardType: 'm1k',
-        sectorCount: 16,
-        assignments: [
-          MifareClassicKeyAssignment(sector: 0, keyA: profileKey),
-        ],
-      ),
-    );
+      expect(recovery.getSectorKey(16, 0), orderedEquals(alternativeKey));
+      expect(
+        recovery
+            .createKeyProfile(name: 'Verified alternative')
+            .assignments
+            .single
+            .keyA,
+        orderedEquals(alternativeKey),
+      );
+      expect(communicator.calls, [
+        'single:67:97:D01AFEEB890A',
+        'single:71:96:75CCB59C9BED',
+        'single:71:97:4B791BEA7BCC',
+      ]);
+    },
+  );
 
-    await expectLater(
-      recovery.checkKeys(skipDefaultDictionary: true),
-      throwsStateError,
-    );
-    expect(communicator.calls, ['single:3:96:010203040506']);
-  });
+  test(
+    'assigned profile is checked first and dictionary fills unresolved slots',
+    () async {
+      final profileA = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+      final wrongProfileB = Uint8List.fromList([6, 5, 4, 3, 2, 1]);
+      final dictionaryKey = Uint8List.fromList([
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+        0xFF,
+      ]);
+      final communicator = _RecordingCommunicator(
+        acceptedSingleKey: profileA,
+        acceptedDictionaryKey: dictionaryKey,
+      );
+      final appState = ChameleonGUIState(SharedPreferencesProvider())
+        ..connector = _TestSerial(log: Logger())
+        ..communicator = communicator
+        ..log = Logger();
+      final checkMarks = List.filled(
+        80,
+        ChameleonKeyCheckmark.disabled,
+        growable: false,
+      );
+      checkMarks[0] = ChameleonKeyCheckmark.none;
+      checkMarks[40 + 1] = ChameleonKeyCheckmark.none;
+      final localizations = await AppLocalizations.delegate.load(
+        const Locale('en'),
+      );
+      final recovery = MifareClassicRecovery(
+        appState: appState,
+        update: () {},
+        localizations: localizations,
+        mifareClassicType: MifareClassicType.m1k,
+        checkMarks: checkMarks,
+        selectedDictionary: Dictionary(
+          id: 'dictionary',
+          name: 'Fallback',
+          keys: [dictionaryKey],
+          keyLength: 12,
+        ),
+        selectedKeyProfile: MifareClassicKeyProfile(
+          name: 'Assigned',
+          cardType: 'm1k',
+          sectorCount: 16,
+          assignments: [
+            MifareClassicKeyAssignment(sector: 0, keyA: profileA),
+            MifareClassicKeyAssignment(sector: 1, keyB: wrongProfileB),
+          ],
+        ),
+      );
+
+      await recovery.checkKeys(skipDefaultDictionary: true);
+
+      expect(communicator.calls, [
+        'single:3:96:010203040506',
+        'single:7:97:060504030201',
+        'multiple:7:97:FFFFFFFFFFFF',
+      ]);
+      expect(recovery.getSectorKey(0, 0), orderedEquals(profileA));
+      expect(recovery.getSectorKey(1, 1), orderedEquals(dictionaryKey));
+      expect(recovery.allKeysExists, isTrue);
+    },
+  );
+
+  test(
+    'device errors do not fall through to dictionary key scanning',
+    () async {
+      final profileKey = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+      final dictionaryKey = Uint8List.fromList(List.filled(6, 0xFF));
+      final communicator = _RecordingCommunicator(
+        acceptedSingleKey: profileKey,
+        acceptedDictionaryKey: dictionaryKey,
+        forcedSingleStatus: 0x66,
+      );
+      final appState = ChameleonGUIState(SharedPreferencesProvider())
+        ..connector = _TestSerial(log: Logger())
+        ..communicator = communicator
+        ..log = Logger();
+      final checkMarks = List.filled(
+        80,
+        ChameleonKeyCheckmark.disabled,
+        growable: false,
+      );
+      checkMarks[0] = ChameleonKeyCheckmark.none;
+      final localizations = await AppLocalizations.delegate.load(
+        const Locale('en'),
+      );
+      final recovery = MifareClassicRecovery(
+        appState: appState,
+        update: () {},
+        localizations: localizations,
+        mifareClassicType: MifareClassicType.m1k,
+        checkMarks: checkMarks,
+        selectedDictionary: Dictionary(
+          id: 'dictionary',
+          name: 'Fallback',
+          keys: [dictionaryKey],
+          keyLength: 12,
+        ),
+        selectedKeyProfile: MifareClassicKeyProfile(
+          name: 'Assigned',
+          cardType: 'm1k',
+          sectorCount: 16,
+          assignments: [
+            MifareClassicKeyAssignment(sector: 0, keyA: profileKey),
+          ],
+        ),
+      );
+
+      await expectLater(
+        recovery.checkKeys(skipDefaultDictionary: true),
+        throwsStateError,
+      );
+      expect(communicator.calls, ['single:3:96:010203040506']);
+    },
+  );
 }
 
 class _RecordingCommunicator extends ChameleonCommunicator {
+  @override
+  Future<List<int>> getDeviceCapabilities() async => [];
   final Uint8List acceptedSingleKey;
   final Uint8List acceptedDictionaryKey;
   final int? forcedSingleStatus;
@@ -272,11 +306,15 @@ class _RecordingCommunicator extends ChameleonCommunicator {
 
   @override
   Future<ChameleonMessage> mf1AuthResult(
-      int block, int keyType, Uint8List key) async {
+    int block,
+    int keyType,
+    Uint8List key,
+  ) async {
     calls.add('single:$block:$keyType:${_hex(key)}');
     return ChameleonMessage(
       command: ChameleonCommand.mf1CheckKey.value,
-      status: forcedSingleStatus ??
+      status:
+          forcedSingleStatus ??
           (acceptAllSingleKeys || _hex(key) == _hex(acceptedSingleKey)
               ? 0
               : 0x06),
@@ -286,7 +324,10 @@ class _RecordingCommunicator extends ChameleonCommunicator {
 
   @override
   Future<Uint8List?> mf1AuthMultipleKeys(
-      int block, int keyType, List<Uint8List> keys) async {
+    int block,
+    int keyType,
+    List<Uint8List> keys,
+  ) async {
     calls.add('multiple:$block:$keyType:${keys.map(_hex).join(',')}');
     return keys.any((key) => _hex(key) == _hex(acceptedDictionaryKey))
         ? acceptedDictionaryKey

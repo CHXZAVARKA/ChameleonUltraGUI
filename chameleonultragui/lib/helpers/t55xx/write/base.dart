@@ -29,9 +29,7 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
 
   @override
   List<AbstractWriteHelper> getAvailableMethods() {
-    return [
-      inheritOperationContinuation(BaseT55XXCardHelper(communicator)),
-    ];
+    return [inheritOperationContinuation(BaseT55XXCardHelper(communicator))];
   }
 
   @override
@@ -44,77 +42,98 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
     var localizations = AppLocalizations.of(context)!;
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
 
-    return Row(children: [
-      Expanded(
-          child: Form(
-              key: formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: currentKeyController,
-                    decoration: InputDecoration(
-                        labelText: localizations.key,
-                        hintMaxLines: 4,
-                        hintText: localizations
-                            .enter_something(localizations.t55xx_key_prompt)),
-                    inputFormatters: hexFormatter,
-                    validator: (value) => validateHex(value, localizations,
-                        exactBytes: 4, fieldName: localizations.key),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Form(
+          key: formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: currentKeyController,
+                decoration: InputDecoration(
+                  labelText: localizations.key,
+                  hintMaxLines: 4,
+                  hintText: localizations.enter_something(
+                    localizations.t55xx_key_prompt,
                   ),
-                  TextFormField(
-                    controller: newKeyController,
-                    decoration: InputDecoration(
-                        labelText: localizations.new_key,
-                        hintMaxLines: 4,
-                        hintText: localizations.enter_something(
-                            localizations.t55xx_new_key_prompt)),
-                    inputFormatters: hexFormatter,
-                    validator: (value) => validateHex(value, localizations,
-                        exactBytes: 4, fieldName: localizations.key),
-                  )
-                ],
-              ))),
-      TextButton(
-        onPressed: () => {
-          if (newKeyController.text.isNotEmpty)
-            {
-              if (currentKeyController.text.isNotEmpty)
-                {
-                  setState(() {
-                    currentKey = currentKeyController.text;
-                    newKey = newKeyController.text;
-                  })
-                }
-              else
-                {
-                  setState(() {
-                    currentKey = "20206666";
-                    newKey = "20206666";
-                  })
-                }
-            }
-          else
-            {
-              if (currentKeyController.text.isNotEmpty)
-                {
-                  setState(() {
-                    currentKey = currentKeyController.text;
-                    newKey = currentKeyController.text;
-                  })
-                }
-              else
-                {
-                  setState(() {
-                    currentKey = "20206666";
-                    newKey = "20206666";
-                  })
-                }
-            }
-        },
-        child: Text(localizations.next),
-      )
-    ]);
+                ),
+                inputFormatters: hexFormatter,
+                validator: (value) => validateHex(
+                  value,
+                  localizations,
+                  exactBytes: 4,
+                  fieldName: localizations.key,
+                ),
+              ),
+              TextFormField(
+                controller: newKeyController,
+                decoration: InputDecoration(
+                  labelText: localizations.new_key,
+                  hintMaxLines: 4,
+                  hintText: localizations.enter_something(
+                    localizations.t55xx_new_key_prompt,
+                  ),
+                ),
+                inputFormatters: hexFormatter,
+                validator: (value) => validateHex(
+                  value,
+                  localizations,
+                  exactBytes: 4,
+                  fieldName: localizations.key,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => {
+                if (newKeyController.text.isNotEmpty)
+                  {
+                    if (currentKeyController.text.isNotEmpty)
+                      {
+                        setState(() {
+                          currentKey = currentKeyController.text;
+                          newKey = newKeyController.text;
+                        }),
+                      }
+                    else
+                      {
+                        setState(() {
+                          currentKey = "20206666";
+                          newKey = "20206666";
+                        }),
+                      },
+                  }
+                else
+                  {
+                    if (currentKeyController.text.isNotEmpty)
+                      {
+                        setState(() {
+                          currentKey = currentKeyController.text;
+                          newKey = currentKeyController.text;
+                        }),
+                      }
+                    else
+                      {
+                        setState(() {
+                          currentKey = "20206666";
+                          newKey = "20206666";
+                        }),
+                      },
+                  },
+              },
+              child: Text(localizations.next),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   @override
@@ -145,11 +164,16 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
 
   @override
   Future<bool> writeData(
-      CardSave card, Function(int writeProgress) update) async {
+    CardSave card,
+    Function(int writeProgress) update,
+  ) async {
     if (!operationCanContinue) return false;
     if (isEM410X(card.tag)) {
-      await communicator.writeEM410XtoT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writeEM410XtoT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       if (!operationCanContinue) return false;
       // A write may have reached the tag. Keep only its safety read-back.
       await Future.delayed(const Duration(milliseconds: 500));
@@ -157,38 +181,65 @@ class BaseT55XXCardHelper extends AbstractWriteHelper {
       var newCard = await communicator.readEM410X();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.hidProx) {
-      await communicator.writeHIDProxToT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writeHIDProxToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
       if (!operationCanContinue) return false;
       var newCard = await communicator.readHIDProx();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.viking) {
-      await communicator.writeVikingToT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writeVikingToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
       if (!operationCanContinue) return false;
       var newCard = await communicator.readViking();
       return operationCanContinue && newCard.toString() == card.uid;
+    } else if (card.tag == TagType.jablotron) {
+      await communicator.writeJablotronToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
+      if (!operationCanContinue) return false;
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!operationCanContinue) return false;
+      final newCard = await communicator.readJablotron();
+      return operationCanContinue &&
+          newCard?.toString() == bytesToHexSpace(hexToBytes(card.uid));
     } else if (card.tag == TagType.pac) {
-      await communicator.writePacToT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writePacToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       if (!operationCanContinue) return false;
       var newCard = await communicator.readPac();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.ioProx) {
-      await communicator.writeIoProxToT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writeIoProxToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       if (!operationCanContinue) return false;
       await Future.delayed(const Duration(milliseconds: 500));
       if (!operationCanContinue) return false;
       var newCard = await communicator.readIoProx();
       return operationCanContinue && newCard.toString() == card.uid;
     } else if (card.tag == TagType.idteck) {
-      await communicator.writeIdteckToT55XX(hexToBytes(card.uid),
-          hexToBytes(newKey), [hexToBytes(currentKey), Uint8List(4)]);
+      await communicator.writeIdteckToT55XX(
+        hexToBytes(card.uid),
+        hexToBytes(newKey),
+        [hexToBytes(currentKey), Uint8List(4)],
+      );
       // IDTECK read is not implemented in the firmware (PSK demodulation
       // on the envelope-only tag-emulation ADC path is a follow-up), so we
       // cannot read back the tag for verification. Assume the T55xx write

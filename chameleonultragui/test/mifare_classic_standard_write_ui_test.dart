@@ -1,3 +1,7 @@
+import 'package:file_picker/file_picker.dart';
+
+import 'support/file_picker.dart';
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -19,12 +23,7 @@ import 'package:chameleonultragui/main.dart';
 import 'package:chameleonultragui/sharedprefsprovider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show
-        FontLoader,
-        MethodChannel,
-        PlatformException,
-        StandardMethodCodec,
-        rootBundle;
+    show FontLoader, PlatformException, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
@@ -39,35 +38,41 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'standard source controls stay in one row below 520 when they fit',
-      (tester) async {
-    await _pumpStandardSourceControls(tester, width: 500);
+    'standard source controls stay in one row below 520 when they fit',
+    (tester) async {
+      await _pumpStandardSourceControls(tester, width: 500);
 
-    final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
-    final separator = find.text('OR');
-    final selectSavedCard =
-        find.widgetWithText(OutlinedButton, 'Select saved card');
-    final loadFileCenter = tester.getCenter(loadFile);
-    final separatorCenter = tester.getCenter(separator);
-    final selectSavedCardCenter = tester.getCenter(selectSavedCard);
+      final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
+      final separator = find.text('OR');
+      final selectSavedCard = find.widgetWithText(
+        OutlinedButton,
+        'Select saved card',
+      );
+      final loadFileCenter = tester.getCenter(loadFile);
+      final separatorCenter = tester.getCenter(separator);
+      final selectSavedCardCenter = tester.getCenter(selectSavedCard);
 
-    expect(loadFileCenter.dy, selectSavedCardCenter.dy);
-    expect(separatorCenter.dx, greaterThan(loadFileCenter.dx));
-    expect(separatorCenter.dx, lessThan(selectSavedCardCenter.dx));
-    expect(
-      tester.getSize(loadFile).width,
-      tester.getSize(selectSavedCard).width,
-    );
-  });
+      expect(loadFileCenter.dy, selectSavedCardCenter.dy);
+      expect(separatorCenter.dx, greaterThan(loadFileCenter.dx));
+      expect(separatorCenter.dx, lessThan(selectSavedCardCenter.dx));
+      expect(
+        tester.getSize(loadFile).width,
+        tester.getSize(selectSavedCard).width,
+      );
+    },
+  );
 
-  testWidgets('standard source controls stack when their labels cannot fit',
-      (tester) async {
+  testWidgets('standard source controls stack when their labels cannot fit', (
+    tester,
+  ) async {
     await _pumpStandardSourceControls(tester, width: 320);
 
     final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
     final separator = find.text('OR');
-    final selectSavedCard =
-        find.widgetWithText(OutlinedButton, 'Select saved card');
+    final selectSavedCard = find.widgetWithText(
+      OutlinedButton,
+      'Select saved card',
+    );
     final loadFileCenter = tester.getCenter(loadFile);
     final separatorCenter = tester.getCenter(separator);
     final selectSavedCardCenter = tester.getCenter(selectSavedCard);
@@ -75,48 +80,55 @@ void main() {
     expect(loadFileCenter.dy, lessThan(separatorCenter.dy));
     expect(separatorCenter.dy, lessThan(selectSavedCardCenter.dy));
     expect(
-        tester.getTopLeft(loadFile).dx, tester.getTopLeft(selectSavedCard).dx);
+      tester.getTopLeft(loadFile).dx,
+      tester.getTopLeft(selectSavedCard).dx,
+    );
     expect(
       tester.getSize(loadFile).width,
       tester.getSize(selectSavedCard).width,
     );
   });
 
-  testWidgets('standard source controls stack at medium width with large text',
-      (tester) async {
-    await _pumpStandardSourceControls(
-      tester,
-      width: 500,
-      textScaler: const TextScaler.linear(2),
-    );
+  testWidgets(
+    'standard source controls stack at medium width with large text',
+    (tester) async {
+      await _pumpStandardSourceControls(
+        tester,
+        width: 500,
+        textScaler: const TextScaler.linear(2),
+      );
 
-    final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
-    final separator = find.text('OR');
-    final selectSavedCard =
-        find.widgetWithText(OutlinedButton, 'Select saved card');
-    final loadFileRect = tester.getRect(loadFile);
-    final separatorRect = tester.getRect(separator);
-    final selectSavedCardRect = tester.getRect(selectSavedCard);
-    final scrollView = find.byType(SingleChildScrollView);
-    final scrollViewRect = tester.getRect(scrollView);
-    final scrollViewPadding = tester
-        .widget<SingleChildScrollView>(scrollView)
-        .padding!
-        .resolve(Directionality.of(tester.element(scrollView)));
-    final contentLeft = scrollViewRect.left + scrollViewPadding.left;
-    final contentRight = scrollViewRect.right - scrollViewPadding.right;
+      final loadFile = find.widgetWithText(OutlinedButton, 'Load file');
+      final separator = find.text('OR');
+      final selectSavedCard = find.widgetWithText(
+        OutlinedButton,
+        'Select saved card',
+      );
+      final loadFileRect = tester.getRect(loadFile);
+      final separatorRect = tester.getRect(separator);
+      final selectSavedCardRect = tester.getRect(selectSavedCard);
+      final scrollView = find.byType(SingleChildScrollView);
+      final scrollViewRect = tester.getRect(scrollView);
+      final scrollViewPadding = tester
+          .widget<SingleChildScrollView>(scrollView)
+          .padding!
+          .resolve(Directionality.of(tester.element(scrollView)));
+      final contentLeft = scrollViewRect.left + scrollViewPadding.left;
+      final contentRight = scrollViewRect.right - scrollViewPadding.right;
 
-    expect(loadFileRect.bottom, lessThan(separatorRect.top));
-    expect(separatorRect.bottom, lessThan(selectSavedCardRect.top));
-    expect(loadFileRect.left, contentLeft);
-    expect(loadFileRect.right, contentRight);
-    expect(selectSavedCardRect.left, contentLeft);
-    expect(selectSavedCardRect.right, contentRight);
-    expect(tester.takeException(), isNull);
-  });
+      expect(loadFileRect.bottom, lessThan(separatorRect.top));
+      expect(separatorRect.bottom, lessThan(selectSavedCardRect.top));
+      expect(loadFileRect.left, contentLeft);
+      expect(loadFileRect.right, contentRight);
+      expect(selectSavedCardRect.left, contentLeft);
+      expect(selectSavedCardRect.right, contentRight);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('standard write offers only proven complete saved dumps',
-      (tester) async {
+  testWidgets('standard write offers only proven complete saved dumps', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -220,11 +232,14 @@ void main() {
     await tester.tap(find.text('Standard MIFARE Classic'));
     await tester.pumpAndSettle();
 
-    expect(find.text("Write the card's own dump to a standard card"),
-        findsOneWidget);
+    expect(
+      find.text("Write the card's own dump to a standard card"),
+      findsOneWidget,
+    );
     expect(
       find.text(
-          'Only data blocks are written. Block 0, keys, and access bits are left unchanged.'),
+        'Only data blocks are written. Block 0, keys, and access bits are left unchanged.',
+      ),
       findsOneWidget,
     );
     expect(find.byTooltip('Import key profile'), findsNothing);
@@ -239,8 +254,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Unverified legacy dump'), findsNothing);
-    expect(find.text('✓ Own EV1 dump · 1152 bytes · MIFARE Classic 1K EV1'),
-        findsOneWidget);
+    expect(
+      find.text('✓ Own EV1 dump · 1152 bytes · MIFARE Classic 1K EV1'),
+      findsOneWidget,
+    );
 
     expect(
       preferences
@@ -269,8 +286,9 @@ void main() {
     expect(find.byType(CheckboxListTile), findsNothing);
   });
 
-  testWidgets('editing an incomplete dump keeps it unavailable for writing',
-      (tester) async {
+  testWidgets('editing an incomplete dump keeps it unavailable for writing', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -304,9 +322,8 @@ void main() {
                 onPressed: () async {
                   await showDialog<void>(
                     context: context,
-                    builder: (context) => CardEditMenu(
-                      tagSave: preferences.getCards().single,
-                    ),
+                    builder: (context) =>
+                        CardEditMenu(tagSave: preferences.getCards().single),
                   );
                 },
                 child: const Text('Open edit'),
@@ -344,8 +361,10 @@ void main() {
     await tester.tap(find.text('Select saved card'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('No usable saved MIFARE Classic dumps'),
-        findsOneWidget);
+    expect(
+      find.textContaining('No usable saved MIFARE Classic dumps'),
+      findsOneWidget,
+    );
     expect(find.text('Incomplete dump'), findsNothing);
   });
 
@@ -455,20 +474,13 @@ void main() {
     'file picker failure hides diagnostics from the user and logs them',
     (tester) async {
       const diagnostics = 'PICKER_DIAGNOSTIC_17_8C4F';
-      const filePickerChannel = MethodChannel(
-        'miguelruivo.flutter.plugins.filepicker',
-        StandardMethodCodec(),
-      );
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(filePickerChannel, (call) async {
-        throw PlatformException(
+      final previousPicker = FilePickerPlatform.instance;
+      FilePickerPlatform.instance = TestFilePicker()
+        ..pickError = PlatformException(
           code: 'picker_failed',
           message: diagnostics,
         );
-      });
-      addTearDown(() => TestDefaultBinaryMessengerBinding
-          .instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(filePickerChannel, null));
+      addTearDown(() => FilePickerPlatform.instance = previousPicker);
 
       SharedPreferences.setMockInitialValues({});
       final preferences = SharedPreferencesProvider();
@@ -510,8 +522,9 @@ void main() {
     },
   );
 
-  testWidgets('Magic write holds foreground RF access for its whole sequence',
-      (tester) async {
+  testWidgets('Magic write holds foreground RF access for its whole sequence', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -565,8 +578,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('queued Standard preflight does not cross a reconnect',
-      (tester) async {
+  testWidgets('queued Standard preflight does not cross a reconnect', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -594,7 +608,9 @@ void main() {
         tag: TagType.mifareMini,
         extraData: CardSaveExtra(mifareClassicDumpComplete: true),
         data: List.generate(
-            256, (block) => block < 20 ? Uint8List(16) : Uint8List(0)),
+          256,
+          (block) => block < 20 ? Uint8List(16) : Uint8List(0),
+        ),
       ),
     ]);
     final logger = Logger(output: MemoryOutput());
@@ -705,8 +721,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Magic detection stops before the next RF command after DFU',
-      (tester) async {
+  testWidgets('Magic detection stops before the next RF command after DFU', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -755,8 +772,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('queued Standard write reports Stop as cancellation',
-      (tester) async {
+  testWidgets('queued Standard write reports Stop as cancellation', (
+    tester,
+  ) async {
     final preferences = await _standardMiniPreferences(_miniTargetBlocks());
     final logger = Logger(output: MemoryOutput());
     addTearDown(logger.close);
@@ -797,48 +815,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('successful Standard write reports verified and unchanged blocks',
-      (tester) async {
-    final targetBlocks = _miniTargetBlocks();
-    final preferences = await _standardMiniPreferences(targetBlocks);
-    final logger = Logger(output: MemoryOutput());
-    addTearDown(logger.close);
-    final communicator = _MiniMaintenanceCommunicator(
-      logger,
-      [
-        for (var block = 0; block < 20; block++)
-          Uint8List.fromList(targetBlocks[block]),
-      ]..[1] = Uint8List(16),
-    );
-    final appState = ChameleonGUIState(preferences)
-      ..log = logger
-      ..connector = (_TestSerial(log: logger)..connected = true)
-      ..communicator = communicator;
-    await _prepareStandardMiniPanel(tester, appState);
+  testWidgets(
+    'successful Standard write reports verified and unchanged blocks',
+    (tester) async {
+      final targetBlocks = _miniTargetBlocks();
+      final preferences = await _standardMiniPreferences(targetBlocks);
+      final logger = Logger(output: MemoryOutput());
+      addTearDown(logger.close);
+      final communicator = _MiniMaintenanceCommunicator(
+        logger,
+        [
+          for (var block = 0; block < 20; block++)
+            Uint8List.fromList(targetBlocks[block]),
+        ]..[1] = Uint8List(16),
+      );
+      final appState = ChameleonGUIState(preferences)
+        ..log = logger
+        ..connector = (_TestSerial(log: logger)..connected = true)
+        ..communicator = communicator;
+      await _prepareStandardMiniPanel(tester, appState);
 
-    final start = find.text('Start');
-    await tester.ensureVisible(start);
-    await tester.tap(start);
-    await tester.pumpAndSettle();
+      final start = find.text('Start');
+      await tester.ensureVisible(start);
+      await tester.tap(start);
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        'Complete: 1 block written and verified; 13 blocks already matched.',
-      ),
-      findsOneWidget,
-    );
-    expect(communicator.writeCalls, 1);
-    expect(
-      appState.standardWriteActivity?.state,
-      StandardWriteActivityState.succeeded,
-    );
-    expect(appState.standardWriteActivity?.progress.completed, 1);
-    expect(appState.standardWriteActivity?.progress.total, 1);
-    expect(tester.takeException(), isNull);
-  });
+      expect(
+        find.text(
+          'Complete: 1 block written and verified; 13 blocks already matched.',
+        ),
+        findsOneWidget,
+      );
+      expect(communicator.writeCalls, 1);
+      expect(
+        appState.standardWriteActivity?.state,
+        StandardWriteActivityState.succeeded,
+      );
+      expect(appState.standardWriteActivity?.progress.completed, 1);
+      expect(appState.standardWriteActivity?.progress.total, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('ambiguous Standard write retains verified partial progress',
-      (tester) async {
+  testWidgets('ambiguous Standard write retains verified partial progress', (
+    tester,
+  ) async {
     final targetBlocks = _miniTargetBlocks()..[2][0] = 2;
     final preferences = await _standardMiniPreferences(targetBlocks);
     final logger = Logger(output: MemoryOutput());
@@ -846,9 +867,9 @@ void main() {
     final communicator = _MiniMaintenanceCommunicator(
       logger,
       [
-        for (var block = 0; block < 20; block++)
-          Uint8List.fromList(targetBlocks[block]),
-      ]
+          for (var block = 0; block < 20; block++)
+            Uint8List.fromList(targetBlocks[block]),
+        ]
         ..[1] = Uint8List(16)
         ..[2] = Uint8List(16),
       ambiguousWriteBlock: 2,
@@ -882,274 +903,284 @@ void main() {
   });
 
   testWidgets(
-      'disposing Standard UI after a sent write keeps mandatory read-back',
-      (tester) async {
-    final targetBlocks = _miniTargetBlocks();
-    targetBlocks[2][0] = 2;
-    final preferences = await _standardMiniPreferences(targetBlocks);
-    final logger = Logger(output: MemoryOutput());
-    addTearDown(logger.close);
-    final connector = _TestSerial(log: logger)..connected = true;
-    final currentBlocks = [
-      for (var block = 0; block < 20; block++)
-        Uint8List.fromList(targetBlocks[block]),
-    ]
-      ..[1] = Uint8List(16)
-      ..[2] = Uint8List(16);
-    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
-      ..writeStarted = Completer<void>()
-      ..allowWriteResponse = Completer<void>();
-    final appState = ChameleonGUIState(preferences)
-      ..log = logger
-      ..connector = connector
-      ..communicator = communicator;
-    await _prepareStandardMiniPanel(tester, appState);
+    'disposing Standard UI after a sent write keeps mandatory read-back',
+    (tester) async {
+      final targetBlocks = _miniTargetBlocks();
+      targetBlocks[2][0] = 2;
+      final preferences = await _standardMiniPreferences(targetBlocks);
+      final logger = Logger(output: MemoryOutput());
+      addTearDown(logger.close);
+      final connector = _TestSerial(log: logger)..connected = true;
+      final currentBlocks =
+          [
+              for (var block = 0; block < 20; block++)
+                Uint8List.fromList(targetBlocks[block]),
+            ]
+            ..[1] = Uint8List(16)
+            ..[2] = Uint8List(16);
+      final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+        ..writeStarted = Completer<void>()
+        ..allowWriteResponse = Completer<void>();
+      final appState = ChameleonGUIState(preferences)
+        ..log = logger
+        ..connector = connector
+        ..communicator = communicator;
+      await _prepareStandardMiniPanel(tester, appState);
 
-    final start = find.text('Start');
-    await tester.ensureVisible(start);
-    await tester.tap(start);
-    await tester.pump();
-    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
-    await tester.pump();
+      final start = find.text('Start');
+      await tester.ensureVisible(start);
+      await tester.tap(start);
+      await tester.pump();
+      await communicator.writeStarted!.future.timeout(
+        const Duration(seconds: 2),
+      );
+      await tester.pump();
 
-    expect(find.text('Writing changed blocks: 0/2'), findsOneWidget);
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Load file'),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Select saved card'),
-          )
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Cancel'),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(
-      tester
-          .widget<DropdownButton<String>>(
-            find.descendant(
-              of: find.byType(DropdownButtonFormField<String>),
-              matching: find.byType(DropdownButton<String>),
-            ),
-          )
-          .onChanged,
-      isNull,
-    );
+      expect(find.text('Writing changed blocks: 0/2'), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Load file'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Select saved card'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Cancel'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<DropdownButton<String>>(
+              find.descendant(
+                of: find.byType(DropdownButtonFormField<String>),
+                matching: find.byType(DropdownButton<String>),
+              ),
+            )
+            .onChanged,
+        isNull,
+      );
 
-    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
-    communicator.allowWriteResponse!.complete();
-    await appState.rfOperations
-        .runForeground(() async {})
-        .timeout(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+      communicator.allowWriteResponse!.complete();
+      await appState.rfOperations
+          .runForeground(() async {})
+          .timeout(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
 
-    expect(communicator.writeCalls, 1);
-    expect(communicator.postWriteScans, 1);
-    expect(communicator.postWriteReads, 1);
-    expect(tester.takeException(), isNull);
-  });
+      expect(communicator.writeCalls, 1);
+      expect(communicator.postWriteScans, 1);
+      expect(communicator.postWriteReads, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
-      'Standard write stays active offstage, exposes global progress, and stops safely',
-      (tester) async {
-    final semantics = tester.ensureSemantics();
-    final previousWakelock = wakelockPlusPlatformInstance;
-    final wakelock = _RecordingWakelock();
-    wakelockPlusPlatformInstance = wakelock;
-    addTearDown(() => wakelockPlusPlatformInstance = previousWakelock);
+    'Standard write stays active offstage, exposes global progress, and stops safely',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final previousWakelock = wakelockPlusPlatformInstance;
+      final wakelock = _RecordingWakelock();
+      wakelockPlusPlatformInstance = wakelock;
+      addTearDown(() => wakelockPlusPlatformInstance = previousWakelock);
 
-    final targetBlocks = _miniTargetBlocks();
-    targetBlocks[2][0] = 2;
-    final preferences = await _standardMiniPreferences(targetBlocks);
-    final logger = Logger(output: MemoryOutput());
-    addTearDown(logger.close);
-    final connector = _TestSerial(log: logger)..connected = true;
-    final currentBlocks = [
-      for (var block = 0; block < 20; block++)
-        Uint8List.fromList(targetBlocks[block]),
-    ]
-      ..[1] = Uint8List(16)
-      ..[2] = Uint8List(16);
-    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
-      ..writeStarted = Completer<void>()
-      ..allowWriteResponse = Completer<void>();
-    final appState = ChameleonGUIState(preferences)
-      ..log = logger
-      ..connector = connector
-      ..communicator = communicator;
+      final targetBlocks = _miniTargetBlocks();
+      targetBlocks[2][0] = 2;
+      final preferences = await _standardMiniPreferences(targetBlocks);
+      final logger = Logger(output: MemoryOutput());
+      addTearDown(logger.close);
+      final connector = _TestSerial(log: logger)..connected = true;
+      final currentBlocks =
+          [
+              for (var block = 0; block < 20; block++)
+                Uint8List.fromList(targetBlocks[block]),
+            ]
+            ..[1] = Uint8List(16)
+            ..[2] = Uint8List(16);
+      final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+        ..writeStarted = Completer<void>()
+        ..allowWriteResponse = Completer<void>();
+      final appState = ChameleonGUIState(preferences)
+        ..log = logger
+        ..connector = connector
+        ..communicator = communicator;
 
-    tester.view.physicalSize = const Size(1400, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      ChangeNotifierProvider<ChameleonGUIState>.value(
-        value: appState,
-        child: MainPage(sharedPreferencesProvider: preferences),
-      ),
-    );
-    await tester.pump();
-
-    await tester.tap(find.byIcon(Icons.system_update_alt).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Standard MIFARE Classic'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Select saved card'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini dump'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Select key profile'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Mini keys (1 key)').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Start'));
-    await tester.pump();
-    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
-    await tester.pump();
-
-    final writePage = tester.state<WriteCardPageState>(
-      find.byType(WriteCardPage),
-    );
-    expect(appState.standardWriteActivity?.isActive, isTrue);
-    expect(wakelock.states.last, isTrue);
-    const progressLabel = 'Write Card. Writing changed blocks: 0/2';
-    expect(
-      tester.getSemantics(
-        find.byKey(
-          const ValueKey('standard-write-navigation-activity'),
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChameleonGUIState>.value(
+          value: appState,
+          child: MainPage(sharedPreferencesProvider: preferences),
         ),
-      ),
-      matchesSemantics(
-        label: progressLabel,
-        textDirection: TextDirection.ltr,
-      ),
-    );
-    expect(
-      tester.getSemantics(
+      );
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.system_update_alt).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Standard MIFARE Classic'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select saved card'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mini dump'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select key profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mini keys (1 key)').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pump();
+      await communicator.writeStarted!.future.timeout(
+        const Duration(seconds: 2),
+      );
+      await tester.pump();
+
+      final writePage = tester.state<WriteCardPageState>(
+        find.byType(WriteCardPage),
+      );
+      expect(appState.standardWriteActivity?.isActive, isTrue);
+      expect(wakelock.states.last, isTrue);
+      const progressLabel = 'Write Card. Writing changed blocks: 0/2';
+      expect(
+        tester.getSemantics(
+          find.byKey(const ValueKey('standard-write-navigation-activity')),
+        ),
+        matchesSemantics(
+          label: progressLabel,
+          textDirection: TextDirection.ltr,
+        ),
+      );
+      expect(
+        tester.getSemantics(
+          find.byKey(const ValueKey('standard-write-global-progress')),
+        ),
+        matchesSemantics(
+          label: progressLabel,
+          hint: 'Write Card',
+          textDirection: TextDirection.ltr,
+          isButton: true,
+          isLiveRegion: true,
+          hasTapAction: true,
+          onTapHint: 'Write Card',
+        ),
+      );
+
+      await tester.tap(find.text('Magic card'));
+      await tester.pump();
+      expect(find.textContaining('Mini dump'), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.auto_awesome_motion));
+      await tester.pump();
+      expect(find.byType(WriteCardPage), findsNothing);
+      expect(find.byType(WriteCardPage, skipOffstage: false), findsOneWidget);
+      expect(writePage.mounted, isTrue);
+      expect(
+        find.byKey(
+          const ValueKey('standard-write-global-progress'),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
         find.byKey(const ValueKey('standard-write-global-progress')),
-      ),
-      matchesSemantics(
-        label: progressLabel,
-        hint: 'Write Card',
-        textDirection: TextDirection.ltr,
-        isButton: true,
-        isLiveRegion: true,
-        hasTapAction: true,
-        onTapHint: 'Write Card',
-      ),
-    );
+      );
+      await tester.pump();
+      expect(
+        tester.state<WriteCardPageState>(find.byType(WriteCardPage)),
+        same(writePage),
+      );
+      expect(find.textContaining('Mini dump'), findsWidgets);
+      expect(find.text('Writing changed blocks: 0/2'), findsNWidgets(2));
 
-    await tester.tap(find.text('Magic card'));
-    await tester.pump();
-    expect(find.textContaining('Mini dump'), findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      communicator.allowWriteResponse!.complete();
+      await appState.rfOperations
+          .runForeground(() async {})
+          .timeout(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.auto_awesome_motion));
-    await tester.pump();
-    expect(find.byType(WriteCardPage), findsNothing);
-    expect(
-      find.byType(WriteCardPage, skipOffstage: false),
-      findsOneWidget,
-    );
-    expect(writePage.mounted, isTrue);
-    expect(
-      find.byKey(
-        const ValueKey('standard-write-global-progress'),
-        skipOffstage: false,
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(
-      find.byKey(const ValueKey('standard-write-global-progress')),
-    );
-    await tester.pump();
-    expect(tester.state<WriteCardPageState>(find.byType(WriteCardPage)),
-        same(writePage));
-    expect(find.textContaining('Mini dump'), findsWidgets);
-    expect(find.text('Writing changed blocks: 0/2'), findsNWidgets(2));
-
-    await tester.tap(find.text('Cancel'));
-    await tester.pump();
-    communicator.allowWriteResponse!.complete();
-    await appState.rfOperations
-        .runForeground(() async {})
-        .timeout(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
-
-    expect(communicator.writeCalls, 1);
-    expect(communicator.postWriteScans, 1);
-    expect(communicator.postWriteReads, 1);
-    expect(
-      appState.standardWriteActivity?.state,
-      StandardWriteActivityState.cancelled,
-    );
-    expect(wakelock.states.last, isFalse);
-    semantics.dispose();
-    expect(tester.takeException(), isNull);
-  });
+      expect(communicator.writeCalls, 1);
+      expect(communicator.postWriteScans, 1);
+      expect(communicator.postWriteReads, 1);
+      expect(
+        appState.standardWriteActivity?.state,
+        StandardWriteActivityState.cancelled,
+      );
+      expect(wakelock.states.last, isFalse);
+      semantics.dispose();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
-      'Standard session replacement after a sent write skips stale read-back',
-      (tester) async {
-    final targetBlocks = _miniTargetBlocks();
-    targetBlocks[2][0] = 2;
-    final preferences = await _standardMiniPreferences(targetBlocks);
-    final logger = Logger(output: MemoryOutput());
-    addTearDown(logger.close);
-    final connector = _TestSerial(log: logger)..connected = true;
-    final currentBlocks = [
-      for (var block = 0; block < 20; block++)
-        Uint8List.fromList(targetBlocks[block]),
-    ]
-      ..[1] = Uint8List(16)
-      ..[2] = Uint8List(16);
-    final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
-      ..writeStarted = Completer<void>()
-      ..allowWriteResponse = Completer<void>();
-    final appState = ChameleonGUIState(preferences)
-      ..log = logger
-      ..connector = connector
-      ..communicator = communicator;
-    await _prepareStandardMiniPanel(tester, appState);
+    'Standard session replacement after a sent write skips stale read-back',
+    (tester) async {
+      final targetBlocks = _miniTargetBlocks();
+      targetBlocks[2][0] = 2;
+      final preferences = await _standardMiniPreferences(targetBlocks);
+      final logger = Logger(output: MemoryOutput());
+      addTearDown(logger.close);
+      final connector = _TestSerial(log: logger)..connected = true;
+      final currentBlocks =
+          [
+              for (var block = 0; block < 20; block++)
+                Uint8List.fromList(targetBlocks[block]),
+            ]
+            ..[1] = Uint8List(16)
+            ..[2] = Uint8List(16);
+      final communicator = _MiniMaintenanceCommunicator(logger, currentBlocks)
+        ..writeStarted = Completer<void>()
+        ..allowWriteResponse = Completer<void>();
+      final appState = ChameleonGUIState(preferences)
+        ..log = logger
+        ..connector = connector
+        ..communicator = communicator;
+      await _prepareStandardMiniPanel(tester, appState);
 
-    final start = find.text('Start');
-    await tester.ensureVisible(start);
-    await tester.tap(start);
-    await tester.pump();
-    await communicator.writeStarted!.future.timeout(const Duration(seconds: 2));
+      final start = find.text('Start');
+      await tester.ensureVisible(start);
+      await tester.tap(start);
+      await tester.pump();
+      await communicator.writeStarted!.future.timeout(
+        const Duration(seconds: 2),
+      );
 
-    connector.connected = false;
-    appState
-      ..connector = (_TestSerial(log: logger)..connected = true)
-      ..communicator = _ReaderModeCommunicator(logger)
-      ..changesMade();
-    communicator.allowWriteResponse!.complete();
-    await appState.rfOperations
-        .runForeground(() async {})
-        .timeout(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+      connector.connected = false;
+      appState
+        ..connector = (_TestSerial(log: logger)..connected = true)
+        ..communicator = _ReaderModeCommunicator(logger)
+        ..changesMade();
+      communicator.allowWriteResponse!.complete();
+      await appState.rfOperations
+          .runForeground(() async {})
+          .timeout(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
 
-    expect(communicator.writeCalls, 1);
-    expect(communicator.postWriteScans, 0);
-    expect(communicator.postWriteReads, 0);
-    expect(tester.takeException(), isNull);
-  });
+      expect(communicator.writeCalls, 1);
+      expect(communicator.postWriteScans, 0);
+      expect(communicator.postWriteReads, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('Magic write stops before the next block after reconnect',
-      (tester) async {
+  testWidgets('Magic write stops before the next block after reconnect', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -1212,8 +1243,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('queued Classic prepare scan does not cross a reconnect',
-      (tester) async {
+  testWidgets('queued Classic prepare scan does not cross a reconnect', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = SharedPreferencesProvider();
     await preferences.load();
@@ -1322,8 +1354,9 @@ List<Uint8List> _miniTargetBlocks() {
   blocks[0].setRange(0, 4, [1, 2, 3, 4]);
   blocks[1][0] = 1;
   for (var sector = 0; sector < 5; sector++) {
-    blocks[mfClassicGetSectorTrailerBlockBySector(sector)] =
-        Uint8List.fromList(trailer);
+    blocks[mfClassicGetSectorTrailerBlockBySector(sector)] = Uint8List.fromList(
+      trailer,
+    );
   }
   return blocks;
 }
@@ -1505,16 +1538,14 @@ class _MiniMaintenanceCommunicator extends ChameleonCommunicator {
     bool autoSelect = true,
     bool keepRfField = false,
     bool checkResponseCrc = true,
-  }) async =>
-      Uint8List(0);
+  }) async => Uint8List(0);
 
   @override
   Future<ChameleonMessage> mf1AuthResult(
     int block,
     int keyType,
     Uint8List key,
-  ) async =>
-      ChameleonMessage(command: 0, status: 0, data: Uint8List(0));
+  ) async => ChameleonMessage(command: 0, status: 0, data: Uint8List(0));
 
   @override
   Future<ChameleonMessage> mf1ReadBlockResult(
@@ -1563,11 +1594,11 @@ class _DelayedMagicBlockCommunicator extends ChameleonCommunicator {
 
   @override
   Future<CardData?> scan14443aTag() async => CardData(
-        uid: Uint8List.fromList([1, 2, 3, 4]),
-        sak: 0x08,
-        atqa: Uint8List.fromList([0x00, 0x04]),
-        ats: Uint8List(0),
-      );
+    uid: Uint8List.fromList([1, 2, 3, 4]),
+    sak: 0x08,
+    atqa: Uint8List.fromList([0x00, 0x04]),
+    ats: Uint8List(0),
+  );
 
   @override
   Future<bool> mf1WriteBlock(

@@ -1,3 +1,6 @@
+import 'package:chameleonultragui/gui/component/mifare/vanity_sak_checkbox.dart';
+import 'package:chameleonultragui/helpers/mifare_classic/vanity_sak.dart';
+import 'package:chameleonultragui/gui/component/ioprox_fields.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
 import 'package:chameleonultragui/helpers/validators.dart';
@@ -42,6 +45,20 @@ class CardEditMenuState extends State<CardEditMenu> {
   TextEditingController issueLevelController = TextEditingController();
   TextEditingController oemController = TextEditingController();
 
+  final ioProxVersionController = TextEditingController();
+  final ioProxFacilityCodeController = TextEditingController();
+  final ioProxCardNumberController = TextEditingController();
+  IoProxCard? originalIoProxCard;
+
+  @override
+  void dispose() {
+    uidController.removeListener(refreshVanitySak);
+    ioProxVersionController.dispose();
+    ioProxFacilityCodeController.dispose();
+    ioProxCardNumberController.dispose();
+    super.dispose();
+  }
+
   Color pickerColor = Colors.deepOrange;
   Color currentColor = Colors.deepOrange;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -51,6 +68,26 @@ class CardEditMenuState extends State<CardEditMenu> {
   String originalSak = '';
   String originalAtqa = '';
   bool _generatedWholeCard = false;
+
+  bool vanitySak = false;
+  bool? originalVanitySak;
+  int originalUidBytes = 0;
+
+  bool get showVanitySak =>
+      mfClassicVanitySakVisibleInEdit(selectedType, widget.tagSave.data);
+
+  void refreshVanitySak() {
+    final vFromUid = mfClassicVanitySakFromUidHex(uidController.text);
+    if (vFromUid == null) {
+      return;
+    }
+    final bytes = uidController.text.replaceAll(' ', '').length ~/ 2;
+    setState(() {
+      vanitySak = bytes == originalUidBytes
+          ? (originalVanitySak ?? vFromUid)
+          : vFromUid;
+    });
+  }
 
   @override
   void initState() {
@@ -72,15 +109,26 @@ class CardEditMenuState extends State<CardEditMenu> {
     sakController.text = bytesToHexSpace(u8ToBytes(widget.tagSave.sak));
     atqaController.text = bytesToHexSpace(widget.tagSave.atqa);
     atsController.text = bytesToHexSpace(widget.tagSave.ats);
-    ultralightVersionController.text =
-        bytesToHexSpace(widget.tagSave.extraData.ultralightVersion);
-    ultralightSignatureController.text =
-        bytesToHexSpace(widget.tagSave.extraData.ultralightSignature);
+    ultralightVersionController.text = bytesToHexSpace(
+      widget.tagSave.extraData.ultralightVersion,
+    );
+    ultralightSignatureController.text = bytesToHexSpace(
+      widget.tagSave.extraData.ultralightSignature,
+    );
 
     initCounterControllers();
 
     if (selectedType == TagType.hidProx) {
       initHIDFields();
+    }
+
+    if (selectedType == TagType.ioProx &&
+        hexToBytes(widget.tagSave.uid).length >= 4) {
+      final card = IoProxCard.fromUID(widget.tagSave.uid);
+      originalIoProxCard = card;
+      ioProxVersionController.text = card.version.toString();
+      ioProxFacilityCodeController.text = card.facilityCode.toString();
+      ioProxCardNumberController.text = card.cardNumber.toString();
     }
 
     nameController.text = widget.tagSave.name;
@@ -90,12 +138,27 @@ class CardEditMenuState extends State<CardEditMenu> {
     originalUid = widget.tagSave.uid;
     originalSak = bytesToHexSpace(u8ToBytes(widget.tagSave.sak));
     originalAtqa = bytesToHexSpace(widget.tagSave.atqa);
+    originalUidBytes = hexToBytes(widget.tagSave.uid).length;
+    uidController.addListener(refreshVanitySak);
+
+    if (showVanitySak) {
+      vanitySak =
+          mfClassicVanitySakFromData(
+            uid: hexToBytes(widget.tagSave.uid),
+            sak: widget.tagSave.sak,
+            block0: widget.tagSave.data[0],
+          ) ??
+          mfClassicVanitySakFromUidHex(widget.tagSave.uid) ??
+          false;
+      originalVanitySak = vanitySak;
+    }
   }
 
   bool hasDataChanged() {
     return uidController.text != originalUid ||
         sakController.text != originalSak ||
-        atqaController.text != originalAtqa;
+        atqaController.text != originalAtqa ||
+        (originalVanitySak != null && vanitySak != originalVanitySak);
   }
 
   Future<bool> showUpdateDataDialog(BuildContext context) async {
@@ -129,6 +192,7 @@ class CardEditMenuState extends State<CardEditMenu> {
     required String sak,
     required String atqa,
     required List<Uint8List> originalData,
+    required bool vanitySak,
   }) {
     if (originalData.isEmpty) {
       return originalData;
@@ -137,11 +201,18 @@ class CardEditMenuState extends State<CardEditMenu> {
     List<Uint8List> updatedData = List<Uint8List>.from(originalData);
 
     if (isMifareClassic(selectedType)) {
-      updatedData[0] = mfClassicGenerateFirstBlock(
-          hexToBytes(uid), hexToBytes(sak)[0], hexToBytes(atqa));
+      updatedData[0] = mfClassicPatchFirstBlock(
+        updatedData[0],
+        hexToBytes(uid),
+        hexToBytes(sak)[0],
+        hexToBytes(atqa),
+        vanitySak,
+      );
     } else if (isMifareUltralight(selectedType)) {
-      final newBlocks =
-          mfUltralightGenerateFirstBlocks(hexToBytes(uid), selectedType);
+      final newBlocks = mfUltralightGenerateFirstBlocks(
+        hexToBytes(uid),
+        selectedType,
+      );
 
       for (int i = 0; i < newBlocks.length && i < updatedData.length; i++) {
         updatedData[i] = newBlocks[i];
@@ -166,8 +237,8 @@ class CardEditMenuState extends State<CardEditMenu> {
     for (int i = 0; i < counterCount; i++) {
       TextEditingController controller = TextEditingController();
       if (i < widget.tagSave.extraData.ultralightCounters.length) {
-        controller.text =
-            widget.tagSave.extraData.ultralightCounters[i].toString();
+        controller.text = widget.tagSave.extraData.ultralightCounters[i]
+            .toString();
       } else {
         controller.text = '0';
       }
@@ -201,74 +272,78 @@ class CardEditMenuState extends State<CardEditMenu> {
                 controller: nameController,
                 validator: (value) => validateName(value, localizations),
                 decoration: InputDecoration(
-                    labelText: localizations.name,
-                    hintText: localizations.enter_name_of_card,
-                    prefix: Transform(
-                        transform: Matrix4.translationValues(0, 7, 0),
-                        child: IconButton(
-                          icon: Icon(
-                              (chameleonTagToFrequency(widget.tagSave.tag) ==
-                                      TagFrequency.hf)
-                                  ? Icons.credit_card
-                                  : Icons.wifi,
-                              color: currentColor),
-                          onPressed: () async {
-                            showDialog(
-                              context: context,
-                              builder: (BuildContext context) {
-                                return AlertDialog(
-                                  title: Text(localizations.pick_color),
-                                  content: SingleChildScrollView(
-                                    child: ColorPicker(
-                                      pickerColor: pickerColor,
-                                      onColorChanged: (Color color) {
-                                        setState(() {
-                                          pickerColor = color;
-                                        });
-                                      },
-                                      pickerAreaHeightPercent: 0.8,
-                                    ),
-                                  ),
-                                  actions: <Widget>[
-                                    TextButton(
-                                      onPressed: () {
-                                        setState(() => currentColor =
-                                            pickerColor = Colors.deepOrange);
-                                        Navigator.pop(context);
-                                      },
-                                      child: Text(localizations.reset_default),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.pop(context);
-                                      },
-                                      child: Text(localizations.cancel),
-                                    ),
-                                    TextButton(
-                                      child: Text(localizations.ok),
-                                      onPressed: () {
-                                        setState(
-                                            () => currentColor = pickerColor);
-                                        Navigator.pop(context);
-                                      },
-                                    ),
-                                  ],
-                                );
-                              },
+                  labelText: localizations.name,
+                  hintText: localizations.enter_name_of_card,
+                  prefix: Transform(
+                    transform: Matrix4.translationValues(0, 7, 0),
+                    child: IconButton(
+                      icon: Icon(
+                        (chameleonTagToFrequency(widget.tagSave.tag) ==
+                                TagFrequency.hf)
+                            ? Icons.credit_card
+                            : Icons.wifi,
+                        color: currentColor,
+                      ),
+                      onPressed: () async {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: Text(localizations.pick_color),
+                              content: SingleChildScrollView(
+                                child: ColorPicker(
+                                  pickerColor: pickerColor,
+                                  onColorChanged: (Color color) {
+                                    setState(() {
+                                      pickerColor = color;
+                                    });
+                                  },
+                                  pickerAreaHeightPercent: 0.8,
+                                ),
+                              ),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () {
+                                    setState(
+                                      () => currentColor = pickerColor =
+                                          Colors.deepOrange,
+                                    );
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text(localizations.reset_default),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                  },
+                                  child: Text(localizations.cancel),
+                                ),
+                                TextButton(
+                                  child: Text(localizations.ok),
+                                  onPressed: () {
+                                    setState(() => currentColor = pickerColor);
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                              ],
                             );
                           },
-                        ))),
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               DropdownButton<TagType>(
+                isExpanded: true,
                 value: selectedType,
-                items: getTagTypes()
-                    .map<DropdownMenuItem<TagType>>((TagType type) {
+                items: getTagTypes().map<DropdownMenuItem<TagType>>((
+                  TagType type,
+                ) {
                   return DropdownMenuItem<TagType>(
                     value: type,
-                    child: Text(
-                      chameleonTagToString(type, localizations),
-                    ),
+                    child: Text(chameleonTagToString(type, localizations)),
                   );
                 }).toList(),
                 onChanged: (TagType? newValue) {
@@ -277,18 +352,34 @@ class CardEditMenuState extends State<CardEditMenu> {
                       selectedType = newValue;
                       initCounterControllers();
                     });
+                    if (originalVanitySak == null) {
+                      refreshVanitySak();
+                      originalVanitySak = vanitySak;
+                    }
                   }
                   appState.changesMade();
                 },
               ),
-              GeneratedCardIdentityFields(
-                type: selectedType,
-                controllers: identityControllers,
-                ultralightCounters: ultralightCounterControllers,
-                onFullProfileApplied: (_) {
-                  setState(() => _generatedWholeCard = true);
-                },
-              ),
+              if (selectedType == TagType.ioProx)
+                IoProxFields(
+                  versionController: ioProxVersionController,
+                  facilityCodeController: ioProxFacilityCodeController,
+                  cardNumberController: ioProxCardNumberController,
+                )
+              else
+                GeneratedCardIdentityFields(
+                  type: selectedType,
+                  controllers: identityControllers,
+                  ultralightCounters: ultralightCounterControllers,
+                  onFullProfileApplied: (_) {
+                    setState(() => _generatedWholeCard = true);
+                  },
+                ),
+              if (showVanitySak)
+                VanitySakCheckbox(
+                  value: vanitySak,
+                  onChanged: (v) => setState(() => vanitySak = v ?? false),
+                ),
             ],
           ),
         ),
@@ -316,6 +407,7 @@ class CardEditMenuState extends State<CardEditMenu> {
                     ? 0
                     : hexToBytes(sakController.text)[0],
                 atqa: hexToBytes(atqaController.text),
+                vanitySak: vanitySak,
               );
             } else if (hasDataChanged() &&
                 canUpdateSavedCardData(widget.tagSave, selectedType)) {
@@ -327,20 +419,37 @@ class CardEditMenuState extends State<CardEditMenu> {
                   sak: sakController.text,
                   atqa: atqaController.text,
                   originalData: widget.tagSave.data,
+                  vanitySak: vanitySak,
                 );
               }
             }
 
             String finalUid;
-            if (selectedType == TagType.hidProx) {
+            if (selectedType == TagType.ioProx) {
+              final card = IoProxCard.fromFields(
+                version: int.parse(ioProxVersionController.text),
+                facilityCode: int.parse(ioProxFacilityCodeController.text),
+                cardNumber: int.parse(ioProxCardNumberController.text),
+              );
+              final original = originalIoProxCard;
+              // Preserve scanned raw bytes and reserved data when only metadata changes.
+              finalUid =
+                  original != null &&
+                      original.version == card.version &&
+                      original.facilityCode == card.facilityCode &&
+                      original.cardNumber == card.cardNumber
+                  ? widget.tagSave.uid
+                  : card.toString();
+            } else if (selectedType == TagType.hidProx) {
               try {
                 int hidType = int.parse(hidTypeController.text);
                 int facilityCode = int.parse(facilityCodeController.text);
                 int issueLevel = int.parse(issueLevelController.text);
                 int oem = int.parse(oemController.text);
 
-                Uint8List uid =
-                    hexToBytes(uidController.text.replaceAll(' ', ''));
+                Uint8List uid = hexToBytes(
+                  uidController.text.replaceAll(' ', ''),
+                );
 
                 HIDCard hidCard = HIDCard(
                   hidType: hidType,
@@ -359,37 +468,39 @@ class CardEditMenuState extends State<CardEditMenu> {
             }
 
             var tag = CardSave(
-                folderId: widget.tagSave.folderId,
-                id: widget.tagSave.id,
-                name: nameController.text,
-                sak: chameleonTagToFrequency(selectedType) == TagFrequency.lf
-                    ? widget.tagSave.sak
-                    : hexToBytes(sakController.text)[0],
-                atqa: hexToBytes(atqaController.text),
-                uid: finalUid,
-                extraData: CardSaveExtra(
-                  mifareClassicDumpComplete:
-                      _generatedWholeCard && isMifareClassic(selectedType)
-                          ? true
-                          : isMifareClassic(selectedType)
-                              ? false
-                              : null,
-                  ultralightSignature:
-                      hexToBytes(ultralightSignatureController.text),
-                  ultralightVersion:
-                      hexToBytes(ultralightVersionController.text),
-                  ultralightCounters: ultralightCounterControllers
-                      .map((controller) => int.tryParse(controller.text) ?? 0)
-                      .toList(),
+              folderId: widget.tagSave.folderId,
+              id: widget.tagSave.id,
+              name: nameController.text,
+              sak: chameleonTagToFrequency(selectedType) == TagFrequency.lf
+                  ? widget.tagSave.sak
+                  : hexToBytes(sakController.text)[0],
+              atqa: hexToBytes(atqaController.text),
+              uid: finalUid,
+              extraData: CardSaveExtra(
+                mifareClassicDumpComplete:
+                    _generatedWholeCard && isMifareClassic(selectedType)
+                    ? true
+                    : isMifareClassic(selectedType)
+                    ? false
+                    : null,
+                ultralightSignature: hexToBytes(
+                  ultralightSignatureController.text,
                 ),
-                tag: selectedType,
-                data: cardData,
-                color: currentColor,
-                ats: hexToBytes(atsController.text));
+                ultralightVersion: hexToBytes(ultralightVersionController.text),
+                ultralightCounters: ultralightCounterControllers
+                    .map((controller) => int.tryParse(controller.text) ?? 0)
+                    .toList(),
+              ),
+              tag: selectedType,
+              data: cardData,
+              color: currentColor,
+              ats: hexToBytes(atsController.text),
+            );
 
             var tags = appState.sharedPreferencesProvider.getCards();
-            var index =
-                tags.indexWhere((element) => element.id == widget.tagSave.id);
+            var index = tags.indexWhere(
+              (element) => element.id == widget.tagSave.id,
+            );
 
             if (index != -1) {
               tags[index] = tag;

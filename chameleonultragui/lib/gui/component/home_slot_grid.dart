@@ -612,7 +612,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                               onDragUpdate: (details) =>
                                   _updateAutoScroll(details.globalPosition),
                               onDragEnd: (_) => _cancelDrag(),
-                              onDraggableCanceled: (_, __) => _cancelDrag(),
+                              onDraggableCanceled: (_, _) => _cancelDrag(),
                               feedback: Material(
                                 color: Colors.transparent,
                                 child: Transform.scale(
@@ -651,7 +651,7 @@ class _HomeSlotGridState extends State<HomeSlotGrid> {
                               onLeave: (_) => _leaveDragTarget(index),
                               onAcceptWithDetails: (details) =>
                                   _acceptDrag(details.data, index),
-                              builder: (context, _, __) => child,
+                              builder: (context, _, _) => child,
                             ),
                           );
                         }

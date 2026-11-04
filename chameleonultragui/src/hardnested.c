@@ -1,3 +1,4 @@
+#include "recovery_cancel.h"
 //-----------------------------------------------------------------------------
 // Copyright (C) Proxmark3 contributors. See AUTHORS.md for details.
 //
@@ -225,17 +226,17 @@ static void init_bitflip_bitarrays(void)
             bitflip_bitarrays[odd_even][bitflip] = NULL;
             count_bitflip_bitarrays[odd_even][bitflip] = 1 << 24;
             bitflip_info p = get_bitflip(odd_even, bitflip);
-            if (p.input_buffer != NULL)
+            if (p.input_buffer != NULL && !recovery_is_cancelled())
             {
-                uint32_t count = sizeof(uint32_t) * ((1 << 19) + 1);
-                uint32_t *bitset = (uint32_t *)malloc_bitarray(count);
+                uint32_t size = sizeof(uint32_t) * ((1 << 19) + 1);
+                uint32_t *bitset = (uint32_t *)malloc_bitarray(size);
                 if (bitset == NULL)
                 {
                     printf("Out of memory error in init_bitflip_statelists(). Aborting...\n");
                     exit(4);
                 }
 
-                bool success = XzDecode(p.input_buffer, p.len, (uint8_t *)bitset, &count);
+                bool success = XzDecode(p.input_buffer, p.len, (uint8_t *)bitset, &size);
                 if (!success)
                 {
                     printf("Failed to decompress states\n");
@@ -243,11 +244,13 @@ static void init_bitflip_bitarrays(void)
                 }
 
                 bitflip_bitarrays_pointers[odd_even][bitflip] = bitset;
+                // The first word counts states; the decoder returns bytes.
+                uint32_t count = bitset[0];
                 if ((float)count / (1 << 24) < IGNORE_BITFLIP_THRESHOLD)
                 {
                     effective_bitflip[odd_even][num_effective_bitflips[odd_even]++] = bitflip;
                     bitflip_bitarrays[odd_even][bitflip] = bitset + 1;
-                    count_bitflip_bitarrays[odd_even][bitflip] = bitset[0];
+                    count_bitflip_bitarrays[odd_even][bitflip] = count;
                 }
             }
         }
@@ -336,59 +339,40 @@ static uint16_t PartialSumProperty(uint32_t state, odd_even_t odd_even)
     return sum;
 }
 
+// Each side is independent. Reuse its partial-sum calculation for a0 and a8
+// instead of evaluating the same 20-bit state twice.
+static void *init_part_sum_side(void *arg)
+{
+    odd_even_t side = *(odd_even_t *)arg;
+    for (unsigned sum = 0; sum < NUM_PART_SUMS; ++sum) {
+        part_sum_a0_bitarrays[side][sum] = malloc_bitarray(sizeof(uint32_t) * (1 << 19));
+        part_sum_a8_bitarrays[side][sum] = malloc_bitarray(sizeof(uint32_t) * (1 << 19));
+        if (!part_sum_a0_bitarrays[side][sum] || !part_sum_a8_bitarrays[side][sum]) {
+            PrintAndLogEx("Out of memory error in init_part_sum_bitarrays(). Aborting...\n");
+            exit(4);
+        }
+        clear_bitarray24(part_sum_a0_bitarrays[side][sum]);
+        clear_bitarray24(part_sum_a8_bitarrays[side][sum]);
+    }
+    for (uint32_t state = 0; state < (1 << 20) && !recovery_is_cancelled(); ++state) {
+        unsigned sum = PartialSumProperty(state, side) / 2;
+        // All sixteen low-bit extensions occupy one aligned half-word.
+        part_sum_a0_bitarrays[side][sum][state >> 1] |=
+            (state & 1) ? 0x0000ffffu : 0xffff0000u;
+        for (uint32_t high = 0; high < 16; ++high)
+            set_bit24(part_sum_a8_bitarrays[side][sum], state | (high << 20));
+    }
+    return NULL;
+}
+
 static void init_part_sum_bitarrays(void)
 {
-    for (odd_even_t odd_even = EVEN_STATE; odd_even <= ODD_STATE; odd_even++)
-    {
-        for (uint16_t part_sum_a0 = 0; part_sum_a0 < NUM_PART_SUMS; part_sum_a0++)
-        {
-            part_sum_a0_bitarrays[odd_even][part_sum_a0] = (uint32_t *)malloc_bitarray(sizeof(uint32_t) * (1 << 19));
-            if (part_sum_a0_bitarrays[odd_even][part_sum_a0] == NULL)
-            {
-                PrintAndLogEx("Out of memory error in init_part_suma0_statelists(). Aborting...\n");
-                exit(4);
-            }
-            clear_bitarray24(part_sum_a0_bitarrays[odd_even][part_sum_a0]);
-        }
-    }
-    for (odd_even_t odd_even = EVEN_STATE; odd_even <= ODD_STATE; odd_even++)
-    {
-        // PrintAndLogEx("(%d, %" PRIu16 ")...", odd_even, part_sum_a0);
-        for (uint32_t state = 0; state < (1 << 20); state++)
-        {
-            uint16_t part_sum_a0 = PartialSumProperty(state, odd_even) / 2;
-            for (uint16_t low_bits = 0; low_bits < 1 << 4; low_bits++)
-            {
-                set_bit24(part_sum_a0_bitarrays[odd_even][part_sum_a0], state << 4 | low_bits);
-            }
-        }
-    }
-
-    for (odd_even_t odd_even = EVEN_STATE; odd_even <= ODD_STATE; odd_even++)
-    {
-        for (uint16_t part_sum_a8 = 0; part_sum_a8 < NUM_PART_SUMS; part_sum_a8++)
-        {
-            part_sum_a8_bitarrays[odd_even][part_sum_a8] = (uint32_t *)malloc_bitarray(sizeof(uint32_t) * (1 << 19));
-            if (part_sum_a8_bitarrays[odd_even][part_sum_a8] == NULL)
-            {
-                PrintAndLogEx("Out of memory error in init_part_suma8_statelists(). Aborting...\n");
-                exit(4);
-            }
-            clear_bitarray24(part_sum_a8_bitarrays[odd_even][part_sum_a8]);
-        }
-    }
-    for (odd_even_t odd_even = EVEN_STATE; odd_even <= ODD_STATE; odd_even++)
-    {
-        // PrintAndLogEx("(%d, %" PRIu16 ")...", odd_even, part_sum_a8);
-        for (uint32_t state = 0; state < (1 << 20); state++)
-        {
-            uint16_t part_sum_a8 = PartialSumProperty(state, odd_even) / 2;
-            for (uint16_t high_bits = 0; high_bits < 1 << 4; high_bits++)
-            {
-                set_bit24(part_sum_a8_bitarrays[odd_even][part_sum_a8], state | high_bits << 20);
-            }
-        }
-    }
+    odd_even_t sides[2] = {EVEN_STATE, ODD_STATE};
+    pthread_t thread;
+    bool started = pthread_create(&thread, NULL, init_part_sum_side, &sides[0]) == 0;
+    if (!started) init_part_sum_side(&sides[0]);
+    init_part_sum_side(&sides[1]);
+    if (started) pthread_join(thread, NULL);
 }
 
 static void free_part_sum_bitarrays(void)
@@ -1791,17 +1775,17 @@ static void
     do
     {
         there_might_be_more_work = false;
-        for (uint8_t p = 0; p < NUM_PART_SUMS; p++)
+        for (uint8_t p = 0; p < NUM_PART_SUMS && !recovery_is_cancelled(); p++)
         {
-            for (uint8_t q = 0; q < NUM_PART_SUMS; q++)
+            for (uint8_t q = 0; q < NUM_PART_SUMS && !recovery_is_cancelled(); q++)
             {
                 if (2 * p * (16 - 2 * q) + (16 - 2 * p) * 2 * q == sum_a0)
                 {
                     // PrintAndLogEx("Reducing Partial Statelists (p,q) = (%d,%d) with lengths %d, %d",
                     // p, q, partial_statelist[p].len[ODD_STATE], partial_statelist[q].len[EVEN_STATE]);
-                    for (uint8_t r = 0; r < NUM_PART_SUMS; r++)
+                    for (uint8_t r = 0; r < NUM_PART_SUMS && !recovery_is_cancelled(); r++)
                     {
-                        for (uint8_t s = 0; s < NUM_PART_SUMS; s++)
+                        for (uint8_t s = 0; s < NUM_PART_SUMS && !recovery_is_cancelled(); s++)
                         {
                             if (2 * r * (16 - 2 * s) + (16 - 2 * r) * 2 * s == sum_a8)
                             {
@@ -1940,7 +1924,7 @@ static void
                 }
             }
         }
-    } while (there_might_be_more_work);
+    } while (there_might_be_more_work && !recovery_is_cancelled());
 
     return NULL;
 }
@@ -2087,6 +2071,7 @@ static void init_it_all(void)
     memset(effective_bitflip, 0, sizeof(effective_bitflip));
     memset(all_effective_bitflip, 0, sizeof(all_effective_bitflip));
     memset(bitflip_bitarrays, 0, sizeof(bitflip_bitarrays));
+    memset(bitflip_bitarrays_pointers, 0, sizeof(bitflip_bitarrays_pointers));
     memset(count_bitflip_bitarrays, 0, sizeof(count_bitflip_bitarrays));
     memset(part_sum_a0_bitarrays, 0, sizeof(part_sum_a0_bitarrays));
     memset(part_sum_a8_bitarrays, 0, sizeof(part_sum_a8_bitarrays));
@@ -2109,14 +2094,23 @@ int mfnestedhard(uint8_t blockNo, uint8_t keyType, uint8_t *key, uint8_t trgBloc
     snprintf(progress_text, sizeof(progress_text), "Start using %d threads", num_CPUs());
     hardnested_print_progress(0, progress_text, (float)(1LL << 47), 0);
     init_bitflip_bitarrays();
+    if (recovery_is_cancelled()) {
+        free_bitflip_bitarrays();
+        return 0;
+    }
     init_part_sum_bitarrays();
+    if (recovery_is_cancelled()) {
+        free_part_sum_bitarrays();
+        free_bitflip_bitarrays();
+        return 0;
+    }
     init_sum_bitarrays();
     init_allbitflips_array();
     init_nonce_memory();
     update_reduction_rate(0.0, true);
 
     int res = read_nonces(nonces_char, length);
-    if (res != 1)
+    if (res != 1 || recovery_is_cancelled())
     {
         free_bitflip_bitarrays();
         free_nonces_memory();
@@ -2176,7 +2170,7 @@ int mfnestedhard(uint8_t blockNo, uint8_t keyType, uint8_t *key, uint8_t trgBloc
         pre_XOR_nonces();
         prepare_bf_test_nonces(nonces, best_first_bytes[0]);
 
-        for (uint8_t j = 0; j < NUM_SUMS && !key_found; j++)
+        for (uint8_t j = 0; j < NUM_SUMS && !key_found && !recovery_is_cancelled(); j++)
         {
             float expected_brute_force = nonces[best_first_bytes[0]].expected_num_brute_force;
             snprintf(progress_text, sizeof(progress_text), "(%d. guess: Sum(a8) = %" PRIu16 ")", j + 1, sums[nonces[best_first_bytes[0]].sum_a8_guess[j].sum_a8_idx]);

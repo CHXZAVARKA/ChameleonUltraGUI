@@ -17,33 +17,38 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   for (final device in [ChameleonDevice.ultra, ChameleonDevice.lite]) {
-    testWidgets('settings reads and confirms animation mode on ${device.name}',
-        (tester) async {
-      final fixture = await _pumpSettings(tester, device: device);
+    testWidgets(
+      'settings reads and confirms animation mode on ${device.name}',
+      (tester) async {
+        final fixture = await _pumpSettings(tester, device: device);
 
-      expect(fixture.communicator.events, ['capabilities', 'read:full']);
-      expect(_dropdown(tester).value, AnimationSetting.full);
+        expect(fixture.communicator.events, [
+          'capabilities',
+          'capabilities',
+          'read:full',
+        ]);
+        expect(_dropdown(tester).value, AnimationSetting.full);
 
-      await _chooseMode(tester, 'Symmetric');
-      await tester.pumpAndSettle();
+        await _chooseMode(tester, 'Symmetric');
+        await tester.pumpAndSettle();
 
-      expect(
-        fixture.communicator.events,
-        [
+        expect(fixture.communicator.events, [
+          'capabilities',
           'capabilities',
           'read:full',
           'set:symmetric',
           'save',
           'read:symmetric',
-        ],
-      );
-      expect(_dropdown(tester).value, AnimationSetting.symmetric);
-      expect(fixture.serial.disconnects, 0);
-    });
+        ]);
+        expect(_dropdown(tester).value, AnimationSetting.symmetric);
+        expect(fixture.serial.disconnects, 0);
+      },
+    );
   }
 
-  testWidgets('pending animation change blocks duplicate selection',
-      (tester) async {
+  testWidgets('pending animation change blocks duplicate selection', (
+    tester,
+  ) async {
     final fixture = await _pumpSettings(tester);
     final gate = Completer<void>();
     fixture.communicator.nextSetGate = gate;
@@ -66,25 +71,28 @@ void main() {
     expect(fixture.communicator.animationReads, 2);
   });
 
-  testWidgets('mismatched read-back keeps the device-confirmed animation mode',
-      (tester) async {
-    final fixture = await _pumpSettings(tester);
-    fixture.communicator.ignoreSets = true;
+  testWidgets(
+    'mismatched read-back keeps the device-confirmed animation mode',
+    (tester) async {
+      final fixture = await _pumpSettings(tester);
+      fixture.communicator.ignoreSets = true;
 
-    await _chooseMode(tester, 'None');
-    await tester.pumpAndSettle();
+      await _chooseMode(tester, 'None');
+      await tester.pumpAndSettle();
 
-    expect(fixture.communicator.sets, [AnimationSetting.none]);
-    expect(fixture.communicator.animationReads, 2);
-    expect(_dropdown(tester).value, AnimationSetting.full);
-    expect(
-      find.text('The LED animation mode could not be saved or confirmed.'),
-      findsOneWidget,
-    );
-  });
+      expect(fixture.communicator.sets, [AnimationSetting.none]);
+      expect(fixture.communicator.animationReads, 2);
+      expect(_dropdown(tester).value, AnimationSetting.full);
+      expect(
+        find.text('The LED animation mode could not be saved or confirmed.'),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('unsupported firmware leaves animation setting disabled',
-      (tester) async {
+  testWidgets('unsupported firmware leaves animation setting disabled', (
+    tester,
+  ) async {
     final communicator = _AnimationCommunicator()
       ..capabilities = [ChameleonCommand.getDeviceCapabilities.value];
     final fixture = await _pumpSettings(
@@ -104,26 +112,29 @@ void main() {
     expect(find.byKey(const Key('animation-mode-retry')), findsNothing);
   });
 
-  testWidgets('read failure remains visible and retries without disconnecting',
-      (tester) async {
-    final communicator = _AnimationCommunicator()
-      ..scriptedReads.add(StateError('temporary read failure'));
-    final fixture = await _pumpSettings(tester, communicator: communicator);
+  testWidgets(
+    'read failure remains visible and retries without disconnecting',
+    (tester) async {
+      final communicator = _AnimationCommunicator()
+        ..scriptedReads.add(StateError('temporary read failure'));
+      final fixture = await _pumpSettings(tester, communicator: communicator);
 
-    expect(find.byType(ChameleonSettings), findsOneWidget);
-    expect(find.byKey(const Key('animation-mode-retry')), findsOneWidget);
-    expect(fixture.serial.disconnects, 0);
+      expect(find.byType(ChameleonSettings), findsOneWidget);
+      expect(find.byKey(const Key('animation-mode-retry')), findsOneWidget);
+      expect(fixture.serial.disconnects, 0);
 
-    await tester.tap(find.byKey(const Key('animation-mode-retry')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('animation-mode-retry')));
+      await tester.pumpAndSettle();
 
-    expect(_dropdown(tester).value, AnimationSetting.full);
-    expect(fixture.communicator.animationReads, 2);
-    expect(fixture.serial.disconnects, 0);
-  });
+      expect(_dropdown(tester).value, AnimationSetting.full);
+      expect(fixture.communicator.animationReads, 2);
+      expect(fixture.serial.disconnects, 0);
+    },
+  );
 
-  testWidgets('connection replacement stops follow-up animation commands',
-      (tester) async {
+  testWidgets('connection replacement stops follow-up animation commands', (
+    tester,
+  ) async {
     final fixture = await _pumpSettings(tester);
     final gate = Completer<void>();
     fixture.communicator.nextSetGate = gate;
@@ -145,8 +156,9 @@ void main() {
     expect(fixture.serial.disconnects, 0);
   });
 
-  testWidgets('idle connection replacement immediately invalidates old mode',
-      (tester) async {
+  testWidgets('idle connection replacement immediately invalidates old mode', (
+    tester,
+  ) async {
     final fixture = await _pumpSettings(tester);
     expect(_dropdown(tester).value, AnimationSetting.full);
 
@@ -187,8 +199,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('failed write reconciles through a mandatory device read',
-      (tester) async {
+  testWidgets('failed write reconciles through a mandatory device read', (
+    tester,
+  ) async {
     final fixture = await _pumpSettings(tester);
     fixture.communicator.nextSetError = StateError('write rejected');
 
@@ -205,23 +218,24 @@ void main() {
   });
 
   testWidgets(
-      'flash-save rejection stays visible even if RAM read-back matches',
-      (tester) async {
-    final fixture = await _pumpSettings(tester);
-    fixture.communicator.saveStatus = 0x70;
+    'flash-save rejection stays visible even if RAM read-back matches',
+    (tester) async {
+      final fixture = await _pumpSettings(tester);
+      fixture.communicator.saveStatus = 0x70;
 
-    await _chooseMode(tester, 'Minimal');
-    await tester.pumpAndSettle();
+      await _chooseMode(tester, 'Minimal');
+      await tester.pumpAndSettle();
 
-    expect(fixture.communicator.saves, 1);
-    expect(fixture.communicator.animationReads, 2);
-    expect(_dropdown(tester).value, AnimationSetting.minimal);
-    expect(
-      find.text('The LED animation mode could not be saved or confirmed.'),
-      findsOneWidget,
-    );
-    expect(fixture.serial.disconnects, 0);
-  });
+      expect(fixture.communicator.saves, 1);
+      expect(fixture.communicator.animationReads, 2);
+      expect(_dropdown(tester).value, AnimationSetting.minimal);
+      expect(
+        find.text('The LED animation mode could not be saved or confirmed.'),
+        findsOneWidget,
+      );
+      expect(fixture.serial.disconnects, 0);
+    },
+  );
 }
 
 DropdownButton<AnimationSetting> _dropdown(WidgetTester tester) {
@@ -240,11 +254,13 @@ Future<void> _chooseMode(WidgetTester tester, String label) async {
 }
 
 Future<
-    ({
-      ChameleonGUIState appState,
-      _AnimationCommunicator communicator,
-      _TestSerial serial,
-    })> _pumpSettings(
+  ({
+    ChameleonGUIState appState,
+    _AnimationCommunicator communicator,
+    _TestSerial serial,
+  })
+>
+_pumpSettings(
   WidgetTester tester, {
   _AnimationCommunicator? communicator,
   ChameleonDevice device = ChameleonDevice.ultra,
@@ -317,7 +333,9 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   @override
   Future<List<int>> getDeviceCapabilities() async {
     events.add('capabilities');
-    final gate = nextCapabilitiesGate;
+    final gate = events.where((event) => event == 'capabilities').length > 1
+        ? nextCapabilitiesGate
+        : null;
     await gate?.future;
     return capabilities;
   }
@@ -362,14 +380,19 @@ class _AnimationCommunicator extends ChameleonCommunicator {
   }
 
   @override
-  Future<ChameleonMessage?> sendCmd(ChameleonCommand cmd,
-      {Uint8List? data,
-      Duration timeout = const Duration(seconds: 5),
-      bool skipReceive = false,
-      bool firstRun = false}) async {
+  Future<ChameleonMessage?> sendCmd(
+    ChameleonCommand cmd, {
+    Uint8List? data,
+    Duration timeout = const Duration(seconds: 5),
+    bool skipReceive = false,
+    bool firstRun = false,
+  }) async {
     expect(cmd, ChameleonCommand.saveSettings);
     return ChameleonMessage(
-        command: cmd.value, status: saveStatus, data: Uint8List(0));
+      command: cmd.value,
+      status: saveStatus,
+      data: Uint8List(0),
+    );
   }
 }
 

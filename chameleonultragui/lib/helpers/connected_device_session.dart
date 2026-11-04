@@ -29,6 +29,19 @@ class ConnectedDeviceSession {
     );
   }
 
+  void ensureCurrent() {
+    if (!isCurrent) throw StateError('The connected-device session changed');
+  }
+
+  Future<T> run<T>(
+    Future<T> Function(ChameleonCommunicator communicator) action,
+  ) async {
+    ensureCurrent();
+    final value = await action(communicator);
+    ensureCurrent();
+    return value;
+  }
+
   bool get isCurrent =>
       identical(appState.connector, connector) &&
       appState.hasConnectedCommunicator(communicator);
@@ -40,25 +53,25 @@ class ConnectedDeviceSession {
 /// successfully returned `null`.
 class SessionBoundRfResult<T> {
   const SessionBoundRfResult.rejected()
-      : executed = false,
-        session = null,
-        value = null,
-        error = null,
-        stackTrace = null;
+    : executed = false,
+      session = null,
+      value = null,
+      error = null,
+      stackTrace = null;
 
   const SessionBoundRfResult.completed({
     required ConnectedDeviceSession this.session,
     required this.value,
-  })  : executed = true,
-        error = null,
-        stackTrace = null;
+  }) : executed = true,
+       error = null,
+       stackTrace = null;
 
   const SessionBoundRfResult.failed({
     required ConnectedDeviceSession this.session,
     required Object this.error,
     required StackTrace this.stackTrace,
-  })  : executed = true,
-        value = null;
+  }) : executed = true,
+       value = null;
 
   final bool executed;
   final ConnectedDeviceSession? session;
@@ -100,22 +113,22 @@ extension SessionBoundRfOperations on ChameleonGUIState {
     Future<T> Function(ConnectedDeviceSession session) operation,
   ) async {
     final outerResult =
-        await runSessionBoundForeground<SessionBoundRfResult<T>>(
-      (session) async {
-        try {
-          return SessionBoundRfResult.completed(
-            session: session,
-            value: await operation(session),
-          );
-        } catch (error, stackTrace) {
-          return SessionBoundRfResult.failed(
-            session: session,
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      },
-    );
+        await runSessionBoundForeground<SessionBoundRfResult<T>>((
+          session,
+        ) async {
+          try {
+            return SessionBoundRfResult.completed(
+              session: session,
+              value: await operation(session),
+            );
+          } catch (error, stackTrace) {
+            return SessionBoundRfResult.failed(
+              session: session,
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
+        });
 
     if (!outerResult.executed) {
       return const SessionBoundRfResult.rejected();

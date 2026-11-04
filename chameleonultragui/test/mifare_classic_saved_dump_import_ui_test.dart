@@ -20,8 +20,9 @@ void main() {
     );
   }
 
-  testWidgets('exact Mini, 1K, EV1, 2K, and 4K BINs import as complete',
-      (tester) async {
+  testWidgets('exact Mini, 1K, EV1, 2K, and 4K BINs import as complete', (
+    tester,
+  ) async {
     const cases = [
       (
         name: 'Mini dump',
@@ -74,7 +75,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: SavedCardsPage(
-            pickFile: () async => PlatformFile(
+            pickFile: () async => _PickedDump(
               name: '${selectedCase.name}.bin',
               path: '/tmp/${selectedCase.name}.bin',
               size: selectedCase.imageSize,
@@ -91,7 +92,9 @@ void main() {
       await tester.tap(find.byIcon(Icons.file_upload).first);
       await tester.pumpAndSettle();
       await tester.enterText(
-          find.byType(TextFormField).last, geometryCase.name);
+        find.byType(TextFormField).last,
+        geometryCase.name,
+      );
       await tester.tap(find.text('Save as 4 byte UID'));
       await tester.pumpAndSettle();
     }
@@ -108,24 +111,16 @@ void main() {
           geometry?.isEV1,
           geometry?.imageSize,
         ),
-        (
-          true,
-          geometryCase.type,
-          geometryCase.isEV1,
-          geometryCase.imageSize,
-        ),
+        (true, geometryCase.type, geometryCase.isEV1, geometryCase.imageSize),
         reason: geometryCase.name,
       );
     }
   });
 }
 
-Future<void> _verifyOversizedImport(
-  WidgetTester tester,
-  int uidLength,
-) async {
+Future<void> _verifyOversizedImport(WidgetTester tester, int uidLength) async {
   final dumpBytes = Uint8List(4096);
-  final dump = PlatformFile(
+  final dump = _PickedDump(
     name: 'oversized.bin',
     path: '/tmp/oversized.bin',
     size: dumpBytes.length,
@@ -161,10 +156,14 @@ Future<void> _verifyOversizedImport(
     );
   }
 
-  await tester.pumpWidget(page(SavedCardsPage(
-    pickFile: () async => dump,
-    readFile: (_) async => dumpBytes,
-  )));
+  await tester.pumpWidget(
+    page(
+      SavedCardsPage(
+        pickFile: () async => dump,
+        readFile: (_) async => dumpBytes,
+      ),
+    ),
+  );
   await settle();
 
   await tester.tap(find.byIcon(Icons.file_upload).first);
@@ -199,4 +198,24 @@ Future<void> _verifyOversizedImport(
     findsOneWidget,
   );
   expect(find.text(cardName), findsNothing);
+}
+
+final class _PickedDump extends PlatformFile {
+  _PickedDump({required this.name, required String path, required this.size})
+    : uri = Uri.file(path);
+  @override
+  final String name;
+  @override
+  final Uri uri;
+  final int size;
+  @override
+  int lengthSync() => size;
+  @override
+  Future<int> length() async => size;
+  @override
+  Future<Uint8List> readAsBytes() async => Uint8List(size);
+  @override
+  Stream<Uint8List> readAsByteStream() => Stream.value(Uint8List(size));
+  @override
+  Never get xFile => throw UnsupportedError('Fixture reads use readAsBytes');
 }

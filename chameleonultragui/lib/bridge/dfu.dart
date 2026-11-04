@@ -142,8 +142,7 @@ class DFUCommunicator {
   DFUCommunicator(this.log,
       {AbstractSerial? port,
       bool viaBLE = false,
-      bool Function()? isConnectionCurrent})
-      : _isConnectionCurrent = isConnectionCurrent {
+      this._isConnectionCurrent}) {
     isBLE = viaBLE;
     if (port != null) {
       open(port);

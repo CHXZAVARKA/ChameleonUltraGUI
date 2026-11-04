@@ -1,3 +1,5 @@
+import 'package:chameleonultragui/gui/menu/pages/dump_editor.dart';
+import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/gui/component/card_button.dart';
 import 'package:chameleonultragui/gui/component/error_message.dart';
 import 'package:chameleonultragui/helpers/card_info.dart';
@@ -22,8 +24,11 @@ class MifareUltralightHelper extends StatefulWidget {
   final HFCardInfo hfInfo;
   final bool allowSave;
 
-  const MifareUltralightHelper(
-      {super.key, required this.hfInfo, this.allowSave = true});
+  const MifareUltralightHelper({
+    super.key,
+    required this.hfInfo,
+    this.allowSave = true,
+  });
 
   @override
   State<StatefulWidget> createState() => CardReaderState();
@@ -97,6 +102,122 @@ class CardReaderState extends State<MifareUltralightHelper> {
     }
   }
 
+  static const int ulcReadablePages = 0x2C;
+
+  bool get isUlc => widget.hfInfo.type == TagType.ultralightC;
+
+  Future<void> readUlcCard({bool withKey = true}) async {
+    final appState = _appState ?? context.read<ChameleonGUIState>();
+    final localizations = AppLocalizations.of(context)!;
+    final hfInfo = widget.hfInfo;
+    final key = hexToBytes(keyController.text);
+    final operation = Object();
+    setState(() {
+      _readOperation = operation;
+      cardData = [];
+      error = '';
+      progress = -1;
+      state = MifareUltralightState.read;
+    });
+    final result = await appState.runSessionBoundForegroundCatching((
+      session,
+    ) async {
+      bool canContinue() =>
+          mounted &&
+          identical(_appState, appState) &&
+          identical(widget.hfInfo, hfInfo) &&
+          identical(_readOperation, operation) &&
+          session.isCurrent;
+      bool cancelled() {
+        if (canContinue()) return false;
+        _restoreCanceledRead(operation);
+        return true;
+      }
+
+      if (cancelled()) return;
+      final communicator = session.communicator;
+      final nextData = <Uint8List>[];
+      if (withKey) {
+        final data = await communicator.mf0UlcReadPages(
+          key,
+          0,
+          ulcReadablePages,
+        );
+        if (cancelled()) return;
+        if (data.length < 4) {
+          setState(() {
+            _readOperation = null;
+            error = localizations.invalid_password;
+            state = MifareUltralightState.none;
+            progress = 0;
+          });
+          return;
+        }
+        for (var page = 0; page < data.length ~/ 4; page++) {
+          nextData.add(
+            Uint8List.fromList(data.sublist(page * 4, page * 4 + 4)),
+          );
+        }
+        if (nextData.length == ulcReadablePages) {
+          final storedKey = mfUltralightSwapUlcKeyOrder(key);
+          for (var page = 0; page < 4; page++) {
+            nextData.add(
+              Uint8List.fromList(storedKey.sublist(page * 4, page * 4 + 4)),
+            );
+          }
+        }
+      } else {
+        for (var page = 0; page < ulcReadablePages; page++) {
+          final data = await communicator.send14ARaw(
+            Uint8List.fromList([0x30, page]),
+          );
+          if (cancelled()) return;
+          nextData.add(
+            data.length >= 4
+                ? Uint8List.fromList(data.sublist(0, 4))
+                : Uint8List(0),
+          );
+          setState(() => progress = page / ulcReadablePages);
+        }
+        if (!nextData.any((page) => page.isNotEmpty)) {
+          setState(() {
+            _readOperation = null;
+            error = localizations.failed_to_read_block;
+            state = MifareUltralightState.none;
+            progress = 0;
+          });
+          return;
+        }
+        for (var page = 0; page < 4; page++) {
+          nextData.add(Uint8List(4));
+        }
+      }
+      if (cancelled()) return;
+      setState(() {
+        cardData = nextData;
+        _readOperation = null;
+        progress = 1;
+        error = '';
+        state = MifareUltralightState.save;
+      });
+    });
+    if (!result.executed ||
+        result.session?.isCurrent != true ||
+        !mounted ||
+        !identical(widget.hfInfo, hfInfo)) {
+      _restoreCanceledRead(operation);
+      return;
+    }
+    if (result.error != null && identical(_readOperation, operation)) {
+      setState(() {
+        _readOperation = null;
+        error = result.error.toString();
+        state = MifareUltralightState.none;
+        progress = 0;
+      });
+    }
+  }
+
   Future<void> readCard({bool withPassword = false}) async {
     final appState = _appState ?? context.read<ChameleonGUIState>();
     final localizations = AppLocalizations.of(context)!;
@@ -113,8 +234,9 @@ class CardReaderState extends State<MifareUltralightHelper> {
       state = MifareUltralightState.read;
     });
 
-    final result =
-        await appState.runSessionBoundForegroundCatching((session) async {
+    final result = await appState.runSessionBoundForegroundCatching((
+      session,
+    ) async {
       bool canContinue() =>
           mounted &&
           identical(_appState, appState) &&
@@ -161,9 +283,11 @@ class CardReaderState extends State<MifareUltralightHelper> {
         if (canceled()) {
           return;
         }
-        nextCardData.add(pageData.isNotEmpty
-            ? Uint8List.fromList(pageData.slice(0, 4).toList())
-            : Uint8List(0));
+        nextCardData.add(
+          pageData.isNotEmpty
+              ? Uint8List.fromList(pageData.slice(0, 4).toList())
+              : Uint8List(0),
+        );
         setState(() {
           progress = page / pageCount;
         });
@@ -226,7 +350,8 @@ class CardReaderState extends State<MifareUltralightHelper> {
     }
     if (result.error != null) {
       final session = result.session;
-      final isCurrentFailure = session != null &&
+      final isCurrentFailure =
+          session != null &&
           mounted &&
           identical(_appState, appState) &&
           identical(widget.hfInfo, hfInfo) &&
@@ -237,8 +362,9 @@ class CardReaderState extends State<MifareUltralightHelper> {
         return;
       }
 
-      (appState.log ?? session.communicator.log)
-          .e('MIFARE Ultralight read failed');
+      (appState.log ?? session.communicator.log).e(
+        'MIFARE Ultralight read failed',
+      );
       setState(() {
         _readOperation = null;
         state = MifareUltralightState.none;
@@ -253,9 +379,7 @@ class CardReaderState extends State<MifareUltralightHelper> {
 
     List<int> cardDump = [];
     var localizations = AppLocalizations.of(context)!;
-    for (var page = 0;
-        page < mfUltralightGetPagesCount(widget.hfInfo.type);
-        page++) {
+    for (var page = 0; page < cardData.length; page++) {
       if (cardData[page].isEmpty) {
         cardDump.addAll(Uint8List(4));
       } else {
@@ -271,7 +395,8 @@ class CardReaderState extends State<MifareUltralightHelper> {
       );
     } else {
       var tags = appState.sharedPreferencesProvider.getCards();
-      tags.add(CardSave(
+      tags.add(
+        CardSave(
           uid: widget.hfInfo.uid,
           sak: hexToBytes(widget.hfInfo.sak)[0],
           atqa: hexToBytes(widget.hfInfo.atqa),
@@ -285,8 +410,45 @@ class CardReaderState extends State<MifareUltralightHelper> {
           ),
           ats: (widget.hfInfo.ats != localizations.no)
               ? hexToBytes(widget.hfInfo.ats)
-              : Uint8List(0)));
+              : Uint8List(0),
+        ),
+      );
       appState.sharedPreferencesProvider.setCards(tags);
+    }
+  }
+
+  Future<void> viewDump() async {
+    var localizations = AppLocalizations.of(context)!;
+    final viewCard = CardSave(
+      uid: widget.hfInfo.uid,
+      sak: hexToBytes(widget.hfInfo.sak)[0],
+      atqa: hexToBytes(widget.hfInfo.atqa),
+      name: dumpName,
+      tag: widget.hfInfo.type,
+      data: cardData,
+      extraData: CardSaveExtra(
+        ultralightSignature: hexToBytes(signature),
+        ultralightVersion: hexToBytes(version),
+        ultralightCounters: counters,
+      ),
+      ats: (widget.hfInfo.ats != localizations.no)
+          ? hexToBytes(widget.hfInfo.ats)
+          : Uint8List(0),
+    );
+
+    await showDialog(
+      context: context,
+      builder: (context) => DumpEditor(
+        cardSave: viewCard,
+        onSave: (data) {
+          // Keep edits in memory so both save options use the modified dump.
+          cardData = data;
+        },
+      ),
+    );
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -305,45 +467,85 @@ class CardReaderState extends State<MifareUltralightHelper> {
             child: TextFormField(
               controller: keyController,
               decoration: InputDecoration(
-                  labelText: localizations.key,
-                  hintMaxLines: 4,
-                  hintText: localizations
-                      .enter_something(localizations.ultralight_key_prompt)),
+                labelText: localizations.key,
+                hintMaxLines: 4,
+                hintText: isUlc
+                    ? ""
+                    : localizations.enter_something(
+                        localizations.ultralight_key_prompt,
+                      ),
+              ),
               inputFormatters: hexFormatter,
-              validator: (value) => validateHex(value, localizations,
-                  exactBytes: 4, fieldName: localizations.key),
+              validator: (value) => validateHex(
+                value,
+                localizations,
+                exactBytes: isUlc ? 16 : 4,
+                fieldName: localizations.key,
+              ),
             ),
           ),
           const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-              child: TextButton(
-                onPressed: () async => {await readCard(withPassword: true)},
-                child: Text(localizations.read_with_key),
-              ),
+          if (isUlc)
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () async {
+                      if (formKey.currentState!.validate()) {
+                        await readUlcCard(withKey: true);
+                      }
+                    },
+                    child: Text(localizations.read_with_key),
+                  ),
+                ),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () async => {await readUlcCard(withKey: false)},
+                    child: Text(localizations.read_without_key),
+                  ),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () async => {await readCard(withPassword: true)},
+                    child: Text(localizations.read_with_key),
+                  ),
+                ),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () async => {
+                      await readCard(withPassword: false),
+                    },
+                    child: Text(localizations.read_without_key),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: TextButton(
-                onPressed: () async => {await readCard(withPassword: false)},
-                child: Text(localizations.read_without_key),
-              ),
-            ),
-          ]),
         ],
         if (error != "") ...[
           const SizedBox(height: 16),
           ErrorMessage(errorMessage: error),
         ],
         if (state == MifareUltralightState.read) ...[
-          LinearProgressIndicator(value: progress),
-          const SizedBox(height: 8)
+          LinearProgressIndicator(value: progress < 0 ? null : progress),
+          const SizedBox(height: 8),
         ],
         if (state == MifareUltralightState.save)
           Center(
-              child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton(
+                  onPressed: viewDump,
+                  style: customCardButtonStyle(appState),
+                  child: Text(localizations.view_dump),
+                ),
                 ElevatedButton(
                   onPressed: () async {
                     await showDialog(
@@ -371,7 +573,8 @@ class CardReaderState extends State<MifareUltralightHelper> {
                             ElevatedButton(
                               onPressed: () {
                                 Navigator.pop(
-                                    context); // Close the modal without saving
+                                  context,
+                                ); // Close the modal without saving
                               },
                               child: Text(localizations.cancel),
                             ),
@@ -383,7 +586,6 @@ class CardReaderState extends State<MifareUltralightHelper> {
                   style: customCardButtonStyle(appState),
                   child: Text(localizations.save),
                 ),
-                const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () async {
                     await saveCard(bin: true);
@@ -391,7 +593,9 @@ class CardReaderState extends State<MifareUltralightHelper> {
                   style: customCardButtonStyle(appState),
                   child: Text(localizations.save_as(".bin")),
                 ),
-              ])),
+              ],
+            ),
+          ),
       ],
     );
   }

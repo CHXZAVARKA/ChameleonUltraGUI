@@ -1,3 +1,10 @@
+import 'dart:typed_data';
+
+import 'package:chameleonultragui/helpers/mifare_classic/general.dart';
+import 'package:chameleonultragui/helpers/mifare_ultralight/general.dart';
+import 'package:chameleonultragui/helpers/slot_dump.dart';
+import 'package:chameleonultragui/sharedprefsprovider.dart';
+
 import 'dart:async';
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
@@ -5,6 +12,7 @@ import 'package:chameleonultragui/gui/component/chameleon_loading_indicator.dart
 import 'package:chameleonultragui/gui/menu/dialogs/confirm_delete.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/edit.dart';
 import 'package:chameleonultragui/gui/menu/dialogs/slot/export.dart';
+import 'package:chameleonultragui/gui/menu/pages/dump_editor.dart';
 import 'package:chameleonultragui/helpers/definitions.dart';
 import 'package:chameleonultragui/helpers/general.dart';
 import 'package:chameleonultragui/main.dart';
@@ -94,16 +102,108 @@ class SlotSettingsState extends State<SlotSettings> {
     ConnectedDeviceStatus status,
     TagFrequency frequency,
     bool enabled,
-  ) =>
-      status.mutateSlots(
-        (mutation) => mutation.run(
-          (communicator) => communicator.enableSlot(
-            widget.slot,
-            frequency,
-            enabled,
-          ),
+  ) => status.mutateSlots(
+    (mutation) => mutation.run(
+      (communicator) =>
+          communicator.enableSlot(widget.slot, frequency, enabled),
+    ),
+  );
+
+  Future<void> openHfDumpEditor() async {
+    final status = _status;
+    if (status == null || !status.isCurrentSession) return;
+    final slot = status.snapshot.slots.slots[widget.slot];
+    final tag = slot.hf.type.value;
+    final name = slot.hf.name.value;
+    if (tag == null ||
+        name == null ||
+        !(isMifareClassic(tag) || isMifareUltralight(tag))) {
+      return;
+    }
+    final appState = context.read<ChameleonGUIState>();
+    final localizations = AppLocalizations.of(context)!;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    void showError(Object error) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('${localizations.error}: $error')),
+        );
+      }
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(child: Text(localizations.please_wait)),
+          ],
         ),
-      );
+      ),
+    );
+    CardSave? card;
+    try {
+      card = await status.mutateSlots((mutation) async {
+        await mutation.run((c) => c.activateSlot(widget.slot));
+        return mutation.run(
+          (c) => readHfDumpFromSlot(
+            c,
+            name,
+            tag,
+            canContinue: () => mounted && mutation.isCurrent,
+          ),
+        );
+      });
+    } catch (error) {
+      showError(error);
+    } finally {
+      if (navigator.mounted) navigator.pop();
+    }
+    if (card == null ||
+        !mounted ||
+        !identical(status, _status) ||
+        !status.isCurrentSession) {
+      return;
+    }
+    List<Uint8List>? edited;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            DumpEditor(cardSave: card!, onSave: (data) => edited = data),
+      ),
+    );
+    if (edited == null ||
+        !mounted ||
+        !identical(status, _status) ||
+        !status.isCurrentSession) {
+      return;
+    }
+    try {
+      await status.mutateSlots((mutation) async {
+        final current = await mutation.run((c) => c.getSlotTagTypes());
+        if (current[widget.slot].hf != tag) {
+          throw StateError('Slot type changed while editing');
+        }
+        await mutation.run(
+          (c) => writeHfDumpToSlot(
+            c,
+            widget.slot,
+            tag,
+            edited!,
+            canContinue: () => mounted && mutation.isCurrent,
+          ),
+        );
+      });
+    } catch (error) {
+      appState.log!.e('Failed to write slot dump: $error');
+      showError(error);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +235,8 @@ class SlotSettingsState extends State<SlotSettings> {
         final slot = slots.slots[widget.slot];
         final hf = _SlotFrequencyView(slots, slot.hf);
         final lf = _SlotFrequencyView(slots, slot.lf);
-        final canExport = hf.isCurrent &&
+        final canExport =
+            hf.isCurrent &&
             lf.isCurrent &&
             (hf.type.value != TagType.unknown ||
                 lf.type.value != TagType.unknown);
@@ -159,6 +260,16 @@ class SlotSettingsState extends State<SlotSettings> {
                   tooltip: localizations.slot_status,
                   icon: const Icon(Icons.refresh),
                 ),
+              IconButton(
+                key: const Key('slot-settings-dump-editor'),
+                onPressed:
+                    hf.isCurrent &&
+                        (isMifareClassic(hf.type.value!) ||
+                            isMifareUltralight(hf.type.value!))
+                    ? openHfDumpEditor
+                    : null,
+                icon: const Icon(Icons.edit_document),
+              ),
               IconButton(
                 key: const Key('slot-settings-export'),
                 onPressed: canExport
@@ -220,8 +331,9 @@ class SlotSettingsState extends State<SlotSettings> {
     required TagFrequency frequency,
     required _SlotFrequencyView frequencyStatus,
   }) {
-    final frequencyName =
-        frequency == TagFrequency.hf ? localizations.hf : localizations.lf;
+    final frequencyName = frequency == TagFrequency.hf
+        ? localizations.hf
+        : localizations.lf;
     final keySuffix = frequency.name;
     final nameLabel = _fieldLabel(
       frequencyStatus.name,
@@ -268,15 +380,12 @@ class SlotSettingsState extends State<SlotSettings> {
               key: Key('slot-settings-delete-$keySuffix'),
               onPressed: canDelete
                   ? () => _deleteFrequency(
-                        status,
-                        appState,
-                        frequency,
-                        _confirmedName(
-                          frequencyStatus.name,
-                          localizations,
-                        ),
-                        localizations,
-                      )
+                      status,
+                      appState,
+                      frequency,
+                      _confirmedName(frequencyStatus.name, localizations),
+                      localizations,
+                    )
                   : null,
               icon: const Icon(Icons.clear_rounded),
             ),
@@ -403,22 +512,21 @@ class SlotSettingsState extends State<SlotSettings> {
 
 class _SlotFrequencyView {
   _SlotFrequencyView(SlotsStatus slots, SlotFrequencyStatus frequency)
-      : type = _SlotFieldView(
-          frequency.type,
-          unavailable: slots.unavailableFacets.contains(SlotFacet.types),
-          stale: slots.staleFacets.contains(SlotFacet.types),
-        ),
-        enabled = _SlotFieldView(
-          frequency.enabled,
-          unavailable:
-              slots.unavailableFacets.contains(SlotFacet.enabledStates),
-          stale: slots.staleFacets.contains(SlotFacet.enabledStates),
-        ),
-        name = _SlotFieldView(
-          frequency.name,
-          unavailable: slots.unavailableFacets.contains(SlotFacet.names),
-          stale: slots.staleFacets.contains(SlotFacet.names),
-        );
+    : type = _SlotFieldView(
+        frequency.type,
+        unavailable: slots.unavailableFacets.contains(SlotFacet.types),
+        stale: slots.staleFacets.contains(SlotFacet.types),
+      ),
+      enabled = _SlotFieldView(
+        frequency.enabled,
+        unavailable: slots.unavailableFacets.contains(SlotFacet.enabledStates),
+        stale: slots.staleFacets.contains(SlotFacet.enabledStates),
+      ),
+      name = _SlotFieldView(
+        frequency.name,
+        unavailable: slots.unavailableFacets.contains(SlotFacet.names),
+        stale: slots.staleFacets.contains(SlotFacet.names),
+      );
 
   final _SlotFieldView<TagType> type;
   final _SlotFieldView<bool> enabled;

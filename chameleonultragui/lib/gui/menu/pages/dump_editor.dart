@@ -688,7 +688,7 @@ class DumpEditorState extends State<DumpEditor> {
                 Expanded(
                   child: ListView.separated(
                     itemCount: asciiControllers.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, index) => TextField(
                       controller: asciiControllers[index],
                       style: const TextStyle(fontFamily: 'RobotoMono'),
@@ -1094,7 +1094,7 @@ class DumpEditorState extends State<DumpEditor> {
                       Expanded(
                         child: ListView.separated(
                           itemCount: valueControllers.length,
-                          separatorBuilder: (_, __) => const Divider(),
+                          separatorBuilder: (_, _) => const Divider(),
                           itemBuilder: (context, index) => Row(
                             children: [
                               SizedBox(

@@ -1,3 +1,6 @@
+import 'package:file_picker/file_picker.dart';
+
+import 'support/file_picker.dart';
 // ignore_for_file: non_constant_identifier_names
 
 import 'package:chameleonultragui/generated/i18n/app_localizations.dart';
@@ -30,18 +33,15 @@ class _BinExportTestHarness {
     required this.filePickerCalls,
   });
 
-  static const _filePickerChannel = MethodChannel(
-    'miguelruivo.flutter.plugins.filepicker',
-    StandardMethodCodec(),
+  static const _wakelockChannel = MethodChannel(
+    'dev.fluttercommunity.plus/wakelock',
   );
-  static const _wakelockChannel =
-      MethodChannel('dev.fluttercommunity.plus/wakelock');
 
   final WidgetTester tester;
   final SharedPreferencesProvider preferences;
   final ChameleonGUIState appState;
   final AppLocalizations localizations;
-  final List<MethodCall> filePickerCalls;
+  final List<Map<String, Object>> filePickerCalls;
 
   static Future<_BinExportTestHarness> create(
     WidgetTester tester, {
@@ -49,22 +49,18 @@ class _BinExportTestHarness {
   }) async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    final filePickerCalls = <MethodCall>[];
+    final filePickerCalls = <Map<String, Object>>[];
 
     if (filePickerResult != null) {
-      messenger.setMockMethodCallHandler(_filePickerChannel, (call) async {
-        filePickerCalls.add(call);
-        return filePickerResult;
-      });
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(_filePickerChannel, null),
-      );
+      final previousPicker = FilePickerPlatform.instance;
+      FilePickerPlatform.instance = TestFilePicker()
+        ..savedUri = Uri.file(filePickerResult)
+        ..onSave = (name, bytes) =>
+            filePickerCalls.add({'fileName': name, 'bytes': bytes});
+      addTearDown(() => FilePickerPlatform.instance = previousPicker);
     }
 
-    messenger.setMockMethodCallHandler(
-      _wakelockChannel,
-      (call) async => null,
-    );
+    messenger.setMockMethodCallHandler(_wakelockChannel, (call) async => null);
     addTearDown(
       () => messenger.setMockMethodCallHandler(_wakelockChannel, null),
     );
@@ -73,8 +69,9 @@ class _BinExportTestHarness {
     final preferences = SharedPreferencesProvider();
     await preferences.load();
     final appState = ChameleonGUIState(preferences);
-    final localizations =
-        await AppLocalizations.delegate.load(const Locale('en'));
+    final localizations = await AppLocalizations.delegate.load(
+      const Locale('en'),
+    );
 
     return _BinExportTestHarness._(
       tester: tester,
@@ -140,8 +137,9 @@ class _BinExportTestHarness {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('partial MIFARE Classic recovery cannot be exported as BIN',
-      (tester) async {
+  testWidgets('partial MIFARE Classic recovery cannot be exported as BIN', (
+    tester,
+  ) async {
     final harness = await _BinExportTestHarness.create(
       tester,
       filePickerResult: '/tmp/partial.bin',
@@ -161,57 +159,47 @@ void main() {
     await tester.pump();
 
     expect(harness.filePickerCalls, isEmpty);
-    expect(
-      find.text('Localized complete-dump warning'),
-      findsOneWidget,
-    );
+    expect(find.text('Localized complete-dump warning'), findsOneWidget);
   });
 
   final invalidGeometryCases = <(String, List<Uint8List>)>[
-    (
-      'a missing block',
-      List.generate(63, (_) => Uint8List(16)),
-    ),
+    ('a missing block', List.generate(63, (_) => Uint8List(16))),
     (
       'a 15-byte block',
-      List.generate(
-        64,
-        (block) => Uint8List(block == 12 ? 15 : 16),
-      ),
+      List.generate(64, (block) => Uint8List(block == 12 ? 15 : 16)),
     ),
     (
       'a non-empty trailing block',
-      List.generate(
-        256,
-        (block) => block <= 64 ? Uint8List(16) : Uint8List(0),
-      ),
+      List.generate(256, (block) => block <= 64 ? Uint8List(16) : Uint8List(0)),
     ),
   ];
 
   for (final (malformation, cardData) in invalidGeometryCases) {
     testWidgets(
-        'complete MIFARE Classic recovery with $malformation cannot be exported as BIN',
-        (tester) async {
-      final harness = await _BinExportTestHarness.create(
-        tester,
-        filePickerResult: '/tmp/invalid.bin',
-      );
-      await harness.pumpRecovery(
-        type: MifareClassicType.m1k,
-        dumpComplete: true,
-        cardData: cardData,
-      );
+      'complete MIFARE Classic recovery with $malformation cannot be exported as BIN',
+      (tester) async {
+        final harness = await _BinExportTestHarness.create(
+          tester,
+          filePickerResult: '/tmp/invalid.bin',
+        );
+        await harness.pumpRecovery(
+          type: MifareClassicType.m1k,
+          dumpComplete: true,
+          cardData: cardData,
+        );
 
-      await tester.tap(find.text('Save as .bin'));
-      await tester.pump();
+        await tester.tap(find.text('Save as .bin'));
+        await tester.pump();
 
-      expect(harness.filePickerCalls, isEmpty);
-      expect(find.text('Localized complete-dump warning'), findsOneWidget);
-    });
+        expect(harness.filePickerCalls, isEmpty);
+        expect(find.text('Localized complete-dump warning'), findsOneWidget);
+      },
+    );
   }
 
-  testWidgets('partial MIFARE Classic recovery can be saved in the app',
-      (tester) async {
+  testWidgets('partial MIFARE Classic recovery can be saved in the app', (
+    tester,
+  ) async {
     final harness = await _BinExportTestHarness.create(tester);
     final recovery = await harness.pumpRecovery(
       type: MifareClassicType.m1k,
@@ -237,76 +225,71 @@ void main() {
   });
 
   testWidgets(
-      'complete MIFARE Classic recovery exports unchanged BIN bytes for every geometry',
-      (tester) async {
-    final harness = await _BinExportTestHarness.create(
-      tester,
-      filePickerResult: '/tmp/complete.bin',
-    );
-    const cases = [
-      (
-        name: 'Mini',
-        type: MifareClassicType.mini,
-        isEV1: false,
-        blockCount: 20,
-      ),
-      (
-        name: '1K',
-        type: MifareClassicType.m1k,
-        isEV1: false,
-        blockCount: 64,
-      ),
-      (
-        name: 'EV1',
-        type: MifareClassicType.m1k,
-        isEV1: true,
-        blockCount: 72,
-      ),
-      (
-        name: '2K',
-        type: MifareClassicType.m2k,
-        isEV1: false,
-        blockCount: 128,
-      ),
-      (
-        name: '4K',
-        type: MifareClassicType.m4k,
-        isEV1: false,
-        blockCount: 256,
-      ),
-    ];
-
-    for (final geometryCase in cases) {
-      final expectedBin = Uint8List.fromList(List.generate(
-        geometryCase.blockCount * 16,
-        (index) => (index % 251) + 1,
-      ));
-      await harness.pumpRecovery(
-        type: geometryCase.type,
-        isEV1: geometryCase.isEV1,
-        dumpComplete: true,
-        cardData: List.generate(
-          256,
-          (block) => block < geometryCase.blockCount
-              ? Uint8List.sublistView(
-                  expectedBin,
-                  block * 16,
-                  (block + 1) * 16,
-                )
-              : Uint8List(0),
-        ),
+    'complete MIFARE Classic recovery exports unchanged BIN bytes for every geometry',
+    (tester) async {
+      final harness = await _BinExportTestHarness.create(
+        tester,
+        filePickerResult: '/tmp/complete.bin',
       );
+      const cases = [
+        (
+          name: 'Mini',
+          type: MifareClassicType.mini,
+          isEV1: false,
+          blockCount: 20,
+        ),
+        (name: '1K', type: MifareClassicType.m1k, isEV1: false, blockCount: 64),
+        (name: 'EV1', type: MifareClassicType.m1k, isEV1: true, blockCount: 72),
+        (
+          name: '2K',
+          type: MifareClassicType.m2k,
+          isEV1: false,
+          blockCount: 128,
+        ),
+        (
+          name: '4K',
+          type: MifareClassicType.m4k,
+          isEV1: false,
+          blockCount: 256,
+        ),
+      ];
 
-      await tester.tap(find.text('Save as .bin'));
-      await tester.pump();
+      for (final geometryCase in cases) {
+        final expectedBin = Uint8List.fromList(
+          List.generate(
+            geometryCase.blockCount * 16,
+            (index) => (index % 251) + 1,
+          ),
+        );
+        await harness.pumpRecovery(
+          type: geometryCase.type,
+          isEV1: geometryCase.isEV1,
+          dumpComplete: true,
+          cardData: List.generate(
+            256,
+            (block) => block < geometryCase.blockCount
+                ? Uint8List.sublistView(
+                    expectedBin,
+                    block * 16,
+                    (block + 1) * 16,
+                  )
+                : Uint8List(0),
+          ),
+        );
 
-      final arguments = harness.filePickerCalls.last.arguments as Map;
-      expect(harness.filePickerCalls.last.method, 'save',
-          reason: geometryCase.name);
-      expect(arguments['fileName'], '01020304.bin', reason: geometryCase.name);
-      expect(arguments['bytes'], expectedBin, reason: geometryCase.name);
-    }
+        await tester.tap(find.text('Save as .bin'));
+        await tester.pump();
 
-    expect(harness.filePickerCalls, hasLength(cases.length));
-  });
+        final arguments = harness.filePickerCalls.last;
+        expect(
+          arguments['fileName'],
+          '01020304.bin',
+          reason: geometryCase.name,
+        );
+        expect(arguments['bytes'], expectedBin, reason: geometryCase.name);
+      }
+
+      expect(harness.filePickerCalls, hasLength(cases.length));
+    },
+  );
 }
