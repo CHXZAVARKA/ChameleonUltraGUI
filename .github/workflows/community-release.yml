@@ -46,9 +46,11 @@ jobs:
       - run: flutter gen-l10n
       - run: flutter analyze --no-pub
       - name: Build native recovery for tests
-        run: cc -O3 -shared -fPIC linux/Classes/recovery.c -o "$RUNNER_TEMP/librecovery.so" -pthread -lm
+        run: |
+          cmake -S src -B "$RUNNER_TEMP/recovery" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/recovery" --parallel 2 --target recovery
       - name: Test application
-        run: LIBRECOVERY_PATH="$RUNNER_TEMP/librecovery.so" flutter test --no-pub --reporter expanded
+        run: LIBRECOVERY_PATH="$RUNNER_TEMP/recovery/librecovery.so" flutter test --no-pub --reporter expanded
 
   build:
     needs: verify
