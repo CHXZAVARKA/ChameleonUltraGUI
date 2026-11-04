@@ -50,7 +50,7 @@ jobs:
           cmake -S src -B "$RUNNER_TEMP/recovery" -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/recovery" --parallel 2 --target recovery
       - name: Test application
-        run: LIBRECOVERY_PATH="$RUNNER_TEMP/recovery/librecovery.so" flutter test --no-pub --reporter expanded
+        run: LIBRECOVERY_PATH="$RUNNER_TEMP/recovery/librecovery.so" flutter test --no-pub --concurrency=2 --reporter expanded
 
   build:
     needs: verify
