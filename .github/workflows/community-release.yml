@@ -1,0 +1,209 @@
+name: Community release
+
+on:
+  push:
+    branches: ['codex/build-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+
+jobs:
+  verify:
+    if: github.repository == 'CHXZAVARKA/ChameleonUltraGUI'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      number: ${{ steps.version.outputs.number }}
+    defaults:
+      run:
+        working-directory: chameleonultragui
+    steps:
+      - uses: actions/checkout@v7
+      - name: Identify immutable release
+        id: version
+        shell: bash
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          release_date="${RELEASE_BRANCH#codex/build-}"
+          [[ "$release_date" =~ ^20[0-9]{2}\.[0-9]{2}\.[0-9]{2}([.-][0-9]+)?$ ]]
+          echo "tag=community-$release_date" >> "$GITHUB_OUTPUT"
+          echo "number=$(printf '%s' "$release_date" | cut -c1-10 | tr -d '.')" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter gen-l10n
+      - run: flutter analyze --no-pub
+      - name: Build native recovery for tests
+        run: cc -O3 -shared -fPIC linux/Classes/recovery.c -o "$RUNNER_TEMP/librecovery.so" -pthread -lm
+      - name: Test application
+        run: LIBRECOVERY_PATH="$RUNNER_TEMP/librecovery.so" flutter test --no-pub --reporter expanded
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            runner: ubuntu-24.04
+            arch: x64
+          - platform: windows
+            runner: windows-2022
+            arch: x64
+          - platform: macos
+            runner: macos-15
+            arch: arm64
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            arch: x64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: chameleonultragui
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        if: matrix.platform == 'android'
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: subosito/flutter-action@v2
+        if: matrix.platform != 'linux-arm64'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          architecture: ${{ matrix.arch }}
+          cache: true
+      - name: Pinned Flutter source SDK for Linux ARM64
+        if: matrix.platform == 'linux-arm64'
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Linux dependencies
+        if: startsWith(matrix.platform, 'linux')
+        run: sudo apt-get update -y && sudo apt-get install -y ninja-build libgtk-3-dev clang cmake libsecret-1-dev
+      - name: macOS dependencies
+        if: matrix.platform == 'macos'
+        run: brew install automake libtool
+      - run: flutter pub get --enforce-lockfile
+      - name: Load community Android signing key
+        if: matrix.platform == 'android'
+        env:
+          KEYSTORE: ${{ secrets.COMMUNITY_ANDROID_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.COMMUNITY_ANDROID_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.COMMUNITY_ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE"
+          printf '%s' "$KEYSTORE" | base64 --decode > upload-keystore.jks
+          chmod 600 upload-keystore.jks
+          printf 'storeFile=../../upload-keystore.jks\nkeyAlias=community\nstorePassword=%s\nkeyPassword=%s\n' "$STORE_PASSWORD" "$KEY_PASSWORD" > android/key.properties
+          chmod 600 android/key.properties
+      - name: Build Android
+        if: matrix.platform == 'android'
+        run: flutter build apk --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: flutter build windows --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        run: flutter build macos --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+      - name: Build Linux
+        if: startsWith(matrix.platform, 'linux')
+        run: flutter build linux --release --target-platform linux-${{ matrix.arch }} --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+      - name: Package Android
+        if: matrix.platform == 'android'
+        run: |
+          mkdir -p release
+          cp build/app/outputs/flutter-apk/app-release.apk release/chameleon-android.apk
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release -Force
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath release/chameleon-windows-x64.zip
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p release "$RUNNER_TEMP/dmg"
+          app_bundle=(build/macos/Build/Products/Release/*.app)
+          test "${#app_bundle[@]}" -eq 1
+          ditto -c -k --sequesterRsrc --keepParent "${app_bundle[0]}" release/chameleon-macos.zip
+          ditto "${app_bundle[0]}" "$RUNNER_TEMP/dmg/$(basename "${app_bundle[0]}")"
+          ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
+          hdiutil create -volname 'Chameleon Ultra GUI' -srcfolder "$RUNNER_TEMP/dmg" -ov -format UDZO release/chameleon-macos.dmg
+      - name: Package Linux
+        if: startsWith(matrix.platform, 'linux')
+        run: |
+          mkdir -p release
+          tar -C build/linux/${{ matrix.arch }}/release/bundle -czf release/chameleon-${{ matrix.platform }}.tar.gz .
+      - name: Windows installer
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        working-directory: .
+        run: |
+          choco install nsis --version=3.12 -y --no-progress
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" nsis-installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item chameleonultragui-setup-win.exe chameleonultragui/release/chameleon-windows-setup.exe
+      - name: Record build provenance
+        env:
+          BUILD_PLATFORM: ${{ matrix.platform }}
+        run: |
+          git rev-parse HEAD > "release/commit-$BUILD_PLATFORM.txt"
+          flutter --version --machine > "release/toolchain-$BUILD_PLATFORM.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: community-${{ matrix.platform }}
+          path: chameleonultragui/release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary signing material
+        if: always() && matrix.platform == 'android'
+        run: rm -f upload-keystore.jks android/key.properties
+
+  publish:
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: community-*
+          merge-multiple: true
+          path: release
+      - name: Publish complete community release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -f release/chameleon-android.apk
+          test -f release/chameleon-windows-x64.zip
+          test -f release/chameleon-macos.dmg
+          test -f release/chameleon-linux-x64.tar.gz
+          test -f release/chameleon-linux-arm64.tar.gz
+          (cd release && sha256sum * > SHA256SUMS)
+          printf 'Community build of the custom Chameleon Ultra GUI.\n\nSource commit: `%s`\nFlutter: %s\n\nIncludes the custom Home dashboard, connection and RF-operation safeguards, standard MIFARE Classic workflow, generators, and current upstream tools.\n\nmacOS uses an ad-hoc signature. Android uses the dedicated community signing key. Physical Chameleon/card scenarios were not run as part of this release.\n' "$GITHUB_SHA" "$FLUTTER_VERSION" > release-notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite its artifacts.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" release/* --target "$GITHUB_SHA" --title "Chameleon community $RELEASE_TAG" --notes-file release-notes.md --prerelease

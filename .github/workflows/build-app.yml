@@ -8,6 +8,7 @@ on:
 
 jobs:
   check:
+    if: github.repository != 'CHXZAVARKA/ChameleonUltraGUI' || !startsWith(github.ref, 'refs/heads/codex/build-')
     runs-on: ubuntu-latest
     outputs:
       found: ${{ steps.PR.outputs.pr_found }}
