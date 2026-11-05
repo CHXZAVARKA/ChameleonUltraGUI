@@ -121,7 +121,11 @@ jobs:
         run: flutter build apk --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
       - name: Build Windows
         if: matrix.platform == 'windows'
-        run: flutter build windows --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+        # Windows VERSIONINFO stores each numeric version component in16 bits.
+        run: |
+          test '${{ github.run_number }}' -ge 1
+          test '${{ github.run_number }}' -le 65535
+          flutter build windows --release --build-name 1.3.0 --build-number '${{ github.run_number }}'
       - name: Bundle Windows runtime
         if: matrix.platform == 'windows'
         shell: pwsh
