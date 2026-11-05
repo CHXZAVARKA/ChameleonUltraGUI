@@ -103,6 +103,14 @@ jobs:
       - name: macOS dependencies
         if: matrix.platform == 'macos'
         run: brew install automake libtool
+      - name: Select Xcode for Icon Composer
+        if: matrix.platform == 'macos'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+        run: |
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcodebuild -version
       - run: flutter pub get --enforce-lockfile
       - name: Load community Android signing key
         if: matrix.platform == 'android'
@@ -125,6 +133,9 @@ jobs:
       - name: Build macOS
         if: matrix.platform == 'macos'
         run: flutter build macos --release --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
+      - name: Verify compiled macOS app icon
+        if: matrix.platform == 'macos'
+        run: python3 ../.github/scripts/check-macos-icon.py build/macos/Build/Products/Release/*.app
       - name: Build Linux
         if: startsWith(matrix.platform, 'linux')
         run: flutter build linux --release --target-platform linux-${{ matrix.arch }} --build-name 1.3.0 --build-number '${{ needs.verify.outputs.number }}'
